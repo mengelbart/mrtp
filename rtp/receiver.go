@@ -1,7 +1,6 @@
 package rtp
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -29,7 +28,7 @@ func NewReceiver(transport mrtp.Transport, streams map[int]*gstreamer.RTPStreamS
 	}
 	r := &Receiver{
 		rtcpSendID: 0,
-		rtcpRecvID: 0,
+		rtcpRecvID: 1,
 		transport:  transport,
 		streams:    streams,
 		pipeline:   pipeline,
@@ -94,7 +93,6 @@ func (r *Receiver) setupRTPPipeline() error {
 		if ret := pad.Link(sinkPad); ret != gst.PadLinkOK {
 			slog.Error("failed to link pad", "PadLinkReturn", ret)
 		}
-		slog.Info("pad linked, printing pipeline graph")
 		r.pipeline.DebugBinToDotFile(gst.DebugGraphShowAll, "receiver-pipeline")
 	})
 	if err != nil {
@@ -106,18 +104,18 @@ func (r *Receiver) setupRTPPipeline() error {
 	}
 
 	// Setup RTCP sender
-	sendRTCPSrcPad := rtpbin.GetRequestPad("send_rtcp_src_1")
-	if sendRTCPSrcPad == nil {
-		return errors.New("failed to request RTCP src pad")
-	}
-	sink := r.transport.GetSink(r.rtcpSendID)
-	if err = r.pipeline.Add(sink); err != nil {
-		return err
-	}
-	ret := sendRTCPSrcPad.Link(sink.GetStaticPad("sink"))
-	if ret != gst.PadLinkOK {
-		return errors.New("failed to link sendRTCPSrcPad to transport sink")
-	}
+	// sendRTCPSrcPad := rtpbin.GetRequestPad("send_rtcp_src_0")
+	// if sendRTCPSrcPad == nil {
+	// 	return errors.New("failed to request RTCP src pad")
+	// }
+	// sink := r.transport.GetSink(r.rtcpSendID)
+	// if err = r.pipeline.Add(sink); err != nil {
+	// 	return err
+	// }
+	// ret := sendRTCPSrcPad.Link(sink.GetStaticPad("sink"))
+	// if ret != gst.PadLinkOK {
+	// 	return errors.New("failed to link sendRTCPSrcPad to transport sink")
+	// }
 
 	// Setup RTCP receiver
 	rtcpSource := r.transport.GetSrc(r.rtcpRecvID)

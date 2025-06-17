@@ -1,11 +1,14 @@
 package subcmd
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gstreamer"
+	"github.com/mengelbart/mrtp/roq"
 	"github.com/mengelbart/mrtp/rtp"
 )
 
@@ -15,6 +18,8 @@ type sendFlags struct {
 	rtpPort      int
 	rtcpSendPort int
 	rtcpRecvPort int
+	roqServer    bool
+	roqClient    bool
 }
 
 func Send(cmd string, args []string) error {
@@ -26,6 +31,8 @@ func Send(cmd string, args []string) error {
 	flags.IntVar(&sf.rtpPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
 	flags.IntVar(&sf.rtcpSendPort, "rtcp-send-port", 5001, "UDP port number for outgoing RTCP stream")
 	flags.IntVar(&sf.rtcpRecvPort, "rtcp-recv-port", 5002, "UDP port number for incoming RTCP stream")
+	flags.BoolVar(&sf.roqServer, "roq-server", false, "Run a RoQ server instead of using UDP. UDP related flags are ignored and <local> is used as the address to run the QUIC server on.")
+	flags.BoolVar(&sf.roqClient, "roq-client", false, "Run a RoQ client instead of using UDP. UDP related flags are ignored and <remote> is as the server address to connect to.")
 
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a sender pipeline
@@ -46,25 +53,41 @@ Flags:
 		os.Exit(1)
 	}
 
+	var transport mrtp.Transport
+	var err error
+	if sf.roqClient && sf.roqServer {
+		return errors.New("cannot run RoQ server and client simultaneously")
+	}
+	if sf.roqServer || sf.roqClient {
+		transport, err = roq.New(
+			roq.WithRole(roq.Role(sf.roqServer)),
+			roq.AddSender(0),
+			roq.AddSender(1),
+			roq.AddReceiver(0),
+		)
+	} else {
+		transport, err = gstreamer.NewUDPTransport(sf.remote,
+			map[gstreamer.ID]gstreamer.PortNumber{
+				0: gstreamer.PortNumber(sf.rtpPort),
+				1: gstreamer.PortNumber(sf.rtcpSendPort),
+			},
+			map[gstreamer.ID]gstreamer.PortNumber{
+				0: gstreamer.PortNumber(sf.rtcpRecvPort),
+			},
+		)
+	}
+	if err != nil {
+		return err
+	}
+	if transport == nil {
+		return errors.New("invalid transport configuration")
+	}
+
 	source, err := gstreamer.NewRTPStreamSource("rtp-stream-source")
 	if err != nil {
 		return err
 	}
-
-	transport, err := gstreamer.NewUDPTransport(sf.remote,
-		map[gstreamer.ID]gstreamer.PortNumber{
-			0: gstreamer.PortNumber(sf.rtcpSendPort),
-			1: gstreamer.PortNumber(sf.rtpPort),
-		},
-		map[gstreamer.ID]gstreamer.PortNumber{
-			0: gstreamer.PortNumber(sf.rtcpRecvPort),
-		},
-	)
-	if err != nil {
-		return err
-	}
-
-	sender, err := rtp.NewSender(transport, map[int]*gstreamer.RTPStreamSource{1: source})
+	sender, err := rtp.NewSender(transport, map[int]*gstreamer.RTPStreamSource{0: source})
 	if err != nil {
 		return err
 	}

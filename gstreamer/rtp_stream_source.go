@@ -103,7 +103,11 @@ func NewRTPStreamSource(name string, opts ...RTPStreamSourceOption) (*RTPStreamS
 		if err != nil {
 			return nil, err
 		}
-		if err = pay.SetProperty("pt", s.payloadType); err != nil {
+		if err = SetProperties(pay, map[string]any{
+			"pt":            s.payloadType,
+			"mtu":           uint(1200),
+			"seqnum-offset": 1,
+		}); err != nil {
 			return nil, err
 		}
 		s.elements = append(s.elements, s.encoder, pay)
