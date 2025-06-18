@@ -1,9 +1,9 @@
-package gstreamer
+package media
 
 type Codec int
 
 const (
-	h264 Codec = iota
+	H264 Codec = iota
 )
 
 func (c Codec) ClockRate() int {
@@ -15,7 +15,7 @@ func (c Codec) ClockRate() int {
 
 func (c Codec) String() string {
 	switch c {
-	case h264:
+	case H264:
 		return "H264"
 	}
 	return "unknown"
@@ -23,7 +23,7 @@ func (c Codec) String() string {
 
 func (c Codec) MediaType() string {
 	switch c {
-	case h264:
+	case H264:
 		return "video"
 	}
 	return "video"

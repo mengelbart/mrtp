@@ -7,9 +7,9 @@ import (
 	"os"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/mengelbart/mrtp/rtp"
+	"github.com/mengelbart/mrtp/udp"
 )
 
 type sendFlags struct {
@@ -66,13 +66,13 @@ Flags:
 			roq.AddReceiver(0),
 		)
 	} else {
-		transport, err = gstreamer.NewUDPTransport(sf.remote,
-			map[gstreamer.ID]gstreamer.PortNumber{
-				0: gstreamer.PortNumber(sf.rtpPort),
-				1: gstreamer.PortNumber(sf.rtcpSendPort),
+		transport, err = udp.NewGSTTransport(sf.remote,
+			map[udp.ID]udp.PortNumber{
+				0: udp.PortNumber(sf.rtpPort),
+				1: udp.PortNumber(sf.rtcpSendPort),
 			},
-			map[gstreamer.ID]gstreamer.PortNumber{
-				0: gstreamer.PortNumber(sf.rtcpRecvPort),
+			map[udp.ID]udp.PortNumber{
+				0: udp.PortNumber(sf.rtcpRecvPort),
 			},
 		)
 	}
@@ -83,11 +83,11 @@ Flags:
 		return errors.New("invalid transport configuration")
 	}
 
-	source, err := gstreamer.NewRTPStreamSource("rtp-stream-source")
+	source, err := rtp.NewStreamSource("rtp-stream-source")
 	if err != nil {
 		return err
 	}
-	sender, err := rtp.NewSender(transport, map[int]*gstreamer.RTPStreamSource{0: source})
+	sender, err := rtp.NewSender(transport, map[int]*rtp.StreamSource{0: source})
 	if err != nil {
 		return err
 	}

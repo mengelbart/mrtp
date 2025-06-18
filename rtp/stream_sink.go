@@ -1,10 +1,11 @@
-package gstreamer
+package rtp
 
 import (
 	"errors"
 	"fmt"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/mengelbart/mrtp/media"
 )
 
 type Sink int
@@ -14,18 +15,18 @@ const (
 	filesink
 )
 
-type RTPStreamSinkOption func(*RTPStreamSink) error
+type StreamSinkOption func(*StreamSink) error
 
-func RTPStreamSinkPayloadType(pt int) RTPStreamSinkOption {
-	return func(rs *RTPStreamSink) error {
+func StreamSinkPayloadType(pt int) StreamSinkOption {
+	return func(rs *StreamSink) error {
 		rs.payloadType = pt
 		return nil
 	}
 }
 
-type RTPStreamSink struct {
+type StreamSink struct {
 	sink             Sink
-	codec            Codec
+	codec            media.Codec
 	fileSinkLocation string
 	payloadType      int
 
@@ -33,10 +34,10 @@ type RTPStreamSink struct {
 	elements []*gst.Element
 }
 
-func NewRTPStreamSink(name string, opts ...RTPStreamSinkOption) (*RTPStreamSink, error) {
-	s := &RTPStreamSink{
+func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
+	s := &StreamSink{
 		sink:             autovideosink,
-		codec:            h264,
+		codec:            media.H264,
 		fileSinkLocation: "",
 		payloadType:      96,
 		bin:              gst.NewBin(name),
@@ -51,7 +52,7 @@ func NewRTPStreamSink(name string, opts ...RTPStreamSinkOption) (*RTPStreamSink,
 	var err error
 	var depay *gst.Element
 	switch s.codec {
-	case h264:
+	case media.H264:
 		depay, err = gst.NewElement("rtph264depay")
 		if err != nil {
 			return nil, err
@@ -96,11 +97,11 @@ func NewRTPStreamSink(name string, opts ...RTPStreamSinkOption) (*RTPStreamSink,
 	return s, nil
 }
 
-func (s *RTPStreamSink) Element() *gst.Element {
+func (s *StreamSink) Element() *gst.Element {
 	return s.bin.Element
 }
 
-func (s *RTPStreamSink) GetSinkPad() (*gst.Pad, error) {
+func (s *StreamSink) GetSinkPad() (*gst.Pad, error) {
 	pads, err := s.bin.GetSinkPads()
 	if err != nil {
 		return nil, err
@@ -111,18 +112,18 @@ func (s *RTPStreamSink) GetSinkPad() (*gst.Pad, error) {
 	return pads[0], nil
 }
 
-func (s *RTPStreamSink) ClockRate() int {
+func (s *StreamSink) ClockRate() int {
 	return s.codec.ClockRate()
 }
 
-func (s *RTPStreamSink) EncodingName() string {
+func (s *StreamSink) EncodingName() string {
 	return s.codec.String()
 }
 
-func (s *RTPStreamSink) PayloadType() int {
+func (s *StreamSink) PayloadType() int {
 	return s.payloadType
 }
 
-func (s *RTPStreamSink) MediaType() string {
+func (s *StreamSink) MediaType() string {
 	return s.codec.MediaType()
 }

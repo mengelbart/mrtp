@@ -17,14 +17,14 @@ type Sender struct {
 	rtcpRecvID int
 
 	transport mrtp.Transport
-	streams   map[int]*gstreamer.RTPStreamSource
+	streams   map[int]*StreamSource
 
 	pipeline *gst.Pipeline
 }
 
 func NewSender(
 	transport mrtp.Transport,
-	streams map[int]*gstreamer.RTPStreamSource,
+	streams map[int]*StreamSource,
 	opts ...SenderOption,
 ) (*Sender, error) {
 	pipeline, err := gst.NewPipeline("mrtp-sender")

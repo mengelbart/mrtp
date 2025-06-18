@@ -1,10 +1,12 @@
-package gstreamer
+package rtp
 
 import (
 	"errors"
 	"fmt"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/mengelbart/mrtp/gstreamer"
+	"github.com/mengelbart/mrtp/media"
 )
 
 type Source int
@@ -14,11 +16,11 @@ const (
 	filesrc
 )
 
-type RTPStreamSourceOption func(*RTPStreamSource) error
+type StreamSourceOption func(*StreamSource) error
 
-type RTPStreamSource struct {
+type StreamSource struct {
 	source             Source
-	codec              Codec
+	codec              media.Codec
 	fileSourceLocation string
 	payloadType        uint
 
@@ -27,38 +29,38 @@ type RTPStreamSource struct {
 	encoder  *gst.Element
 }
 
-func RTPStreamSourcePayloadType(pt int) RTPStreamSinkOption {
-	return func(rs *RTPStreamSink) error {
+func StreamSourcePayloadType(pt int) StreamSinkOption {
+	return func(rs *StreamSink) error {
 		rs.payloadType = pt
 		return nil
 	}
 }
 
-func RTPStreamSourceType(source Source) RTPStreamSourceOption {
-	return func(rs *RTPStreamSource) error {
+func StreamSourceType(source Source) StreamSourceOption {
+	return func(rs *StreamSource) error {
 		rs.source = source
 		return nil
 	}
 }
 
-func RTPSTreamSourceCodec(codec Codec) RTPStreamSourceOption {
-	return func(rs *RTPStreamSource) error {
+func STreamSourceCodec(codec media.Codec) StreamSourceOption {
+	return func(rs *StreamSource) error {
 		rs.codec = codec
 		return nil
 	}
 }
 
-func RTPStreamSourceFileSourceLocation(location string) RTPStreamSourceOption {
-	return func(rs *RTPStreamSource) error {
+func StreamSourceFileSourceLocation(location string) StreamSourceOption {
+	return func(rs *StreamSource) error {
 		rs.fileSourceLocation = location
 		return nil
 	}
 }
 
-func NewRTPStreamSource(name string, opts ...RTPStreamSourceOption) (*RTPStreamSource, error) {
-	s := &RTPStreamSource{
+func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, error) {
+	s := &StreamSource{
 		source:             videotestsrc,
-		codec:              h264,
+		codec:              media.H264,
 		fileSourceLocation: "",
 		payloadType:        96,
 		bin:                gst.NewBin(name),
@@ -94,7 +96,7 @@ func NewRTPStreamSource(name string, opts ...RTPStreamSourceOption) (*RTPStreamS
 	s.elements = append(s.elements, cs)
 
 	var pay *gst.Element
-	if s.codec == h264 {
+	if s.codec == media.H264 {
 		s.encoder, err = gst.NewElement("x264enc")
 		if err != nil {
 			return nil, err
@@ -103,7 +105,7 @@ func NewRTPStreamSource(name string, opts ...RTPStreamSourceOption) (*RTPStreamS
 		if err != nil {
 			return nil, err
 		}
-		if err = SetProperties(pay, map[string]any{
+		if err = gstreamer.SetProperties(pay, map[string]any{
 			"pt":            s.payloadType,
 			"mtu":           uint(1200),
 			"seqnum-offset": 1,
@@ -131,15 +133,15 @@ func NewRTPStreamSource(name string, opts ...RTPStreamSourceOption) (*RTPStreamS
 	return s, nil
 }
 
-func (s *RTPStreamSource) Element() *gst.Element {
+func (s *StreamSource) Element() *gst.Element {
 	return s.bin.Element
 }
 
-func (s *RTPStreamSource) Link(element *gst.Element) error {
+func (s *StreamSource) Link(element *gst.Element) error {
 	return s.bin.Link(element)
 }
 
-func (s *RTPStreamSource) LinkPad(pad *gst.Pad) error {
+func (s *StreamSource) LinkPad(pad *gst.Pad) error {
 	pads, err := s.bin.GetSrcPads()
 	if err != nil {
 		return err

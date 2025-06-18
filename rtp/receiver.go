@@ -16,12 +16,12 @@ type Receiver struct {
 	rtcpRecvID int
 
 	transport mrtp.Transport
-	streams   map[int]*gstreamer.RTPStreamSink
+	streams   map[int]*StreamSink
 
 	pipeline *gst.Pipeline
 }
 
-func NewReceiver(transport mrtp.Transport, streams map[int]*gstreamer.RTPStreamSink, opts ...ReceiverOption) (*Receiver, error) {
+func NewReceiver(transport mrtp.Transport, streams map[int]*StreamSink, opts ...ReceiverOption) (*Receiver, error) {
 	pipeline, err := gst.NewPipeline("mrtp-receiver")
 	if err != nil {
 		return nil, err
