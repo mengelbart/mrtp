@@ -61,7 +61,7 @@ func newSender(flow *roq.SendFlow, mode SendMode) (*sender, error) {
 			pkt := buffer.Map(gst.MapRead).AsUint8Slice()
 			if flow.ID() == 0 {
 				b := rtp.Packet{}
-				if err := b.Unmarshal(pkt); err != nil {
+				if err = b.Unmarshal(pkt); err != nil {
 					panic(err)
 				}
 				log.Printf("sending size=%v, seqnr=%v", len(pkt), b.SequenceNumber)

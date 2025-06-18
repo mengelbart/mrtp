@@ -3,8 +3,10 @@ package gstreamer
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/pion/rtp"
 )
 
 type Sink int
@@ -56,6 +58,18 @@ func NewRTPStreamSink(name string, opts ...RTPStreamSinkOption) (*RTPStreamSink,
 		if err != nil {
 			return nil, err
 		}
+		depay.GetStaticPad("sink").AddProbe(gst.PadProbeTypeBuffer, func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
+			buffer := ppi.GetBuffer()
+			mapinfo := buffer.Map(gst.MapRead)
+			defer buffer.Unmap()
+			pkt := mapinfo.AsUint8Slice()
+			b := rtp.Packet{}
+			if err = b.Unmarshal(pkt); err != nil {
+				panic(err)
+			}
+			slog.Info("got rtp packet", "seqnr", b.SequenceNumber, "length", ppi.GetBuffer().GetSize())
+			return gst.PadProbeOK
+		})
 		dec, err := gst.NewElement("avdec_h264")
 		if err != nil {
 			return nil, err
