@@ -9,7 +9,7 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gstreamer"
 
-	"github.com/go-gst/go-gst/gst"
+	"github.com/go-gst/go-gst/pkg/gst"
 )
 
 type Sender struct {
@@ -19,7 +19,7 @@ type Sender struct {
 	transport mrtp.Transport
 	streams   map[int]*gstreamer.RTPStreamSource
 
-	pipeline *gst.Pipeline
+	pipeline gst.Pipeline
 }
 
 func NewSender(
@@ -27,24 +27,24 @@ func NewSender(
 	streams map[int]*gstreamer.RTPStreamSource,
 	opts ...SenderOption,
 ) (*Sender, error) {
-	pipeline, err := gst.NewPipeline("mrtp-sender")
-	if err != nil {
-		return nil, err
+	pipeline := gst.NewPipeline("mrtp-sender")
+	if pipeline == nil {
+		return nil, errors.New("failed to make new pipeline")
 	}
 	s := &Sender{
 		rtcpSendID: 1,
 		rtcpRecvID: 0,
 		transport:  transport,
 		streams:    streams,
-		pipeline:   pipeline,
+		pipeline:   pipeline.(gst.Pipeline),
 	}
 	for _, opt := range opts {
-		if err = opt(s); err != nil {
+		if err := opt(s); err != nil {
 			return nil, err
 		}
 	}
 
-	err = s.setupRTPPipeline()
+	err := s.setupRTPPipeline()
 	if err != nil {
 		return nil, err
 	}

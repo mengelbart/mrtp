@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/go-gst/go-gst/gst"
+	gstnew "github.com/go-gst/go-gst/pkg/gst"
 )
 
 type Source int
@@ -22,7 +23,7 @@ type RTPStreamSource struct {
 	fileSourceLocation string
 	payloadType        uint
 
-	bin      *gst.Bin
+	bin      gstnew.Bin
 	elements []*gst.Element
 	encoder  *gst.Element
 }
@@ -56,12 +57,13 @@ func RTPStreamSourceFileSourceLocation(location string) RTPStreamSourceOption {
 }
 
 func NewRTPStreamSource(name string, opts ...RTPStreamSourceOption) (*RTPStreamSource, error) {
+	gstnew.NewBin(name)
 	s := &RTPStreamSource{
 		source:             videotestsrc,
 		codec:              h264,
 		fileSourceLocation: "",
 		payloadType:        96,
-		bin:                gst.NewBin(name),
+		bin:                gstnew.NewBin(name).(gstnew.Bin),
 		elements:           []*gst.Element{},
 		encoder:            &gst.Element{},
 	}

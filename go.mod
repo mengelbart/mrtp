@@ -4,13 +4,15 @@ go 1.24.1
 
 require (
 	github.com/go-gst/go-glib v1.4.0
-	github.com/go-gst/go-gst v1.4.0
+	github.com/go-gst/go-gst v1.4.1-0.20250519092828-e2ae3be3b208
 	github.com/mengelbart/roq v0.3.1-0.20250618153000-ddcb2596a429
 	github.com/quic-go/quic-go v0.47.0
 )
 
 require (
+	github.com/diamondburned/gotk4 v0.3.1 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
+	github.com/go-gst/go-pointer v0.0.0-20241127163939-ba766f075b4c // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 )
 
@@ -30,3 +32,5 @@ require (
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/tools v0.25.0 // indirect
 )
+
+replace github.com/diamondburned/gotk4 => github.com/rswilli/gotk4 v0.0.0-20250519074043-31f51c6f5601
