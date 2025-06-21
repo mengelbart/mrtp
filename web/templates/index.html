@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/static/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite App</title>
+{{ range .Chunk.CSS }}
+    <link rel="stylesheet" href="/static/{{ . }}" />
+{{ end }}
+{{ range .ImportedChunks }}
+{{ range .CSS }}
+    <link rel="stylesheet" href="/static/{{ . }}" />
+{{ end }}
+{{ end }}
+  </head>
+  <body id="app">
+    <script type="module" src="/static/{{ .Chunk.File }}"></script>
+{{ range .ImportedChunks }}
+    <link rel="modulepreload" href="/static/{{ .File }}" />
+{{ end }}
+ </body>
+</html>

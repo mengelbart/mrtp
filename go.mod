@@ -6,12 +6,18 @@ require (
 	github.com/go-gst/go-glib v1.4.0
 	github.com/go-gst/go-gst v1.4.0
 	github.com/mengelbart/roq v0.3.1-0.20250618153000-ddcb2596a429
-	github.com/quic-go/quic-go v0.47.0
+	github.com/quic-go/quic-go v0.52.0
+	github.com/stretchr/testify v1.10.0
 )
 
 require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/quic-go/qpack v0.5.1 // indirect
+	golang.org/x/text v0.18.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (
@@ -21,12 +27,12 @@ require (
 	github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
 	github.com/pion/rtp v1.8.19
-	go.uber.org/mock v0.4.0 // indirect
+	go.uber.org/mock v0.5.0 // indirect
 	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/mod v0.21.0 // indirect
 	golang.org/x/net v0.29.0 // indirect
-	golang.org/x/sync v0.8.0 // indirect
+	golang.org/x/sync v0.8.0
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/tools v0.25.0 // indirect
 )
