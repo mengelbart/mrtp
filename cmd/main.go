@@ -24,6 +24,7 @@ type command struct {
 var commands = []command{
 	{name: "send", help: "Run sender pipeline", run: subcmd.Send},
 	{name: "receive", help: "Run receiver pipeline", run: subcmd.Receive},
+	{name: "serve", help: "Run web server", run: subcmd.Serve},
 	{name: "help", help: "Print help", run: help},
 }
 
