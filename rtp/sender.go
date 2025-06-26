@@ -97,18 +97,18 @@ func (s *Sender) setupRTPPipeline() error {
 	}
 
 	// Setup RTCP sender
-	// sendRTCPSrcPad := rtpbin.GetRequestPad("send_rtcp_src_0")
-	// if sendRTCPSrcPad == nil {
-	// 	return errors.New("failed to request RTCP src pad")
-	// }
-	// sink := s.transport.GetSink(s.rtcpSendID)
-	// if err = s.pipeline.Add(sink); err != nil {
-	// 	return err
-	// }
-	// ret := sendRTCPSrcPad.Link(sink.GetStaticPad("sink"))
-	// if ret != gst.PadLinkOK {
-	// 	return errors.New("failed to link sendRTCPSrcPad to transport sink")
-	// }
+	sendRTCPSrcPad := rtpbin.GetRequestPad("send_rtcp_src_0")
+	if sendRTCPSrcPad == nil {
+		return errors.New("failed to request RTCP src pad")
+	}
+	sink := s.transport.GetSink(s.rtcpSendID)
+	if err = s.pipeline.Add(sink); err != nil {
+		return err
+	}
+	ret := sendRTCPSrcPad.Link(sink.GetStaticPad("sink"))
+	if ret != gst.PadLinkOK {
+		return errors.New("failed to link sendRTCPSrcPad to transport sink")
+	}
 
 	// Setup RTCP receiver
 	rtcpSource := s.transport.GetSrc(s.rtcpRecvID)
