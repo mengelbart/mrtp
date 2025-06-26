@@ -3,7 +3,6 @@ package roq
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
@@ -21,8 +20,10 @@ const (
 )
 
 type sender struct {
+	mode    SendMode
 	flow    *roq.SendFlow
 	element *gst.Element
+	stream  *roq.RTPSendStream
 }
 
 func newSender(flow *roq.SendFlow, mode SendMode) (*sender, error) {
@@ -43,59 +44,63 @@ func newSender(flow *roq.SendFlow, mode SendMode) (*sender, error) {
 			return nil, err
 		}
 	}
+	sender := &sender{
+		mode:    mode,
+		flow:    flow,
+		element: appsink,
+		stream:  stream,
+	}
 
 	sink := app.SinkFromElement(appsink)
 	sink.SetCallbacks(&app.SinkCallbacks{
 		EOSFunc: func(appSink *app.Sink) {
 			flow.Close()
 		},
-		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
-			sample := appSink.PullSample()
-			if sample == nil {
-				return gst.FlowEOS
-			}
-			buffer := sample.GetBuffer()
-			if buffer == nil {
-				return gst.FlowEOS
-			}
-			pkt := buffer.Map(gst.MapRead).AsUint8Slice()
-			if flow.ID() == 0 {
-				b := rtp.Packet{}
-				if err := b.Unmarshal(pkt); err != nil {
-					panic(err)
-				}
-				log.Printf("sending size=%v, seqnr=%v", len(pkt), b.SequenceNumber)
-			}
-			switch mode {
-			case SendModeDatagram:
-				if err = flow.WriteRTPBytes(pkt); err != nil {
-					return gst.FlowError
-				}
-
-			case SendModeStreamPerPacket:
-				stream, err = flow.NewSendStream(context.TODO())
-				if err != nil {
-					return gst.FlowEOS
-				}
-				if _, err = stream.WriteRTPBytes(pkt); err != nil {
-					return gst.FlowError
-				}
-				_ = stream.Close()
-
-			case SendModeSingleStream:
-				if _, err = stream.WriteRTPBytes(pkt); err != nil {
-					return gst.FlowError
-				}
-
-			default:
-				panic(fmt.Sprintf("unexpected roq.SendMode: %#v", mode))
-			}
-			defer buffer.Unmap()
-			return gst.FlowOK
-		},
+		NewSampleFunc: sender.onNewSample,
 	})
-	return &sender{
-		flow:    flow,
-		element: appsink,
-	}, nil
+	return sender, nil
+}
+
+func (s *sender) onNewSample(appSink *app.Sink) gst.FlowReturn {
+	sample := appSink.PullSample()
+	if sample == nil {
+		return gst.FlowEOS
+	}
+	buffer := sample.GetBuffer()
+	if buffer == nil {
+		return gst.FlowEOS
+	}
+	pkt := buffer.Map(gst.MapRead).AsUint8Slice()
+	if s.flow.ID() == 0 {
+		b := rtp.Packet{}
+		if err := b.Unmarshal(pkt); err != nil {
+			panic(err)
+		}
+	}
+	switch s.mode {
+	case SendModeDatagram:
+		if err := s.flow.WriteRTPBytes(pkt); err != nil {
+			return gst.FlowError
+		}
+
+	case SendModeStreamPerPacket:
+		stream, err := s.flow.NewSendStream(context.TODO())
+		if err != nil {
+			return gst.FlowEOS
+		}
+		if _, err = stream.WriteRTPBytes(pkt); err != nil {
+			return gst.FlowError
+		}
+		_ = stream.Close()
+
+	case SendModeSingleStream:
+		if _, err := s.stream.WriteRTPBytes(pkt); err != nil {
+			return gst.FlowError
+		}
+
+	default:
+		panic(fmt.Sprintf("unexpected roq.SendMode: %#v", s.mode))
+	}
+	defer buffer.Unmap()
+	return gst.FlowOK
 }

@@ -2,7 +2,6 @@ package roq
 
 import (
 	"context"
-	"log"
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
@@ -37,7 +36,6 @@ func newReceiver(flow *roq.ReceiveFlow) (*receiver, error) {
 				if err := b.Unmarshal(pkt[:n]); err != nil {
 					panic(err)
 				}
-				log.Printf("receiving size=%v, seqnr=%v", n, b.SequenceNumber)
 			}
 
 			buffer := gst.NewBufferWithSize(int64(n))
