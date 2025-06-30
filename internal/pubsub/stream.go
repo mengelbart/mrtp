@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-type topic struct {
+type stream struct {
 	name             string
 	nextSubscriberID int
 	lock             sync.Mutex
@@ -16,8 +16,8 @@ type topic struct {
 	closed           chan struct{}
 }
 
-func newTopic(name string) *topic {
-	t := &topic{
+func newStream(name string) *stream {
+	t := &stream{
 		name:             name,
 		nextSubscriberID: 0,
 		lock:             sync.Mutex{},
@@ -34,52 +34,52 @@ func newTopic(name string) *topic {
 	return t
 }
 
-func (t *topic) subscribe(s *Subscriber) int {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	id := t.nextSubscriberID
-	t.nextSubscriberID++
-	t.subscribers[id] = s
+func (s *stream) subscribe(sub *Subscriber) int {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	id := s.nextSubscriberID
+	s.nextSubscriberID++
+	s.subscribers[id] = sub
 	return id
 }
 
-func (t *topic) unsubscribe(id int) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	delete(t.subscribers, id)
+func (s *stream) unsubscribe(id int) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	delete(s.subscribers, id)
 }
 
-func (t *topic) publish(msg Message) error {
+func (s *stream) publish(msg Message) error {
 	select {
-	case t.queue <- msg:
+	case s.queue <- msg:
 		return nil
 	default:
 		return errors.New("queue overflow")
 	}
 }
 
-func (t *topic) process() {
+func (s *stream) process() {
 	for {
 		select {
-		case msg := <-t.queue:
-			t.fanout(msg)
-		case <-t.closed:
-			log.Printf("closing topic: %s", t.name)
+		case msg := <-s.queue:
+			s.fanout(msg)
+		case <-s.closed:
+			log.Printf("closing topic: %s", s.name)
 			return
 		}
 	}
 }
 
-func (t *topic) fanout(msg Message) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	for _, s := range t.subscribers {
-		s.receive(t.name, msg)
+func (s *stream) fanout(msg Message) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	for _, sub := range s.subscribers {
+		sub.receive(s.name, msg)
 	}
 }
 
-func (t *topic) Close() error {
-	close(t.closed)
-	t.wg.Wait()
+func (s *stream) Close() error {
+	close(s.closed)
+	s.wg.Wait()
 	return nil
 }

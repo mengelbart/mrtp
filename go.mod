@@ -5,6 +5,7 @@ go 1.24.1
 require (
 	github.com/go-gst/go-glib v1.4.0
 	github.com/go-gst/go-gst v1.4.0
+	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mengelbart/roq v0.3.1-0.20250618153000-ddcb2596a429
 	github.com/quic-go/quic-go v0.52.0
 	github.com/stretchr/testify v1.10.0

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+
+	"github.com/julienschmidt/httprouter"
 )
 
 //go:embed frontend/dist/*
@@ -22,7 +24,7 @@ var templateFS embed.FS
 
 type Option func(*Handler) error
 
-func Mux(mux *http.ServeMux) Option {
+func Mux(mux *httprouter.Router) Option {
 	return func(h *Handler) error {
 		h.mux = mux
 		return nil
@@ -30,12 +32,12 @@ func Mux(mux *http.ServeMux) Option {
 }
 
 type Handler struct {
-	mux *http.ServeMux
+	mux *httprouter.Router
 }
 
 func NewHandler(opts ...Option) (*Handler, error) {
 	s := &Handler{
-		mux: http.NewServeMux(),
+		mux: httprouter.New(),
 	}
 	for _, opt := range opts {
 		if err := opt(s); err != nil {
@@ -72,20 +74,22 @@ func NewHandler(opts ...Option) (*Handler, error) {
 		}
 		pages[page] = t
 	}
-	s.mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+	s.mux.HandlerFunc("GET", "/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/index", http.StatusFound)
 	})
 
 	for page, tmpl := range pages {
 		slog.Info("setting up handler to render page", "page", page)
-		s.mux.HandleFunc(fmt.Sprintf("GET /%v", page), s.renderHTML(page, m, tmpl))
+		s.mux.HandlerFunc("GET", fmt.Sprintf("/%v", page), s.renderHTML(page, m, tmpl))
 	}
 
 	publicFS, err := fs.Sub(frontendPublicFS, "frontend/dist")
 	if err != nil {
 		return nil, err
 	}
-	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(publicFS))))
+	// Uncomment for net/http.ServeMux version
+	// s.mux.Handler("GET", "/static/", http.StripPrefix("/static/", http.FileServer(http.FS(publicFS))))
+	s.mux.ServeFiles("/static/*filepath", http.FS(publicFS))
 	return s, nil
 }
 

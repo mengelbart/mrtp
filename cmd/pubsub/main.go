@@ -4,25 +4,25 @@ import (
 	"log"
 	"time"
 
-	"github.com/mengelbart/mrtp/pubsub"
+	"github.com/mengelbart/mrtp/internal/pubsub"
 )
 
 func main() {
-	broker := pubsub.NewBroker()
-	defer broker.Close()
+	channel := pubsub.NewChannel()
+	defer channel.Close()
 
-	pub := pubsub.NewPublisher(broker)
+	pub := channel.NewPublisher()
 	if err := pub.Announce("A"); err != nil {
 		panic(err)
 	}
 
-	subscriber1 := pubsub.NewSubscriber(broker)
+	subscriber1 := pubsub.NewSubscriber(channel)
 	subscription1, err := subscriber1.Subscribe("A", 100)
 	if err != nil {
 		panic(err)
 	}
 
-	subscriber2 := pubsub.NewSubscriber(broker)
+	subscriber2 := pubsub.NewSubscriber(channel)
 	subscription2, err := subscriber2.Subscribe("A", 200)
 	if err != nil {
 		panic(err)

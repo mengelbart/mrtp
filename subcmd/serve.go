@@ -4,11 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	nethttp "net/http"
 	"os"
 
-	"github.com/mengelbart/mrtp/http"
-	"github.com/mengelbart/mrtp/web"
+	"github.com/julienschmidt/httprouter"
+	"github.com/mengelbart/mrtp/internal/http"
+	"github.com/mengelbart/mrtp/internal/web"
 )
 
 type serveFlags struct {
@@ -45,7 +45,10 @@ Flags:
 		os.Exit(1)
 	}
 
-	mux := nethttp.NewServeMux()
+	mux := httprouter.New()
+	api := http.NewApi()
+	api.RegisterRoutes(mux)
+
 	_, err := web.NewHandler(web.Mux(mux))
 	if err != nil {
 		return err

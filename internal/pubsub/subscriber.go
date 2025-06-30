@@ -7,23 +7,23 @@ import (
 )
 
 type Subscriber struct {
-	lock   sync.Mutex
-	topics map[string]chan Message
-	broker *Broker
+	lock    sync.Mutex
+	streams map[string]chan Message
+	channel *Channel
 }
 
-func NewSubscriber(b *Broker) *Subscriber {
+func NewSubscriber(c *Channel) *Subscriber {
 	return &Subscriber{
-		lock:   sync.Mutex{},
-		topics: map[string]chan Message{},
-		broker: b,
+		lock:    sync.Mutex{},
+		streams: map[string]chan Message{},
+		channel: c,
 	}
 }
 
-func (s *Subscriber) receive(topic string, msg Message) error {
+func (s *Subscriber) receive(stream string, msg Message) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	t, ok := s.topics[topic]
+	t, ok := s.streams[stream]
 	if !ok {
 		return errors.New("got unexpected message")
 	}
@@ -35,23 +35,23 @@ func (s *Subscriber) receive(topic string, msg Message) error {
 	}
 }
 
-func (s *Subscriber) Subscribe(topic string, queueSize int) (iter.Seq[Message], error) {
+func (s *Subscriber) Subscribe(stream string, queueSize int) (iter.Seq[Message], error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	if _, ok := s.topics[topic]; ok {
+	if _, ok := s.streams[stream]; ok {
 		return nil, errors.New("duplicate subscription")
 	}
 	queue := make(chan Message, queueSize)
-	s.topics[topic] = queue
-	id, err := s.broker.subscribe(topic, s)
+	s.streams[stream] = queue
+	id, err := s.channel.subscribe(stream, s)
 	if err != nil {
-		delete(s.topics, topic)
+		delete(s.streams, stream)
 		return nil, err
 	}
 	return func(yield func(Message) bool) {
 		for msg := range queue {
 			if !yield(msg) {
-				s.broker.unsubscribe(topic, id)
+				s.channel.unsubscribe(stream, id)
 				return
 			}
 		}
