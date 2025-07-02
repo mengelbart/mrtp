@@ -1,4 +1,4 @@
-package rtp
+package gstreamer
 
 import (
 	"errors"

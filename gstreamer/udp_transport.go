@@ -1,22 +1,21 @@
-package udp
+package gstreamer
 
 import (
 	"github.com/go-gst/go-gst/gst"
-	"github.com/mengelbart/mrtp/gstreamer"
 )
 
 type ID int
 type PortNumber int
 
-type GSTTransport struct {
+type UDPTransport struct {
 	bin     *gst.Bin
 	sinks   map[ID]*gst.Element
 	sources map[ID]*gst.Element
 }
 
-func NewGSTTransport(address string, sinks map[ID]PortNumber, sources map[ID]PortNumber) (*GSTTransport, error) {
+func NewUDPTransport(address string, sinks map[ID]PortNumber, sources map[ID]PortNumber) (*UDPTransport, error) {
 	bin := gst.NewBin("udp-transport")
-	t := &GSTTransport{
+	t := &UDPTransport{
 		bin:     bin,
 		sinks:   map[ID]*gst.Element{},
 		sources: map[ID]*gst.Element{},
@@ -39,11 +38,11 @@ func NewGSTTransport(address string, sinks map[ID]PortNumber, sources map[ID]Por
 	return t, nil
 }
 
-func (t *GSTTransport) GetSink(id int) *gst.Element {
+func (t *UDPTransport) GetSink(id int) *gst.Element {
 	return t.sinks[ID(id)]
 }
 
-func (t *GSTTransport) GetSrc(id int) *gst.Element {
+func (t *UDPTransport) GetSrc(id int) *gst.Element {
 	return t.sources[ID(id)]
 }
 
@@ -52,7 +51,7 @@ func makeUDPSinkElement(address string, port PortNumber) (*gst.Element, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = gstreamer.SetProperties(udpsink, map[string]any{
+	if err = SetProperties(udpsink, map[string]any{
 		"async": false,
 		"sync":  false,
 		"host":  address,
@@ -68,7 +67,7 @@ func makeUDPSourceElement(address string, port PortNumber) (*gst.Element, error)
 	if err != nil {
 		return nil, err
 	}
-	if err = gstreamer.SetProperties(udpsrc, map[string]any{
+	if err = SetProperties(udpsrc, map[string]any{
 		"address": address,
 		"port":    port,
 	}); err != nil {

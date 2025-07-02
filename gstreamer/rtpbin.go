@@ -1,12 +1,10 @@
-package rtp
+package gstreamer
 
 import (
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
-
-	"github.com/mengelbart/mrtp/gstreamer"
 
 	"github.com/go-gst/go-gst/gst"
 )
@@ -51,7 +49,7 @@ func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
 }
 
 func (r *RTPBin) Run() error {
-	return gstreamer.Run(r.pipeline)
+	return runPipeline(r.pipeline)
 }
 
 func (r *RTPBin) setupRTPPipeline() error {

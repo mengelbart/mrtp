@@ -13,7 +13,6 @@ import (
 	"math/big"
 
 	"github.com/go-gst/go-gst/gst"
-	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/qlog"
 	"github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
@@ -22,8 +21,6 @@ import (
 )
 
 const roqALPN = "roq-09"
-
-var _ mrtp.Transport = (*Transport)(nil)
 
 type Role bool
 

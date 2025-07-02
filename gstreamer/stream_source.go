@@ -1,4 +1,4 @@
-package rtp
+package gstreamer
 
 import (
 	"errors"
@@ -6,7 +6,6 @@ import (
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/gstreamer"
 )
 
 type Source int
@@ -105,7 +104,7 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 		if err != nil {
 			return nil, err
 		}
-		if err = gstreamer.SetProperties(pay, map[string]any{
+		if err = SetProperties(pay, map[string]any{
 			"pt":            s.payloadType,
 			"mtu":           uint(1200),
 			"seqnum-offset": 1,

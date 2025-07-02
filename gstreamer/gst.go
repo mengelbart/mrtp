@@ -7,7 +7,7 @@ import (
 	"github.com/go-gst/go-gst/gst"
 )
 
-func Run(pipeline *gst.Pipeline) error {
+func runPipeline(pipeline *gst.Pipeline) error {
 	mainloop := glib.NewMainLoop(glib.MainContextDefault(), false)
 
 	pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
