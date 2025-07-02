@@ -30,8 +30,8 @@ func Receive(cmd string, args []string) error {
 	flags.UintVar(&rf.rtpRecvPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
 	flags.UintVar(&rf.rtcpSendPort, "rtcp-send-port", 5002, "UDP port number for outgoing RTCP stream")
 	flags.UintVar(&rf.rtcpRecvPort, "rtcp-recv-port", 5001, "UDP port number for incoming RTCP stream")
-	flags.BoolVar(&rf.roqServer, "roq-server", false, "Run a RoQ server instead of using UDP. UDP related flags are ignored and <local> is used as the address to run the QUIC server on.")
-	flags.BoolVar(&rf.roqClient, "roq-client", false, "Run a RoQ client instead of using UDP. UDP related flags are ignored and <remote> is as the server address to connect to.")
+	flags.BoolVar(&rf.roqServer, "roq-server", false, "Use RoQ server transport. Port flags are used as flow IDs and <local> is used as the address to run the QUIC server on.")
+	flags.BoolVar(&rf.roqClient, "roq-client", false, "Use RoQ client transport. Port flags are used as flow IDs and <remote> is as the server address to connect to.")
 
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a receiver pipeline
@@ -109,7 +109,6 @@ Flags:
 		if err = receiver.ReceiveRTCPFrom(rtcpSrc); err != nil {
 			return err
 		}
-
 	} else {
 		rtpSrc, err := gstreamer.NewUDPSrc(rf.local, uint32(rf.rtpRecvPort))
 		if err != nil {

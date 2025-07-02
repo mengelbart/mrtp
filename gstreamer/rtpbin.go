@@ -83,7 +83,6 @@ func (r *RTPBin) setupRTPPipeline() error {
 			if ret := pad.Link(sinkPad); ret != gst.PadLinkOK {
 				slog.Error("failed to link pad", "PadLinkReturn", ret)
 			}
-			r.pipeline.DebugBinToDotFile(gst.DebugGraphShowAll, "receiver-pipeline")
 		}
 		if strings.HasPrefix(pad.GetName(), "send_rtp_src_") {
 			var id int
@@ -102,7 +101,6 @@ func (r *RTPBin) setupRTPPipeline() error {
 			if ret != gst.PadLinkOK {
 				slog.Info("failed to link pad", "PadLinkReturn", ret)
 			}
-			r.pipeline.DebugBinToDotFile(gst.DebugGraphShowAll, "sender-pipeline")
 		}
 	})
 	if err != nil {
@@ -217,6 +215,12 @@ func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element) error {
 	sourcePad := capsfilter.GetStaticPad("src")
 	if ret := sourcePad.Link(recvRTPSinkPad); ret != gst.PadLinkOK {
 		return fmt.Errorf("failed to link transport source to recvRTPSinkPad: %v", err)
+	}
+	if !src.SyncStateWithParent() {
+		return errors.New("failed to syncrhonize pipeline state")
+	}
+	if !capsfilter.SyncStateWithParent() {
+		return errors.New("failed to syncrhonize pipeline state")
 	}
 	return nil
 }

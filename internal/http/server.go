@@ -74,9 +74,33 @@ func CertificateKeyFile(file string) Option {
 	}
 }
 
+func ListenH2(enabled bool) Option {
+	return func(s *Server) error {
+		s.enableH2 = enabled
+		return nil
+	}
+}
+
+func ListenH3(enabled bool) Option {
+	return func(s *Server) error {
+		s.enableH3 = enabled
+		return nil
+	}
+}
+
+func RedirectH1ToH3(enabled bool) Option {
+	return func(s *Server) error {
+		s.redirectH1 = enabled
+		return nil
+	}
+}
+
 type Server struct {
-	certFile string
-	keyFile  string
+	certFile   string
+	keyFile    string
+	enableH2   bool
+	enableH3   bool
+	redirectH1 bool
 
 	logger        *slog.Logger
 	requestLogger *slog.Logger
@@ -94,6 +118,9 @@ func NewServer(opts ...Option) (*Server, error) {
 	s := &Server{
 		certFile:      "",
 		keyFile:       "",
+		enableH2:      true,
+		enableH3:      true,
+		redirectH1:    true,
 		logger:        slog.Default(),
 		requestLogger: nil,
 		handler:       http.DefaultServeMux,
@@ -108,28 +135,42 @@ func NewServer(opts ...Option) (*Server, error) {
 			return nil, err
 		}
 	}
-	if s.tlsConfig.Certificates == nil {
-		cert, err := tls.LoadX509KeyPair(s.certFile, s.keyFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read TLS certificate or key: %v", err)
+	if s.enableH2 || s.enableH3 {
+		if s.tlsConfig.Certificates == nil {
+			cert, err := tls.LoadX509KeyPair(s.certFile, s.keyFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read TLS certificate or key: %v", err)
+			}
+			s.tlsConfig.Certificates = []tls.Certificate{cert}
 		}
-		s.tlsConfig.Certificates = []tls.Certificate{cert}
+		s.h2.TLSConfig = s.tlsConfig
+		s.h3.TLSConfig = s.tlsConfig
 	}
-	s.h2.TLSConfig = s.tlsConfig
-	s.h3.TLSConfig = s.tlsConfig
 
-	_, port, err := net.SplitHostPort(s.h2.Addr)
-	if err != nil {
-		return nil, err
+	if s.enableH3 {
+		s.handler = s.setAltSvcHeader(s.handler)
 	}
-	s.h1.Handler = s.setAltSvcHeader(s.redirectHTTP(port))
 
-	s.handler = s.setAltSvcHeader(s.handler)
 	if s.requestLogger != nil {
 		s.handler = s.logRequest(s.handler)
 	}
-	s.h2.Handler = s.handler
-	s.h3.Handler = s.handler
+
+	s.h1.Handler = s.handler
+	if s.enableH2 {
+		s.h2.Handler = s.handler
+	}
+	if s.enableH3 {
+		s.h3.Handler = s.handler
+	}
+
+	if s.redirectH1 {
+		_, port, err := net.SplitHostPort(s.h2.Addr)
+		if err != nil {
+			return nil, err
+		}
+
+		s.h1.Handler = s.redirectHTTP(port)
+	}
 
 	return s, nil
 }
@@ -140,14 +181,18 @@ func (s *Server) ListenAndServe() error {
 		s.logger.Info("serving HTTP/1.1", "address", s.h1.Addr)
 		return s.h1.ListenAndServe()
 	})
-	eg.Go(func() error {
-		s.logger.Info("serving HTTP/2", "address", s.h2.Addr)
-		return s.h2.ListenAndServeTLS("", "")
-	})
-	eg.Go(func() error {
-		s.logger.Info("serving HTTP/3", "address", s.h3.Addr)
-		return s.ListenAndServeQUIC(ctx)
-	})
+	if s.enableH2 {
+		eg.Go(func() error {
+			s.logger.Info("serving HTTP/2", "address", s.h2.Addr)
+			return s.h2.ListenAndServeTLS("", "")
+		})
+	}
+	if s.enableH3 {
+		eg.Go(func() error {
+			s.logger.Info("serving HTTP/3", "address", s.h3.Addr)
+			return s.listenAndServeQUIC(ctx)
+		})
+	}
 	eg.Go(func() error {
 		<-ctx.Done()
 		err := context.Cause(ctx)
@@ -177,7 +222,7 @@ func (s *Server) ListenAndServe() error {
 	return eg.Wait()
 }
 
-func (s *Server) ListenAndServeQUIC(ctx context.Context) error {
+func (s *Server) listenAndServeQUIC(ctx context.Context) error {
 	addr, err := net.ResolveUDPAddr("udp", s.h3.Addr)
 	if err != nil {
 		return err
