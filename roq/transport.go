@@ -7,12 +7,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"io"
 	"log"
 	"math/big"
 
-	"github.com/go-gst/go-gst/gst"
 	"github.com/mengelbart/qlog"
 	"github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
@@ -46,40 +44,15 @@ func WithRole(r Role) Option {
 	}
 }
 
-func AddSender(flowID uint64) Option {
-	return func(t *Transport) error {
-		if _, ok := t.senders[flowID]; ok {
-			return errors.New("duplicate sender flow ID")
-		}
-		t.senders[flowID] = nil
-		return nil
-	}
-}
-
-func AddReceiver(flowID uint64) Option {
-	return func(t *Transport) error {
-		if _, ok := t.receivers[flowID]; ok {
-			return errors.New("duplicate receiver flow ID")
-		}
-		t.receivers[flowID] = nil
-		return nil
-	}
-}
-
 type Transport struct {
-	role Role
-
-	session   *roq.Session
-	receivers map[uint64]*receiver
-	senders   map[uint64]*sender
+	role    Role
+	session *roq.Session
 }
 
 func New(opts ...Option) (*Transport, error) {
 	t := &Transport{
-		role:      RoleServer,
-		session:   nil,
-		receivers: map[uint64]*receiver{},
-		senders:   map[uint64]*sender{},
+		role:    RoleServer,
+		session: nil,
 	}
 
 	for _, opt := range opts {
@@ -126,49 +99,20 @@ func New(opts ...Option) (*Transport, error) {
 		return nil, err
 	}
 
-	for id := range t.senders {
-		flow, err := s.NewSendFlow(id)
-		if err != nil {
-			return nil, err
-		}
-		s, err := newSender(flow, SendModeDatagram)
-		if err != nil {
-			return nil, err
-		}
-		t.senders[id] = s
-	}
-	for id := range t.receivers {
-		flow, err := s.NewReceiveFlow(id)
-		if err != nil {
-			return nil, err
-		}
-		r, err := newReceiver(flow)
-		if err != nil {
-			return nil, err
-		}
-		t.receivers[id] = r
-	}
-
 	t.session = s
 	return t, nil
 }
 
-// GetSink implements mrtp.Transport.
-func (t *Transport) GetSink(id int) *gst.Element {
-	s, ok := t.senders[uint64(id)]
-	if !ok {
-		return nil
+func (t *Transport) NewSendFlow(id uint64) (*Sender, error) {
+	flow, err := t.session.NewSendFlow(id)
+	if err != nil {
+		return nil, err
 	}
-	return s.element
+	return newSender(flow, SendModeDatagram)
 }
 
-// GetSrc implements mrtp.Transport.
-func (t *Transport) GetSrc(id int) *gst.Element {
-	r, ok := t.receivers[uint64(id)]
-	if !ok {
-		return nil
-	}
-	return r.element
+func (t *Transport) NewReceiveFlow(id uint64) (*roq.ReceiveFlow, error) {
+	return t.session.NewReceiveFlow(id)
 }
 
 func accept(ctx context.Context, addr string, tlsConfig *tls.Config, quicConfig *quic.Config) (*roq.QUICGoConnection, error) {

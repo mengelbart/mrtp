@@ -7,8 +7,6 @@ import (
 	"slices"
 
 	"github.com/mengelbart/mrtp/subcmd"
-
-	"github.com/go-gst/go-gst/gst"
 )
 
 type rootFlags struct {
@@ -29,8 +27,6 @@ var commands = []command{
 }
 
 func main() {
-	gst.Init(nil)
-
 	var rf rootFlags
 
 	flag.BoolVar(&rf.verbose, "verbose", false, "enable verbose logging")

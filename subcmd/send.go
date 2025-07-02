@@ -4,9 +4,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 
-	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/roq"
 )
@@ -14,9 +14,9 @@ import (
 type sendFlags struct {
 	remote       string
 	local        string
-	rtpPort      int
-	rtcpSendPort int
-	rtcpRecvPort int
+	rtpSendPort  uint
+	rtcpSendPort uint
+	rtcpRecvPort uint
 	roqServer    bool
 	roqClient    bool
 }
@@ -27,9 +27,9 @@ func Send(cmd string, args []string) error {
 	flags := flag.NewFlagSet("send", flag.ExitOnError)
 	flags.StringVar(&sf.remote, "remote", "127.0.0.1", "Remote UDP Address")
 	flags.StringVar(&sf.local, "local", "127.0.0.1", "Local UDP Address")
-	flags.IntVar(&sf.rtpPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
-	flags.IntVar(&sf.rtcpSendPort, "rtcp-send-port", 5001, "UDP port number for outgoing RTCP stream")
-	flags.IntVar(&sf.rtcpRecvPort, "rtcp-recv-port", 5002, "UDP port number for incoming RTCP stream")
+	flags.UintVar(&sf.rtpSendPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
+	flags.UintVar(&sf.rtcpSendPort, "rtcp-send-port", 5001, "UDP port number for outgoing RTCP stream")
+	flags.UintVar(&sf.rtcpRecvPort, "rtcp-recv-port", 5002, "UDP port number for incoming RTCP stream")
 	flags.BoolVar(&sf.roqServer, "roq-server", false, "Run a RoQ server instead of using UDP. UDP related flags are ignored and <local> is used as the address to run the QUIC server on.")
 	flags.BoolVar(&sf.roqClient, "roq-client", false, "Run a RoQ client instead of using UDP. UDP related flags are ignored and <remote> is as the server address to connect to.")
 
@@ -52,34 +52,17 @@ Flags:
 		os.Exit(1)
 	}
 
-	var transport mrtp.Transport
-	var err error
+	for _, p := range []uint{
+		sf.rtcpRecvPort,
+		sf.rtcpSendPort,
+		sf.rtpSendPort,
+	} {
+		if p > math.MaxUint32 {
+			return fmt.Errorf("invalid port number: %v", p)
+		}
+	}
 	if sf.roqClient && sf.roqServer {
 		return errors.New("cannot run RoQ server and client simultaneously")
-	}
-	if sf.roqServer || sf.roqClient {
-		transport, err = roq.New(
-			roq.WithRole(roq.Role(sf.roqServer)),
-			roq.AddSender(0),
-			roq.AddSender(1),
-			roq.AddReceiver(0),
-		)
-	} else {
-		transport, err = gstreamer.NewUDPTransport(sf.remote,
-			map[gstreamer.ID]gstreamer.PortNumber{
-				0: gstreamer.PortNumber(sf.rtpPort),
-				1: gstreamer.PortNumber(sf.rtcpSendPort),
-			},
-			map[gstreamer.ID]gstreamer.PortNumber{
-				0: gstreamer.PortNumber(sf.rtcpRecvPort),
-			},
-		)
-	}
-	if err != nil {
-		return err
-	}
-	if transport == nil {
-		return errors.New("invalid transport configuration")
 	}
 
 	sender, err := gstreamer.NewRTPBin()
@@ -92,14 +75,68 @@ Flags:
 		return err
 	}
 
-	if err = sender.SendRTCPForStreamToGst(0, transport.GetSink(1)); err != nil {
-		return err
-	}
-	if err = sender.SendRTPStreamToGst(0, source, transport.GetSink(0)); err != nil {
-		return err
-	}
-	if err = sender.ReceiveRTCPFromGst(transport.GetSrc(0)); err != nil {
-		return err
+	if sf.roqServer || sf.roqClient {
+		transport, err := roq.New(
+			roq.WithRole(roq.Role(sf.roqServer)),
+		)
+		if err != nil {
+			return err
+		}
+
+		rtpSink, err := transport.NewSendFlow(uint64(sf.rtpSendPort))
+		if err != nil {
+			return err
+		}
+		if err = sender.AddRTPTransportSink(0, rtpSink); err != nil {
+			return err
+		}
+		if err = sender.AddRTPStreamGst(0, source); err != nil {
+			return err
+		}
+
+		rtcpSink, err := transport.NewSendFlow(uint64(sf.rtcpSendPort))
+		if err != nil {
+			return err
+		}
+		if err = sender.SendRTCPForStream(0, rtcpSink); err != nil {
+			return err
+		}
+
+		rtcpSrc, err := transport.NewReceiveFlow(uint64(sf.rtcpRecvPort))
+		if err != nil {
+			return err
+		}
+		if err = sender.ReceiveRTCPFrom(rtcpSrc); err != nil {
+			return err
+		}
+
+	} else {
+		rtcpSink, err := gstreamer.NewUDPSink(sf.remote, uint32(sf.rtcpSendPort))
+		if err != nil {
+			return err
+		}
+		if err = sender.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
+			return err
+		}
+
+		rtpSink, err := gstreamer.NewUDPSink(sf.remote, uint32(sf.rtpSendPort))
+		if err != nil {
+			return err
+		}
+		if err = sender.AddRTPTransportSinkGst(0, rtpSink.GetGstElement()); err != nil {
+			return err
+		}
+		if err = sender.AddRTPStreamGst(0, source); err != nil {
+			return err
+		}
+
+		rtcpSrc, err := gstreamer.NewUDPSrc(sf.local, uint32(sf.rtcpRecvPort))
+		if err != nil {
+			return err
+		}
+		if err = sender.ReceiveRTCPFromGst(rtcpSrc.GetGstElement()); err != nil {
+			return err
+		}
 	}
 
 	return sender.Run()

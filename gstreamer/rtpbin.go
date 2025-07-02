@@ -3,10 +3,12 @@ package gstreamer
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/go-gst/go-gst/gst/app"
 )
 
 type RTPBin struct {
@@ -18,7 +20,7 @@ type RTPBin struct {
 }
 
 func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
-	pipeline, err := gst.NewPipeline("mrtp-rtpbin")
+	pipeline, err := gst.NewPipeline("mrtp-rtp-bin-pipeline")
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +116,42 @@ func (r *RTPBin) setupRTPPipeline() error {
 	return nil
 }
 
-func (r *RTPBin) SendRTCPForStreamToGst(id int, sink *gst.Element) error {
+func (r *RTPBin) AddRTPTransportSink(id int, wc io.WriteCloser) error {
+	e, err := getAppSinkWithWriteCloser(wc)
+	if err != nil {
+		return err
+	}
+	return r.AddRTPTransportSinkGst(id, e)
+}
+
+func (r *RTPBin) AddRTPTransportSinkGst(id int, sink *gst.Element) error {
+	if _, ok := r.transports[id]; ok {
+		return errors.New("duplicate stream id")
+	}
+	r.transports[id] = sink
+	return nil
+}
+
+func (r *RTPBin) AddRTPStreamGst(id int, src *StreamSource) error {
+	if err := r.pipeline.Add(src.Element()); err != nil {
+		return err
+	}
+	sendRTPSinkPad := r.rtpbin.GetRequestPad(fmt.Sprintf("send_rtp_sink_%d", id))
+	if sendRTPSinkPad == nil {
+		return errors.New("failed to create sendRTPSinkPad")
+	}
+	return src.LinkPad(sendRTPSinkPad)
+}
+
+func (r *RTPBin) SendRTCPForStream(id int, wc io.WriteCloser) error {
+	e, err := getAppSinkWithWriteCloser(wc)
+	if err != nil {
+		return err
+	}
+	return r.SendRTCPForStreamGst(id, e)
+}
+
+func (r *RTPBin) SendRTCPForStreamGst(id int, sink *gst.Element) error {
 	sendRTCPSrcPad := r.rtpbin.GetRequestPad(fmt.Sprintf("send_rtcp_src_%v", id))
 	if sendRTCPSrcPad == nil {
 		return errors.New("failed to request RTCP src pad")
@@ -129,19 +166,27 @@ func (r *RTPBin) SendRTCPForStreamToGst(id int, sink *gst.Element) error {
 	return nil
 }
 
-func (r *RTPBin) ReceiveRTCPFromGst(src *gst.Element) error {
-	if err := r.pipeline.Add(src); err != nil {
-		return err
-	}
-	return src.LinkFiltered(r.rtpbin, gst.NewCapsFromString("application/x-rtcp"))
-}
-
-func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element, sink *StreamSink) error {
+func (r *RTPBin) AddRTPReceiveStreamSinkGst(id int, sink *StreamSink) error {
 	if _, ok := r.streams[id]; ok {
 		return errors.New("duplicate stream id")
 	}
 	r.streams[id] = sink
+	return nil
+}
 
+func (r *RTPBin) ReceiveRTPStreamFrom(id int, rc io.ReadCloser) error {
+	e, err := getAppSrcWithReadCloser(rc)
+	if err != nil {
+		return err
+	}
+	return r.ReceiveRTPStreamFromGst(id, e)
+}
+
+func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element) error {
+	sink, ok := r.streams[id]
+	if !ok {
+		return errors.New("unknown stream, did you forget to call AddRTPStreamSink first?")
+	}
 	if err := r.pipeline.Add(src); err != nil {
 		return err
 	}
@@ -176,18 +221,86 @@ func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element, sink *StreamS
 	return nil
 }
 
-func (r *RTPBin) SendRTPStreamToGst(id int, src *StreamSource, sink *gst.Element) error {
-	if _, ok := r.transports[id]; ok {
-		return errors.New("duplicate stream id")
-	}
-	r.transports[id] = sink
-
-	if err := r.pipeline.Add(src.Element()); err != nil {
+func (r *RTPBin) ReceiveRTCPFrom(rc io.ReadCloser) error {
+	e, err := getAppSrcWithReadCloser(rc)
+	if err != nil {
 		return err
 	}
-	sendRTPSinkPad := r.rtpbin.GetRequestPad(fmt.Sprintf("send_rtp_sink_%d", id))
-	if sendRTPSinkPad == nil {
-		return errors.New("failed to create sendRTPSinkPad")
+	return r.ReceiveRTCPFromGst(e)
+}
+
+func (r *RTPBin) ReceiveRTCPFromGst(src *gst.Element) error {
+	if err := r.pipeline.Add(src); err != nil {
+		return err
 	}
-	return src.LinkPad(sendRTPSinkPad)
+	return src.LinkFiltered(r.rtpbin, gst.NewCapsFromString("application/x-rtcp"))
+}
+
+func getAppSinkWithWriteCloser(wc io.WriteCloser) (*gst.Element, error) {
+	e, err := gst.NewElementWithProperties(
+		"appsink",
+		map[string]any{
+			"async": false,
+			"sync":  false,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	appsink := app.SinkFromElement(e)
+	appsink.SetCallbacks(&app.SinkCallbacks{
+		EOSFunc: func(appSink *app.Sink) {
+			wc.Close()
+		},
+		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
+			sample := appSink.PullSample()
+			if sample == nil {
+				return gst.FlowEOS
+			}
+			buffer := sample.GetBuffer()
+			if buffer == nil {
+				return gst.FlowEOS
+			}
+			pkt := buffer.Map(gst.MapRead).AsUint8Slice()
+			defer buffer.Unmap()
+
+			if _, err := wc.Write(pkt); err != nil {
+				return gst.FlowError
+			}
+			return gst.FlowOK
+		},
+	})
+	return e, nil
+}
+
+func getAppSrcWithReadCloser(rc io.ReadCloser) (*gst.Element, error) {
+	e, err := gst.NewElementWithProperties(
+		"appsrc",
+		map[string]any{
+			"format": 3,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	src := app.SrcFromElement(e)
+	src.SetStreamType(app.AppStreamTypeStream)
+	src.SetCallbacks(&app.SourceCallbacks{
+		NeedDataFunc: func(src *app.Source, length uint) {
+			buffer := make([]byte, length)
+			n, err := rc.Read(buffer)
+			if err != nil {
+				src.EndStream()
+				return
+			}
+			gstBuffer := gst.NewBufferWithSize(int64(n))
+			gstBuffer.Map(gst.MapWrite).WriteData(buffer[:n])
+			defer gstBuffer.Unmap()
+			src.PushBuffer(gstBuffer)
+		},
+		EnoughDataFunc: func(src *app.Source) {
+			rc.Close()
+		},
+	})
+	return e, nil
 }

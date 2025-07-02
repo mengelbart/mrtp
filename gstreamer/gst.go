@@ -7,6 +7,10 @@ import (
 	"github.com/go-gst/go-gst/gst"
 )
 
+func init() {
+	gst.Init(nil)
+}
+
 func runPipeline(pipeline *gst.Pipeline) error {
 	mainloop := glib.NewMainLoop(glib.MainContextDefault(), false)
 
