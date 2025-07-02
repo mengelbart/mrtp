@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/go-gst/go-gst/gst"
-	"github.com/mengelbart/mrtp/media"
+	"github.com/mengelbart/mrtp"
 )
 
 type Sink int
@@ -26,7 +26,7 @@ func StreamSinkPayloadType(pt int) StreamSinkOption {
 
 type StreamSink struct {
 	sink             Sink
-	codec            media.Codec
+	codec            mrtp.Codec
 	fileSinkLocation string
 	payloadType      int
 
@@ -37,7 +37,7 @@ type StreamSink struct {
 func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 	s := &StreamSink{
 		sink:             autovideosink,
-		codec:            media.H264,
+		codec:            mrtp.H264,
 		fileSinkLocation: "",
 		payloadType:      96,
 		bin:              gst.NewBin(name),
@@ -52,7 +52,7 @@ func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 	var err error
 	var depay *gst.Element
 	switch s.codec {
-	case media.H264:
+	case mrtp.H264:
 		depay, err = gst.NewElement("rtph264depay")
 		if err != nil {
 			return nil, err

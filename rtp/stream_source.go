@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/go-gst/go-gst/gst"
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gstreamer"
-	"github.com/mengelbart/mrtp/media"
 )
 
 type Source int
@@ -20,7 +20,7 @@ type StreamSourceOption func(*StreamSource) error
 
 type StreamSource struct {
 	source             Source
-	codec              media.Codec
+	codec              mrtp.Codec
 	fileSourceLocation string
 	payloadType        uint
 
@@ -43,7 +43,7 @@ func StreamSourceType(source Source) StreamSourceOption {
 	}
 }
 
-func STreamSourceCodec(codec media.Codec) StreamSourceOption {
+func STreamSourceCodec(codec mrtp.Codec) StreamSourceOption {
 	return func(rs *StreamSource) error {
 		rs.codec = codec
 		return nil
@@ -60,7 +60,7 @@ func StreamSourceFileSourceLocation(location string) StreamSourceOption {
 func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, error) {
 	s := &StreamSource{
 		source:             videotestsrc,
-		codec:              media.H264,
+		codec:              mrtp.H264,
 		fileSourceLocation: "",
 		payloadType:        96,
 		bin:                gst.NewBin(name),
@@ -96,7 +96,7 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 	s.elements = append(s.elements, cs)
 
 	var pay *gst.Element
-	if s.codec == media.H264 {
+	if s.codec == mrtp.H264 {
 		s.encoder, err = gst.NewElement("x264enc")
 		if err != nil {
 			return nil, err
