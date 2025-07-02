@@ -83,13 +83,25 @@ Flags:
 		return errors.New("invalid transport configuration")
 	}
 
+	sender, err := rtp.NewRTPBin()
+	if err != nil {
+		return err
+	}
+
 	source, err := rtp.NewStreamSource("rtp-stream-source")
 	if err != nil {
 		return err
 	}
-	sender, err := rtp.NewSender(transport, map[int]*rtp.StreamSource{0: source})
-	if err != nil {
+
+	if err = sender.SendRTCPForStreamToGst(0, transport.GetSink(1)); err != nil {
 		return err
 	}
+	if err = sender.SendRTPStreamToGst(0, source, transport.GetSink(0)); err != nil {
+		return err
+	}
+	if err = sender.ReceiveRTCPFromGst(transport.GetSrc(0)); err != nil {
+		return err
+	}
+
 	return sender.Run()
 }
