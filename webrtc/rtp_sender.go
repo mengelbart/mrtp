@@ -16,3 +16,9 @@ func (s *RTPSender) Write(pkt []byte) (int, error) {
 func (s *RTPSender) Close() error {
 	return s.sender.Stop()
 }
+
+func (s *RTPSender) RTCPReceiver() *RTCPReceiver {
+	return &RTCPReceiver{
+		receiver: s.sender,
+	}
+}

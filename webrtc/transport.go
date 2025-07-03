@@ -2,10 +2,10 @@ package webrtc
 
 import (
 	"errors"
-	"io"
 	"log/slog"
 
 	"github.com/pion/interceptor"
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -39,9 +39,9 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 		return nil, err
 	}
 	ir := &interceptor.Registry{}
-	if err := webrtc.RegisterDefaultInterceptors(me, ir); err != nil {
-		return nil, err
-	}
+	// if err := webrtc.RegisterDefaultInterceptors(me, ir); err != nil {
+	// 	return nil, err
+	// }
 	p, err := webrtc.NewAPI(
 		webrtc.WithSettingEngine(se),
 		webrtc.WithMediaEngine(me),
@@ -157,7 +157,7 @@ func (t *Transport) AddRemoteVideoTrack() error {
 	return err
 }
 
-func (t *Transport) AddLocalTrack() (io.WriteCloser, error) {
+func (t *Transport) AddLocalTrack() (*RTPSender, error) {
 	track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{
 		MimeType:     webrtc.MimeTypeH264,
 		ClockRate:    0,
@@ -176,4 +176,17 @@ func (t *Transport) AddLocalTrack() (io.WriteCloser, error) {
 		track:  track,
 		sender: sender,
 	}, nil
+}
+
+// Write sends an RTCP packet to the peer
+func (t *Transport) Write(pkt []byte) (int, error) {
+	pkts, err := rtcp.Unmarshal(pkt)
+	if err != nil {
+		return 0, err
+	}
+	return len(pkt), t.pc.WriteRTCP(pkts)
+}
+
+func (t *Transport) Close() error {
+	return t.pc.Close()
 }

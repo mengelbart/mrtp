@@ -50,15 +50,18 @@ Usage:
 
 	signaler := webrtc.NewHTTPClientSignaler(fmt.Sprintf("http://%v:%v", wf.remoteAddr, wf.remotePort))
 	transport, err := webrtc.NewTransport(signaler, wf.offer, webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
-		sink, err := gstreamer.NewStreamSink("rtp-stream-sink", gstreamer.StreamSinkPayloadType(int(receiver.PayloadType())))
-		if err != nil {
+		sink, newSinkErr := gstreamer.NewStreamSink("rtp-stream-sink", gstreamer.StreamSinkPayloadType(int(receiver.PayloadType())))
+		if newSinkErr != nil {
 			panic(err)
 		}
-		if pipeline.AddRTPReceiveStreamSinkGst(0, sink); err != nil {
-			panic(err)
+		if pipelineErr := pipeline.AddRTPReceiveStreamSinkGst(0, sink); pipelineErr != nil {
+			panic(pipelineErr)
 		}
-		if err := pipeline.ReceiveRTPStreamFrom(0, receiver); err != nil {
-			panic(err)
+		if pipelineErr := pipeline.ReceiveRTPStreamFrom(0, receiver); pipelineErr != nil {
+			panic(pipelineErr)
+		}
+		if pipelineErr := pipeline.ReceiveRTCPFrom(receiver.RTCPReceiver()); pipelineErr != nil {
+			panic(pipelineErr)
 		}
 	}))
 	if err != nil {
@@ -83,24 +86,32 @@ Usage:
 	go s.ListenAndServe()
 
 	if wf.sendVideoTrack {
-		rtpSink, err := transport.AddLocalTrack()
+		var rtpSink *webrtc.RTPSender
+		rtpSink, err = transport.AddLocalTrack()
 		if err != nil {
 			return err
 		}
-		if err := pipeline.AddRTPTransportSink(0, rtpSink); err != nil {
+		if err = pipeline.AddRTPTransportSink(0, rtpSink); err != nil {
 			return err
 		}
-		source, err := gstreamer.NewStreamSource("rtp-stream-source")
+		var source *gstreamer.StreamSource
+		source, err = gstreamer.NewStreamSource("rtp-stream-source")
 		if err != nil {
 			return err
 		}
-		if err := pipeline.AddRTPStreamGst(0, source); err != nil {
+		if err = pipeline.AddRTPStreamGst(0, source); err != nil {
 			return err
 		}
-		return pipeline.Run()
+		if err = pipeline.ReceiveRTCPFrom(rtpSink.RTCPReceiver()); err != nil {
+			return err
+		}
+	} else {
+		if err = transport.AddRemoteVideoTrack(); err != nil {
+			return err
+		}
 	}
 
-	if err = transport.AddRemoteVideoTrack(); err != nil {
+	if err = pipeline.SendRTCPForStream(0, transport); err != nil {
 		return err
 	}
 

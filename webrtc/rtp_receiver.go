@@ -19,3 +19,9 @@ func (r *RTPReceiver) Close() error {
 func (r *RTPReceiver) PayloadType() uint8 {
 	return uint8(r.track.PayloadType())
 }
+
+func (r *RTPReceiver) RTCPReceiver() *RTCPReceiver {
+	return &RTCPReceiver{
+		receiver: r.receiver,
+	}
+}
