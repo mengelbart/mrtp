@@ -101,7 +101,17 @@ Usage:
 		if err != nil {
 			return err
 		}
-		if err = pipeline.AddRTPStreamGst(0, source); err != nil {
+		// TODO(ME): Cannot enable SCReAM here because WebRTC rewrites the SSRCs
+		// of outgoing packets. Thus, the sender cannot use the feedback,
+		// because the receiver will mirror the SSRC set by Pion and not the one
+		// seen by the ScreamTx implementation.
+		// Another problem in the current ScreamRx implementation is that it
+		// does not correctly set the CCFB type (count value of the RTCP
+		// header). Pion expects the correct type, otherwise it can't forward
+		// the packet to the correct SSRC (because it cannot read the media SSRC
+		// from a raw RTCP packet. The ScreamTx sender on the other hand,
+		// expects the type set to 0.
+		if err = pipeline.AddRTPSourceStreamGst(0, source.Element(), false); err != nil {
 			return err
 		}
 		if err = pipeline.ReceiveRTCPFrom(rtpSink.RTCPReceiver()); err != nil {

@@ -7,6 +7,8 @@ require (
 	github.com/go-gst/go-gst v1.4.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mengelbart/roq v0.3.1-0.20250618153000-ddcb2596a429
+	github.com/pion/interceptor v0.1.40
+	github.com/pion/rtcp v1.2.16-0.20250423150132-b78b08322f5c
 	github.com/pion/webrtc/v4 v4.1.3
 	github.com/quic-go/quic-go v0.52.0
 	github.com/stretchr/testify v1.10.0
@@ -19,11 +21,9 @@ require (
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v3 v3.0.6 // indirect
 	github.com/pion/ice/v4 v4.0.10 // indirect
-	github.com/pion/interceptor v0.1.40 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/mdns/v2 v2.0.7 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
-	github.com/pion/rtcp v1.2.15 // indirect
 	github.com/pion/rtp v1.8.20 // indirect
 	github.com/pion/sctp v1.8.39 // indirect
 	github.com/pion/sdp/v3 v3.0.14 // indirect

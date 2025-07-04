@@ -42,7 +42,7 @@ func StreamSourceType(source Source) StreamSourceOption {
 	}
 }
 
-func STreamSourceCodec(codec mrtp.Codec) StreamSourceOption {
+func StreamSourceCodec(codec mrtp.Codec) StreamSourceOption {
 	return func(rs *StreamSource) error {
 		rs.codec = codec
 		return nil
@@ -134,23 +134,4 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 
 func (s *StreamSource) Element() *gst.Element {
 	return s.bin.Element
-}
-
-func (s *StreamSource) Link(element *gst.Element) error {
-	return s.bin.Link(element)
-}
-
-func (s *StreamSource) LinkPad(pad *gst.Pad) error {
-	pads, err := s.bin.GetSrcPads()
-	if err != nil {
-		return err
-	}
-	if len(pads) != 1 {
-		return errors.New("source does not have exactly 1 source pad, was it initialized correctly?")
-	}
-	ret := pads[0].Link(pad)
-	if ret != gst.PadLinkOK {
-		return fmt.Errorf("failed to link pads: %v", ret)
-	}
-	return nil
 }
