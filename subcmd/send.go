@@ -19,6 +19,7 @@ type sendFlags struct {
 	rtcpRecvPort uint
 	roqServer    bool
 	roqClient    bool
+	gstScream    bool
 }
 
 func Send(cmd string, args []string) error {
@@ -32,6 +33,7 @@ func Send(cmd string, args []string) error {
 	flags.UintVar(&sf.rtcpRecvPort, "rtcp-recv-port", 5002, "UDP port number for incoming RTCP stream")
 	flags.BoolVar(&sf.roqServer, "roq-server", false, "Run a RoQ server instead of using UDP. UDP related flags are ignored and <local> is used as the address to run the QUIC server on.")
 	flags.BoolVar(&sf.roqClient, "roq-client", false, "Run a RoQ client instead of using UDP. UDP related flags are ignored and <remote> is as the server address to connect to.")
+	flags.BoolVar(&sf.gstScream, "gst-scream", false, "Run SCReAM Gstreamer element")
 
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a sender pipeline
@@ -90,7 +92,7 @@ Flags:
 		if err = sender.AddRTPTransportSink(0, rtpSink); err != nil {
 			return err
 		}
-		if err = sender.AddRTPStreamGst(0, source); err != nil {
+		if err = sender.AddRTPSourceStreamGst(0, source.Element(), sf.gstScream); err != nil {
 			return err
 		}
 
@@ -111,14 +113,6 @@ Flags:
 		}
 
 	} else {
-		rtcpSink, err := gstreamer.NewUDPSink(sf.remote, uint32(sf.rtcpSendPort))
-		if err != nil {
-			return err
-		}
-		if err = sender.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
-			return err
-		}
-
 		rtpSink, err := gstreamer.NewUDPSink(sf.remote, uint32(sf.rtpSendPort))
 		if err != nil {
 			return err
@@ -126,7 +120,15 @@ Flags:
 		if err = sender.AddRTPTransportSinkGst(0, rtpSink.GetGstElement()); err != nil {
 			return err
 		}
-		if err = sender.AddRTPStreamGst(0, source); err != nil {
+		if err = sender.AddRTPSourceStreamGst(0, source.Element(), sf.gstScream); err != nil {
+			return err
+		}
+
+		rtcpSink, err := gstreamer.NewUDPSink(sf.remote, uint32(sf.rtcpSendPort))
+		if err != nil {
+			return err
+		}
+		if err = sender.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
 			return err
 		}
 

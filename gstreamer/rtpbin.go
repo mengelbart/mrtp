@@ -19,6 +19,8 @@ type RTPBin struct {
 	rtpbin   *gst.Element
 
 	rtcpFunnels map[int]*gst.Element
+
+	screamTx *gst.Element
 }
 
 func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
@@ -133,15 +135,48 @@ func (r *RTPBin) AddRTPTransportSinkGst(id int, sink *gst.Element) error {
 	return nil
 }
 
-func (r *RTPBin) AddRTPStreamGst(id int, src *StreamSource) error {
-	if err := r.pipeline.Add(src.Element()); err != nil {
+func (r *RTPBin) AddRTPSourceStreamGst(id int, src *gst.Element, enableSCReAM bool) error {
+	if err := r.pipeline.Add(src); err != nil {
 		return err
 	}
+
 	sendRTPSinkPad := r.rtpbin.GetRequestPad(fmt.Sprintf("send_rtp_sink_%d", id))
 	if sendRTPSinkPad == nil {
-		return errors.New("failed to create sendRTPSinkPad")
+		return errors.New("failed to request sendRTPSinkPad")
 	}
-	return src.LinkPad(sendRTPSinkPad)
+
+	srcPad := src.GetStaticPad("src")
+	if srcPad == nil {
+		return errors.New("source has no src pad?")
+	}
+
+	if enableSCReAM {
+		screamtx, err := gst.NewElementWithProperties(
+			"screamtx",
+			map[string]any{
+				"params": "-initrate 8000 -minrate 200 -maxrate 8000",
+			},
+		)
+		if err != nil {
+			return err
+		}
+		r.screamTx = screamtx
+		if err = r.pipeline.Add(screamtx); err != nil {
+			return err
+		}
+		if ret := srcPad.Link(screamtx.GetStaticPad("sink")); ret != gst.PadLinkOK {
+			return fmt.Errorf("failed to link src pad to screamtx sink pad: %v", ret)
+		}
+		srcPad = screamtx.GetStaticPad("src")
+		if srcPad == nil {
+			return errors.New("failed to get screamtx src pad")
+		}
+	}
+
+	if ret := srcPad.Link(sendRTPSinkPad); ret != gst.PadLinkOK {
+		return fmt.Errorf("failed to link src pad to rtp sink pad: %v", ret)
+	}
+	return nil
 }
 
 func (r *RTPBin) SendRTCPForStream(id int, wc io.WriteCloser) error {
@@ -245,6 +280,10 @@ func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element, screamCCFB bo
 		if ret := srcPad.Link(screamrx.GetStaticPad("sink")); ret != gst.PadLinkOK {
 			panic(fmt.Sprintf("failed to link pads: %v", ret))
 		}
+		screamrx.GetStaticPad("src").AddProbe(gst.PadProbeTypeBuffer, func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
+			slog.Info("scream received rtp packet")
+			return gst.PadProbeOK
+		})
 
 		srcPad = screamrx.GetStaticPad("src")
 		if ret := srcPad.Link(capsfilter.GetStaticPad("sink")); ret != gst.PadLinkOK {
@@ -306,7 +345,23 @@ func (r *RTPBin) ReceiveRTCPFromGst(src *gst.Element) error {
 	if err := r.pipeline.Add(src); err != nil {
 		return err
 	}
-	return src.LinkFiltered(r.rtpbin, gst.NewCapsFromString("application/x-rtcp"))
+	if r.screamTx != nil {
+		if err := src.LinkFiltered(r.screamTx, gst.NewCapsFromString("application/x-rtcp")); err != nil {
+			return err
+		}
+		src = r.screamTx
+		r.screamTx.GetStaticPad("rtcp_sink").AddProbe(gst.PadProbeTypeBuffer, func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
+			slog.Info("scream received rtcp packet")
+			return gst.PadProbeOK
+		})
+	}
+	if err := src.LinkFiltered(r.rtpbin, gst.NewCapsFromString("application/x-rtcp")); err != nil {
+		return err
+	}
+	if !src.SyncStateWithParent() {
+		return errors.New("failed to sync src to pipeline state")
+	}
+	return nil
 }
 
 func getAppSinkWithWriteCloser(wc io.WriteCloser) (*gst.Element, error) {
