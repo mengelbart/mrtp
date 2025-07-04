@@ -17,6 +17,8 @@ type RTPBin struct {
 
 	pipeline *gst.Pipeline
 	rtpbin   *gst.Element
+
+	rtcpFunnels map[int]*gst.Element
 }
 
 func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
@@ -31,10 +33,11 @@ func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
 		return nil, err
 	}
 	r := &RTPBin{
-		transports: map[int]*gst.Element{},
-		streams:    map[int]*StreamSink{},
-		pipeline:   pipeline,
-		rtpbin:     rtpbin,
+		transports:  map[int]*gst.Element{},
+		streams:     map[int]*StreamSink{},
+		pipeline:    pipeline,
+		rtpbin:      rtpbin,
+		rtcpFunnels: map[int]*gst.Element{},
 	}
 	for _, opt := range opts {
 		if err = opt(r); err != nil {
@@ -154,12 +157,32 @@ func (r *RTPBin) SendRTCPForStreamGst(id int, sink *gst.Element) error {
 	if sendRTCPSrcPad == nil {
 		return errors.New("failed to request RTCP src pad")
 	}
+	funnel, ok := r.rtcpFunnels[id]
+	if !ok {
+		var err error
+		funnel, err = gst.NewElement("funnel")
+		if err != nil {
+			return err
+		}
+		r.rtcpFunnels[id] = funnel
+		if err := r.pipeline.Add(funnel); err != nil {
+			return err
+		}
+		if !funnel.SyncStateWithParent() {
+			return errors.New("failed to synchronize funnel to pipeline state")
+		}
+	}
+
+	if ret := sendRTCPSrcPad.Link(funnel.GetRequestPad("sink_0")); ret != gst.PadLinkOK {
+		return fmt.Errorf("failed to link RTCP src pad to RTCP funnel: %v", ret)
+	}
+
 	if err := r.pipeline.Add(sink); err != nil {
 		return err
 	}
-	ret := sendRTCPSrcPad.Link(sink.GetStaticPad("sink"))
-	if ret != gst.PadLinkOK {
-		return errors.New("failed to link sendRTCPSrcPad to transport sink")
+
+	if ret := funnel.GetStaticPad("src").Link(sink.GetStaticPad("sink")); ret != gst.PadLinkOK {
+		return fmt.Errorf("failed to link sendRTCPSrcPad to transport sink: %v", ret)
 	}
 	return nil
 }
@@ -172,15 +195,15 @@ func (r *RTPBin) AddRTPReceiveStreamSinkGst(id int, sink *StreamSink) error {
 	return nil
 }
 
-func (r *RTPBin) ReceiveRTPStreamFrom(id int, rc io.ReadCloser) error {
+func (r *RTPBin) ReceiveRTPStreamFrom(id int, rc io.ReadCloser, screamCCFB bool) error {
 	e, err := getAppSrcWithReadCloser(rc)
 	if err != nil {
 		return err
 	}
-	return r.ReceiveRTPStreamFromGst(id, e)
+	return r.ReceiveRTPStreamFromGst(id, e, screamCCFB)
 }
 
-func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element) error {
+func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element, screamCCFB bool) error {
 	sink, ok := r.streams[id]
 	if !ok {
 		return errors.New("unknown stream, did you forget to call AddRTPStreamSink first?")
@@ -207,8 +230,46 @@ func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element) error {
 	if err = r.pipeline.Add(capsfilter); err != nil {
 		return err
 	}
-	if err = src.Link(capsfilter); err != nil {
-		return err
+
+	var screamrx *gst.Element
+	var funnel *gst.Element
+	if screamCCFB {
+		screamrx, err = gst.NewElement("screamrx")
+		if err != nil {
+			return err
+		}
+		if err = r.pipeline.Add(screamrx); err != nil {
+			return err
+		}
+		srcPad := src.GetStaticPad("src")
+		if ret := srcPad.Link(screamrx.GetStaticPad("sink")); ret != gst.PadLinkOK {
+			panic(fmt.Sprintf("failed to link pads: %v", ret))
+		}
+
+		srcPad = screamrx.GetStaticPad("src")
+		if ret := srcPad.Link(capsfilter.GetStaticPad("sink")); ret != gst.PadLinkOK {
+			panic(fmt.Sprintf("failed to link pads: %v", ret))
+		}
+
+		funnel, ok = r.rtcpFunnels[id]
+		if !ok {
+			funnel, err = gst.NewElement("funnel")
+			if err != nil {
+				return err
+			}
+			r.rtcpFunnels[id] = funnel
+			if err = r.pipeline.Add(funnel); err != nil {
+				return err
+			}
+		}
+		screamRxRTCPSrcPad := screamrx.GetStaticPad("rtcp_src")
+		if ret := screamRxRTCPSrcPad.Link(funnel.GetRequestPad("sink_1")); ret != gst.PadLinkOK {
+			return fmt.Errorf("faield to link screamrx RTCP src pad to funnel: %v", ret)
+		}
+	} else {
+		if err = src.Link(capsfilter); err != nil {
+			return err
+		}
 	}
 
 	recvRTPSinkPad := r.rtpbin.GetRequestPad(fmt.Sprintf("recv_rtp_sink_%v", id))
@@ -217,10 +278,18 @@ func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element) error {
 		return fmt.Errorf("failed to link transport source to recvRTPSinkPad: %v", err)
 	}
 	if !src.SyncStateWithParent() {
-		return errors.New("failed to syncrhonize pipeline state")
+		return errors.New("failed to synchronize src to pipeline state")
 	}
 	if !capsfilter.SyncStateWithParent() {
-		return errors.New("failed to syncrhonize pipeline state")
+		return errors.New("failed to synchronize capsfilter to pipeline state")
+	}
+	if screamrx != nil {
+		if !screamrx.SyncStateWithParent() {
+			return errors.New("failed to synchronize screamrx to pipeline state")
+		}
+		if !funnel.SyncStateWithParent() {
+			return errors.New("failed to synchronize funnel to pipeline state")
+		}
 	}
 	return nil
 }
