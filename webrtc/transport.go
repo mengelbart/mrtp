@@ -4,7 +4,9 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/pion/bwe-test/gcc"
 	"github.com/pion/interceptor"
+	"github.com/pion/interceptor/pkg/ccfb"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 )
@@ -15,12 +17,19 @@ type Signaler interface {
 }
 
 type Transport struct {
-	logger   *slog.Logger
+	logger *slog.Logger
+
+	settingEngine       *webrtc.SettingEngine
+	mediaEngine         *webrtc.MediaEngine
+	interceptorRegistry *interceptor.Registry
+
 	pc       *webrtc.PeerConnection
 	signaler Signaler
 	offerer  bool
 
 	onRemoteTrack func(*RTPReceiver)
+
+	bwe *gcc.SendSideController
 }
 
 type Option func(*Transport) error
@@ -32,20 +41,71 @@ func OnTrack(handler func(*RTPReceiver)) Option {
 	}
 }
 
+func EnableNACK() Option {
+	return func(t *Transport) error {
+		return webrtc.ConfigureNack(t.mediaEngine, t.interceptorRegistry)
+	}
+}
+
+func EnableRTCPReports() Option {
+	return func(t *Transport) error {
+		return webrtc.ConfigureRTCPReports(t.interceptorRegistry)
+	}
+}
+
+func EnableTWCC() Option {
+	return func(t *Transport) error {
+		return webrtc.ConfigureTWCCSender(t.mediaEngine, t.interceptorRegistry)
+	}
+}
+
+func EnableCCFB() Option {
+	return func(t *Transport) error {
+		return webrtc.ConfigureCongestionControlFeedback(t.mediaEngine, t.interceptorRegistry)
+	}
+}
+
+func EnableGCC(initRate, minRate, maxRate int) Option {
+	return func(t *Transport) error {
+		t.bwe = gcc.NewSendSideController(initRate, minRate, maxRate)
+		return nil
+	}
+}
+
+func EnableCCFBReceiver() Option {
+	return func(t *Transport) error {
+		f, err := ccfb.NewInterceptor()
+		if err != nil {
+			return err
+		}
+		t.interceptorRegistry.Add(f)
+		return nil
+	}
+}
+
 func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, error) {
-	se := webrtc.SettingEngine{}
-	me := &webrtc.MediaEngine{}
-	if err := me.RegisterDefaultCodecs(); err != nil {
+	t := &Transport{
+		logger:              slog.Default(),
+		pc:                  nil,
+		signaler:            signaler,
+		offerer:             offerer,
+		onRemoteTrack:       nil,
+		settingEngine:       &webrtc.SettingEngine{},
+		mediaEngine:         &webrtc.MediaEngine{},
+		interceptorRegistry: &interceptor.Registry{},
+	}
+	if err := t.mediaEngine.RegisterDefaultCodecs(); err != nil {
 		return nil, err
 	}
-	ir := &interceptor.Registry{}
-	// if err := webrtc.RegisterDefaultInterceptors(me, ir); err != nil {
-	// 	return nil, err
-	// }
-	p, err := webrtc.NewAPI(
-		webrtc.WithSettingEngine(se),
-		webrtc.WithMediaEngine(me),
-		webrtc.WithInterceptorRegistry(ir),
+	for _, opt := range opts {
+		if err := opt(t); err != nil {
+			return nil, err
+		}
+	}
+	pc, err := webrtc.NewAPI(
+		webrtc.WithSettingEngine(*t.settingEngine),
+		webrtc.WithMediaEngine(t.mediaEngine),
+		webrtc.WithInterceptorRegistry(t.interceptorRegistry),
 	).NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
@@ -56,24 +116,13 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 	if err != nil {
 		return nil, err
 	}
-	t := &Transport{
-		logger:        slog.Default(),
-		pc:            p,
-		signaler:      signaler,
-		offerer:       offerer,
-		onRemoteTrack: nil,
-	}
-	for _, opt := range opts {
-		if err := opt(t); err != nil {
-			return nil, err
-		}
-	}
-	p.OnNegotiationNeeded(t.onNegotiationNeeded)
-	p.OnICECandidate(t.onICECandidate)
-	p.OnTrack(t.onTrack)
-	p.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
+	pc.OnNegotiationNeeded(t.onNegotiationNeeded)
+	pc.OnICECandidate(t.onICECandidate)
+	pc.OnTrack(t.onTrack)
+	pc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
 		t.logger.Info("connection state changed", "new_state", pcs)
 	})
+	t.pc = pc
 	return t, nil
 }
 
@@ -175,6 +224,7 @@ func (t *Transport) AddLocalTrack() (*RTPSender, error) {
 	return &RTPSender{
 		track:  track,
 		sender: sender,
+		onCCFB: t.onCCFB,
 	}, nil
 }
 
@@ -189,4 +239,30 @@ func (t *Transport) Write(pkt []byte) (int, error) {
 
 func (t *Transport) Close() error {
 	return t.pc.Close()
+}
+
+func (t *Transport) onCCFB(reports []ccfb.Report) {
+	t.logger.Info("received ccfb packet report", "length", len(reports))
+	if t.bwe == nil {
+		return
+	}
+	for _, report := range reports {
+		acks := []gcc.Acknowledgment{}
+		for _, prs := range report.SSRCToPacketReports {
+			for _, pr := range prs {
+				acks = append(acks, gcc.Acknowledgment{
+					SeqNr:     pr.SeqNr,
+					Size:      uint16(pr.Size),
+					Departure: pr.Departure,
+					Arrived:   pr.Arrived,
+					Arrival:   pr.Arrival,
+					ECN:       gcc.ECN(pr.ECN),
+				})
+			}
+		}
+
+		rtt := report.Arrival.Sub(report.Arrival)
+		tr := t.bwe.OnAcks(report.Arrival, rtt, acks)
+		t.logger.Info("got new target rate", "tr", tr)
+	}
 }
