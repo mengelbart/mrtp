@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/Willi-42/go-nada/nada"
 	"github.com/pion/bwe-test/gcc"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/ccfb"
@@ -29,7 +30,8 @@ type Transport struct {
 
 	onRemoteTrack func(*RTPReceiver)
 
-	bwe *gcc.SendSideController
+	bwe  *gcc.SendSideController
+	nada *nada.SenderOnly
 }
 
 type Option func(*Transport) error
@@ -68,6 +70,21 @@ func EnableCCFB() Option {
 func EnableGCC(initRate, minRate, maxRate int) Option {
 	return func(t *Transport) error {
 		t.bwe = gcc.NewSendSideController(initRate, minRate, maxRate)
+		return nil
+	}
+}
+
+func EnableNADA(initRate, minRate, maxRate int) Option {
+	return func(t *Transport) error {
+		nadaConfig := nada.Config{
+			MinRate:       uint64(minRate),
+			MaxRate:       uint64(maxRate),
+			StartRate:     uint64(initRate),
+			FeedbackDelta: 100, // ms
+		}
+
+		nada := nada.NewSenderOnly(nadaConfig)
+		t.nada = &nada
 		return nil
 	}
 }
@@ -243,26 +260,48 @@ func (t *Transport) Close() error {
 
 func (t *Transport) onCCFB(reports []ccfb.Report) {
 	t.logger.Info("received ccfb packet report", "length", len(reports))
-	if t.bwe == nil {
-		return
-	}
-	for _, report := range reports {
-		acks := []gcc.Acknowledgment{}
-		for _, prs := range report.SSRCToPacketReports {
-			for _, pr := range prs {
-				acks = append(acks, gcc.Acknowledgment{
-					SeqNr:     pr.SeqNr,
-					Size:      uint16(pr.Size),
-					Departure: pr.Departure,
-					Arrived:   pr.Arrived,
-					Arrival:   pr.Arrival,
-					ECN:       gcc.ECN(pr.ECN),
-				})
+	if t.bwe != nil {
+		for _, report := range reports {
+			acks := []gcc.Acknowledgment{}
+			for _, prs := range report.SSRCToPacketReports {
+				for _, pr := range prs {
+					acks = append(acks, gcc.Acknowledgment{
+						SeqNr:     pr.SeqNr,
+						Size:      uint16(pr.Size),
+						Departure: pr.Departure,
+						Arrived:   pr.Arrived,
+						Arrival:   pr.Arrival,
+						ECN:       gcc.ECN(pr.ECN),
+					})
+				}
 			}
-		}
 
-		rtt := report.Arrival.Sub(report.Arrival)
-		tr := t.bwe.OnAcks(report.Arrival, rtt, acks)
-		t.logger.Info("got new target rate", "tr", tr)
+			rtt := report.Arrival.Sub(report.Arrival)
+			tr := t.bwe.OnAcks(report.Arrival, rtt, acks)
+			t.logger.Info("got new target rate", "tr", tr)
+		}
+	}
+	if t.nada != nil {
+		for _, report := range reports {
+			acks := []nada.Acknowledgment{}
+			for _, prs := range report.SSRCToPacketReports {
+				for _, pr := range prs {
+					if !pr.Arrived { // default NADA has no NACKs
+						continue
+					}
+					acks = append(acks, nada.Acknowledgment{
+						SeqNr:     uint64(pr.SeqNr),
+						SizeBit:   uint64(pr.Size * 8),
+						Departure: pr.Departure,
+						Arrival:   pr.Arrival,
+						Marked:    pr.ECN == rtcp.ECNCE,
+					})
+				}
+			}
+
+			rtt := report.Arrival.Sub(report.Arrival)
+			tr := t.nada.OnAcks(rtt, acks)
+			t.logger.Info("got new target rate", "tr", tr)
+		}
 	}
 }
