@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 
@@ -34,6 +35,8 @@ func main() {
 
 	flag.Usage = usage
 	flag.Parse()
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 	if len(flag.Args()) < 1 {
 		fmt.Println("error: missing subcommand")
