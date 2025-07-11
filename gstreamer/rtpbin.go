@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
@@ -20,7 +22,8 @@ type RTPBin struct {
 
 	rtcpFunnels map[int]*gst.Element
 
-	screamTx *gst.Element
+	screamTx             *gst.Element
+	SetTargetRateEncoder func(ratebps uint) error
 }
 
 func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
@@ -35,11 +38,12 @@ func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
 		return nil, err
 	}
 	r := &RTPBin{
-		transports:  map[int]*gst.Element{},
-		streams:     map[int]*StreamSink{},
-		pipeline:    pipeline,
-		rtpbin:      rtpbin,
-		rtcpFunnels: map[int]*gst.Element{},
+		transports:           map[int]*gst.Element{},
+		streams:              map[int]*StreamSink{},
+		pipeline:             pipeline,
+		rtpbin:               rtpbin,
+		rtcpFunnels:          map[int]*gst.Element{},
+		SetTargetRateEncoder: nil,
 	}
 	for _, opt := range opts {
 		if err = opt(r); err != nil {
@@ -158,7 +162,7 @@ func (r *RTPBin) AddRTPSourceStreamGst(id int, src *gst.Element, enableSCReAM bo
 		screamtx, err := gst.NewElementWithProperties(
 			"screamtx",
 			map[string]any{
-				"params": "-initrate 8000 -minrate 200 -maxrate 8000",
+				"params": "-initrate 750 -minrate 150 -maxrate 3000", // kbps
 			},
 		)
 		if err != nil {
@@ -175,6 +179,27 @@ func (r *RTPBin) AddRTPSourceStreamGst(id int, src *gst.Element, enableSCReAM bo
 		if srcPad == nil {
 			return errors.New("failed to get screamtx src pad")
 		}
+
+		// every 100ms: manually get the rate of scream and set the encoder accordingly
+		go func() {
+			for {
+				time.Sleep(100 * time.Millisecond)
+
+				rate, err := r.getTargetBitRate()
+				if err != nil {
+					panic(err)
+				}
+				if rate == 0 {
+					// gstreamer stats are empty
+					continue
+				}
+
+				err = r.SetTargetRateEncoder(uint(rate * 1000))
+				if err != nil {
+					panic(err)
+				}
+			}
+		}()
 	}
 
 	if ret := srcPad.Link(sendRTPSinkPad); ret != gst.PadLinkOK {
@@ -358,6 +383,32 @@ func (r *RTPBin) ReceiveRTCPFromGst(src *gst.Element) error {
 		return errors.New("failed to sync src to pipeline state")
 	}
 	return nil
+}
+
+// getTargetBitRate returns the current target rate of SCReAM
+func (r *RTPBin) getTargetBitRate() (int, error) {
+	if r.screamTx == nil {
+		return 0, errors.New("screamTx element not initialized")
+	}
+	val, err := r.screamTx.GetProperty("stats")
+	if err != nil {
+		return 0, err
+	}
+	stats, ok := val.(string)
+	if !ok {
+		return 0, errors.New("stats property is not a string")
+	}
+	if len(stats) == 0 {
+		return 0, nil
+	}
+
+	statValues := strings.Split(stats, ",")
+	bitrate, err := strconv.Atoi(strings.Trim(statValues[13], " "))
+	if err != nil {
+		return 0, fmt.Errorf("screamTx targetBitrate is not an int: %v", err)
+	}
+
+	return bitrate, nil
 }
 
 func getAppSinkWithWriteCloser(wc io.WriteCloser) (*gst.Element, error) {
