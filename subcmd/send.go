@@ -12,20 +12,22 @@ import (
 )
 
 type sendFlags struct {
-	remote       string
-	local        string
-	rtpSendPort  uint
-	rtcpSendPort uint
-	rtcpRecvPort uint
-	roqServer    bool
-	roqClient    bool
-	gstScream    bool
+	remote        string
+	local         string
+	sendVideoFile string
+	rtpSendPort   uint
+	rtcpSendPort  uint
+	rtcpRecvPort  uint
+	roqServer     bool
+	roqClient     bool
+	gstScream     bool
 }
 
 func Send(cmd string, args []string) error {
 	var sf sendFlags
 
 	flags := flag.NewFlagSet("send", flag.ExitOnError)
+	flags.StringVar(&sf.sendVideoFile, "file", "videotestsrc", "Which video to send")
 	flags.StringVar(&sf.remote, "remote", "127.0.0.1", "Remote UDP Address")
 	flags.StringVar(&sf.local, "local", "127.0.0.1", "Local UDP Address")
 	flags.UintVar(&sf.rtpSendPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
@@ -67,15 +69,27 @@ Flags:
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
-	sender, err := gstreamer.NewRTPBin()
+	streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
+	if sf.sendVideoFile != "videotestsrc" {
+		// check if file exists
+		if _, err := os.Stat(sf.sendVideoFile); errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("file does not exist: %v", sf.sendVideoFile)
+		}
+
+		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(sf.sendVideoFile))
+		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
+	}
+
+	source, err := gstreamer.NewStreamSource("rtp-stream-source", streamSourceOpts...)
 	if err != nil {
 		return err
 	}
 
-	source, err := gstreamer.NewStreamSource("rtp-stream-source")
+	sender, err := gstreamer.NewRTPBin()
 	if err != nil {
 		return err
 	}
+	sender.SetTargetRateEncoder = source.SetBitrate
 
 	if sf.roqServer || sf.roqClient {
 		transport, err := roq.New(

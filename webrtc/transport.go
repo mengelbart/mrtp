@@ -30,8 +30,9 @@ type Transport struct {
 
 	onRemoteTrack func(*RTPReceiver)
 
-	bwe  *gcc.SendSideController
-	nada *nada.SenderOnly
+	bwe           *gcc.SendSideController
+	nada          *nada.SenderOnly
+	SetTargetRate func(ratebps uint) error
 }
 
 type Option func(*Transport) error
@@ -110,6 +111,7 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 		settingEngine:       &webrtc.SettingEngine{},
 		mediaEngine:         &webrtc.MediaEngine{},
 		interceptorRegistry: &interceptor.Registry{},
+		SetTargetRate:       nil,
 	}
 	if err := t.mediaEngine.RegisterDefaultCodecs(); err != nil {
 		return nil, err
@@ -258,10 +260,15 @@ func (t *Transport) Close() error {
 	return t.pc.Close()
 }
 
-func (t *Transport) onCCFB(reports []ccfb.Report) {
+func (t *Transport) onCCFB(reports []ccfb.Report) error {
 	t.logger.Info("received ccfb packet report", "length", len(reports))
-	if t.bwe != nil {
-		for _, report := range reports {
+
+	var tr int
+	for _, report := range reports {
+		rtt := report.Arrival.Sub(report.Arrival)
+
+		// GCC as CC
+		if t.bwe != nil {
 			acks := []gcc.Acknowledgment{}
 			for _, prs := range report.SSRCToPacketReports {
 				for _, pr := range prs {
@@ -276,13 +283,11 @@ func (t *Transport) onCCFB(reports []ccfb.Report) {
 				}
 			}
 
-			rtt := report.Arrival.Sub(report.Arrival)
-			tr := t.bwe.OnAcks(report.Arrival, rtt, acks)
-			t.logger.Info("got new target rate", "tr", tr)
+			tr = t.bwe.OnAcks(report.Arrival, rtt, acks)
 		}
-	}
-	if t.nada != nil {
-		for _, report := range reports {
+
+		// NADA as CC
+		if t.nada != nil {
 			acks := []nada.Acknowledgment{}
 			for _, prs := range report.SSRCToPacketReports {
 				for _, pr := range prs {
@@ -299,9 +304,20 @@ func (t *Transport) onCCFB(reports []ccfb.Report) {
 				}
 			}
 
-			rtt := report.Arrival.Sub(report.Arrival)
-			tr := t.nada.OnAcks(rtt, acks)
+			tr = int(t.nada.OnAcks(rtt, acks))
+		}
+
+		if tr != 0 {
+			if t.SetTargetRate != nil {
+				// set target rate of encoder
+				err := t.SetTargetRate(uint(tr))
+				if err != nil {
+					return err
+				}
+			}
 			t.logger.Info("got new target rate", "tr", tr)
 		}
 	}
+
+	return nil
 }
