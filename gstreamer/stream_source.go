@@ -148,6 +148,7 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 			return nil, errors.New("failed to add ghostpad to RTPStreamSource")
 		}
 
+		// decodebin callback
 		decodebin.Connect("pad-added", func(self *gst.Element, decodeSrcPad *gst.Pad) {
 			var isVideo bool
 			caps := decodeSrcPad.GetCurrentCaps()
@@ -166,14 +167,12 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 			if err := s.bin.AddMany(followUpElms...); err != nil {
 				panic(err)
 			}
-
 			if err := gst.ElementLinkMany(followUpElms...); err != nil {
 				panic(err)
 			}
-
 			s.elements = append(s.elements, followUpElms...)
 
-			// link decodebin's src pad to first followUpElm's sink pad
+			// link decodebin's src pad to the follow up pipeline
 			followUpSinkPad := followUpElms[0].GetStaticPad("sink")
 			if decodeSrcPad.Link(followUpSinkPad) != gst.PadLinkOK {
 				panic("Failed to link decodebin to encoder")
@@ -184,7 +183,7 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 				e.SyncStateWithParent()
 			}
 
-			// Set ghost pad target now that pay's src pad exists
+			// Set ghost pad target now that pipeline exists
 			srcpad := pay.GetStaticPad("src")
 			if !ghostpad.SetTarget(srcpad) {
 				panic("Failed to set ghostpad target")
