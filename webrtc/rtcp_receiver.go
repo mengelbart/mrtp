@@ -11,17 +11,23 @@ type pionRTCPReceiver interface {
 
 type RTCPReceiver struct {
 	receiver pionRTCPReceiver
-	onCCFB   func([]ccfb.Report)
+	onCCFB   func([]ccfb.Report) error
 }
 
 func (r *RTCPReceiver) Read(buffer []byte) (int, error) {
 	n, attr, err := r.receiver.Read(buffer)
+	if err != nil {
+		return n, err
+	}
 	data := attr.Get(ccfb.CCFBAttributesKey)
 	reports, ok := data.([]ccfb.Report)
 	if ok && r.onCCFB != nil {
-		r.onCCFB(reports)
+		err = r.onCCFB(reports)
+		if err != nil {
+			return n, err
+		}
 	}
-	return n, err
+	return n, nil
 }
 
 func (r *RTCPReceiver) Close() error {

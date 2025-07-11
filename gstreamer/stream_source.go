@@ -3,6 +3,7 @@ package gstreamer
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/go-gst/go-gst/gst"
 	"github.com/mengelbart/mrtp"
@@ -11,8 +12,8 @@ import (
 type Source int
 
 const (
-	videotestsrc Source = iota
-	filesrc
+	Videotestsrc Source = iota
+	Filesrc
 )
 
 type StreamSourceOption func(*StreamSource) error
@@ -58,7 +59,7 @@ func StreamSourceFileSourceLocation(location string) StreamSourceOption {
 
 func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, error) {
 	s := &StreamSource{
-		source:             videotestsrc,
+		source:             Videotestsrc,
 		codec:              mrtp.H264,
 		fileSourceLocation: "",
 		payloadType:        96,
@@ -72,27 +73,13 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 		}
 	}
 
-	switch s.source {
-	case videotestsrc:
-		vts, err := gst.NewElement("videotestsrc")
-		if err != nil {
-			return nil, err
-		}
-		s.elements = append(s.elements, vts)
-	case filesrc:
-		fs, err := gst.NewElement("filesrc")
-		if err != nil {
-			return nil, err
-		}
-		s.elements = append(s.elements, fs)
-	default:
-		return nil, fmt.Errorf("unknown source format: %v", s.source)
-	}
+	followUpElms := make([]*gst.Element, 0)
+
 	cs, err := gst.NewElement("clocksync")
 	if err != nil {
 		return nil, err
 	}
-	s.elements = append(s.elements, cs)
+	followUpElms = append(followUpElms, cs)
 
 	var pay *gst.Element
 	if s.codec == mrtp.H264 {
@@ -111,22 +98,100 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 		}); err != nil {
 			return nil, err
 		}
-		s.elements = append(s.elements, s.encoder, pay)
+		followUpElms = append(followUpElms, s.encoder, pay)
 	} else {
 		return nil, fmt.Errorf("unknown codec: %v", s.codec)
 	}
 
-	if err = s.bin.AddMany(s.elements...); err != nil {
-		return nil, err
-	}
-	if err = gst.ElementLinkMany(s.elements...); err != nil {
-		return nil, err
-	}
+	switch s.source {
+	case Videotestsrc:
+		vts, err := gst.NewElement("videotestsrc")
+		if err != nil {
+			return nil, err
+		}
+		s.elements = append(s.elements, vts)
+		s.elements = append(s.elements, followUpElms...)
+		if err := s.bin.AddMany(s.elements...); err != nil {
+			return nil, err
+		}
+		if err := gst.ElementLinkMany(s.elements...); err != nil {
+			return nil, err
+		}
 
-	srcpad := pay.GetStaticPad("src")
-	ghostpad := gst.NewGhostPad("src", srcpad)
-	if !s.bin.AddPad(ghostpad.Pad) {
-		return nil, errors.New("failed to add ghostpad to RTPStreamSource")
+		srcpad := pay.GetStaticPad("src")
+		ghostpad := gst.NewGhostPad("src", srcpad)
+		if !s.bin.AddPad(ghostpad.Pad) {
+			return nil, errors.New("failed to add ghostpad to RTPStreamSource")
+		}
+
+	case Filesrc:
+		fs, err := gst.NewElement("filesrc")
+		if err != nil {
+			return nil, err
+		}
+		fs.Set("location", s.fileSourceLocation)
+
+		decodebin, err := gst.NewElement("decodebin")
+		if err != nil {
+			return nil, err
+		}
+		s.elements = append(s.elements, fs, decodebin)
+		if err := s.bin.AddMany(s.elements...); err != nil {
+			return nil, err
+		}
+		fs.Link(decodebin)
+
+		// Create ghost pad with no target yet
+		// will be set in decodebin callback
+		ghostpad := gst.NewGhostPadNoTarget("src", gst.PadDirectionSource)
+		if !s.bin.AddPad(ghostpad.Pad) {
+			return nil, errors.New("failed to add ghostpad to RTPStreamSource")
+		}
+
+		decodebin.Connect("pad-added", func(self *gst.Element, decodeSrcPad *gst.Pad) {
+			var isVideo bool
+			caps := decodeSrcPad.GetCurrentCaps()
+			for i := 0; i < caps.GetSize(); i++ {
+				st := caps.GetStructureAt(i)
+				if strings.HasPrefix(st.Name(), "video/") {
+					isVideo = true
+				}
+			}
+
+			if !isVideo {
+				return
+			}
+
+			// link follow up pipeline togehter
+			if err := s.bin.AddMany(followUpElms...); err != nil {
+				panic(err)
+			}
+
+			if err := gst.ElementLinkMany(followUpElms...); err != nil {
+				panic(err)
+			}
+
+			s.elements = append(s.elements, followUpElms...)
+
+			// link decodebin's src pad to first followUpElm's sink pad
+			followUpSinkPad := followUpElms[0].GetStaticPad("sink")
+			if decodeSrcPad.Link(followUpSinkPad) != gst.PadLinkOK {
+				panic("Failed to link decodebin to encoder")
+			}
+
+			// rest is for syncing the elements
+			for _, e := range s.elements {
+				e.SyncStateWithParent()
+			}
+
+			// Set ghost pad target now that pay's src pad exists
+			srcpad := pay.GetStaticPad("src")
+			if !ghostpad.SetTarget(srcpad) {
+				panic("Failed to set ghostpad target")
+			}
+		})
+	default:
+		return nil, fmt.Errorf("unknown source format: %v", s.source)
 	}
 
 	return s, nil
@@ -134,4 +199,10 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 
 func (s *StreamSource) Element() *gst.Element {
 	return s.bin.Element
+}
+
+// SetBitrate sets the target bit rate of the encoder
+func (s *StreamSource) SetBitrate(ratebps uint) error {
+	rateKbps := ratebps / 1000
+	return s.encoder.Set("bitrate", rateKbps)
 }
