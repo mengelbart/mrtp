@@ -3,11 +3,13 @@ package webrtc
 import (
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/Willi-42/go-nada/nada"
 	"github.com/pion/bwe-test/gcc"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/ccfb"
+	"github.com/pion/interceptor/pkg/rfc8888"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 )
@@ -30,8 +32,9 @@ type Transport struct {
 
 	onRemoteTrack func(*RTPReceiver)
 
-	bwe  *gcc.SendSideController
-	nada *nada.SenderOnly
+	bwe    *gcc.SendSideController
+	nada   *nada.SenderOnly
+	scream *ScreamInterceptor
 }
 
 type Option func(*Transport) error
@@ -63,7 +66,16 @@ func EnableTWCC() Option {
 
 func EnableCCFB() Option {
 	return func(t *Transport) error {
-		return webrtc.ConfigureCongestionControlFeedback(t.mediaEngine, t.interceptorRegistry)
+		t.mediaEngine.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBACK, Parameter: "ccfb"}, webrtc.RTPCodecTypeVideo)
+		t.mediaEngine.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBACK, Parameter: "ccfb"}, webrtc.RTPCodecTypeAudio)
+		generator, err := rfc8888.NewSenderInterceptor(
+			rfc8888.SendInterval(10 * time.Millisecond),
+		)
+		if err != nil {
+			return err
+		}
+		t.interceptorRegistry.Add(generator)
+		return nil
 	}
 }
 
@@ -85,6 +97,17 @@ func EnableNADA(initRate, minRate, maxRate int) Option {
 
 		nada := nada.NewSenderOnly(nadaConfig)
 		t.nada = &nada
+		return nil
+	}
+}
+
+func EnableSCReAM(initRate, minRate, maxRate int) Option {
+	return func(t *Transport) error {
+		t.interceptorRegistry.Add(&ScreamInterceptorFactory{
+			initRate: initRate,
+			minRate:  minRate,
+			maxRate:  maxRate,
+		})
 		return nil
 	}
 }

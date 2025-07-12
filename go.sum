@@ -87,6 +87,8 @@ github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae h1:PtXCQWyh3sadRa/
 github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae/go.mod h1:nIlGcUugkfDu41B8LKdAwjHQ1NxAF54D9hS2EDOlVyk=
 github.com/mengelbart/roq v0.3.1-0.20250618153000-ddcb2596a429 h1:FV5ytHAAwSVCeUMDlfCPH9VPn1014ZjlVcoJ1+KOBSE=
 github.com/mengelbart/roq v0.3.1-0.20250618153000-ddcb2596a429/go.mod h1:lxTXZAJy/w7zXCyrYKwiABkrP6M7SDgfcSwigItxx7o=
+github.com/mengelbart/scream-go v0.5.0 h1:E6ur6bicNN9tYrEwzdhvEDKv5odRQnaD1/TKp/oGQWY=
+github.com/mengelbart/scream-go v0.5.0/go.mod h1:5r0YIAaMHmMA6dFSBfLINJPYR7ooVxJwtsigccg6jAg=
 github.com/microcosm-cc/bluemonday v1.0.1/go.mod h1:hsXNsILzKxV+sX77C5b8FSuKF00vh2OMYv+xgHpAMF4=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/reflect2 v1.0.1/go.mod h1:bx2lNnkwVCuqBIxFjflWJWanXIb3RllmbCylyMrvgv0=
