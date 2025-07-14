@@ -115,6 +115,17 @@ func (r *RTPBin) setupRTPPipeline() error {
 	if err != nil {
 		return err
 	}
+	gcc, err := gst.NewElement("rtpgccbwe")
+	if err != nil {
+		return err
+	}
+	_, err = r.rtpbin.Connect("request-aux-sender", func(self *gst.Element, arg uint) *gst.Element {
+		slog.Info("request-aux-sender called")
+		return gcc
+	})
+	if err != nil {
+		return err
+	}
 
 	if err = r.pipeline.Add(r.rtpbin); err != nil {
 		return err
