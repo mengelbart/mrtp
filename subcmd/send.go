@@ -7,37 +7,30 @@ import (
 	"math"
 	"os"
 
+	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/roq"
 )
 
-type sendFlags struct {
-	remote        string
-	local         string
-	sendVideoFile string
-	rtpSendPort   uint
-	rtcpSendPort  uint
-	rtcpRecvPort  uint
-	roqServer     bool
-	roqClient     bool
-	gstScream     bool
-}
+var (
+	gstSCReAM bool
+)
 
 func Send(cmd string, args []string) error {
-	var sf sendFlags
+	fs := flag.NewFlagSet("send", flag.ExitOnError)
+	flags.RegisterInto(fs, []flags.FlagName{
+		flags.LocalAddrFlag,
+		flags.RemoteAddrFlag,
+		flags.RTPPortFlag,
+		flags.RTCPSendPortFlag,
+		flags.RTCPRecvPortFlag,
+		flags.RoQServerFlag,
+		flags.RoQClientFlag,
+		flags.SendVideoFileFlag,
+	}...)
+	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 
-	flags := flag.NewFlagSet("send", flag.ExitOnError)
-	flags.StringVar(&sf.sendVideoFile, "file", "videotestsrc", "Which video to send")
-	flags.StringVar(&sf.remote, "remote", "127.0.0.1", "Remote UDP Address")
-	flags.StringVar(&sf.local, "local", "127.0.0.1", "Local UDP Address")
-	flags.UintVar(&sf.rtpSendPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
-	flags.UintVar(&sf.rtcpSendPort, "rtcp-send-port", 5001, "UDP port number for outgoing RTCP stream")
-	flags.UintVar(&sf.rtcpRecvPort, "rtcp-recv-port", 5002, "UDP port number for incoming RTCP stream")
-	flags.BoolVar(&sf.roqServer, "roq-server", false, "Run a RoQ server instead of using UDP. UDP related flags are ignored and <local> is used as the address to run the QUIC server on.")
-	flags.BoolVar(&sf.roqClient, "roq-client", false, "Run a RoQ client instead of using UDP. UDP related flags are ignored and <remote> is as the server address to connect to.")
-	flags.BoolVar(&sf.gstScream, "gst-scream", false, "Run SCReAM Gstreamer element")
-
-	flags.Usage = func() {
+	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a sender pipeline
 
 Usage:
@@ -45,38 +38,38 @@ Usage:
 
 Flags:
 `, cmd)
-		flags.PrintDefaults()
+		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
 	}
-	flags.Parse(args)
+	fs.Parse(args)
 
-	if len(flags.Args()) > 1 {
+	if len(fs.Args()) > 1 {
 		fmt.Printf("error: unknown extra arguments: %v\n", flag.Args()[1:])
-		flags.Usage()
+		fs.Usage()
 		os.Exit(1)
 	}
 
 	for _, p := range []uint{
-		sf.rtcpRecvPort,
-		sf.rtcpSendPort,
-		sf.rtpSendPort,
+		flags.RTCPRecvPort,
+		flags.RTCPSendPort,
+		flags.RTPPort,
 	} {
 		if p > math.MaxUint32 {
 			return fmt.Errorf("invalid port number: %v", p)
 		}
 	}
-	if sf.roqClient && sf.roqServer {
+	if flags.RoQClient && flags.RoQServer {
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
 	streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
-	if sf.sendVideoFile != "videotestsrc" {
+	if flags.SendVideoFile != "videotestsrc" {
 		// check if file exists
-		if _, err := os.Stat(sf.sendVideoFile); errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("file does not exist: %v", sf.sendVideoFile)
+		if _, err := os.Stat(flags.SendVideoFile); errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("file does not exist: %v", flags.SendVideoFile)
 		}
 
-		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(sf.sendVideoFile))
+		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.SendVideoFile))
 		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
 	}
 
@@ -91,26 +84,26 @@ Flags:
 	}
 	sender.SetTargetRateEncoder = source.SetBitrate
 
-	if sf.roqServer || sf.roqClient {
+	if flags.RoQServer || flags.RoQClient {
 		transport, err := roq.New(
-			roq.WithRole(roq.Role(sf.roqServer)),
+			roq.WithRole(roq.Role(flags.RoQServer)),
 		)
 		if err != nil {
 			return err
 		}
 
-		rtpSink, err := transport.NewSendFlow(uint64(sf.rtpSendPort))
+		rtpSink, err := transport.NewSendFlow(uint64(flags.RTPPort))
 		if err != nil {
 			return err
 		}
 		if err = sender.AddRTPTransportSink(0, rtpSink); err != nil {
 			return err
 		}
-		if err = sender.AddRTPSourceStreamGst(0, source.Element(), sf.gstScream); err != nil {
+		if err = sender.AddRTPSourceStreamGst(0, source.Element(), gstSCReAM); err != nil {
 			return err
 		}
 
-		rtcpSink, err := transport.NewSendFlow(uint64(sf.rtcpSendPort))
+		rtcpSink, err := transport.NewSendFlow(uint64(flags.RTCPSendPort))
 		if err != nil {
 			return err
 		}
@@ -118,7 +111,7 @@ Flags:
 			return err
 		}
 
-		rtcpSrc, err := transport.NewReceiveFlow(uint64(sf.rtcpRecvPort))
+		rtcpSrc, err := transport.NewReceiveFlow(uint64(flags.RTCPRecvPort))
 		if err != nil {
 			return err
 		}
@@ -127,18 +120,18 @@ Flags:
 		}
 
 	} else {
-		rtpSink, err := gstreamer.NewUDPSink(sf.remote, uint32(sf.rtpSendPort))
+		rtpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTPPort))
 		if err != nil {
 			return err
 		}
 		if err = sender.AddRTPTransportSinkGst(0, rtpSink.GetGstElement()); err != nil {
 			return err
 		}
-		if err = sender.AddRTPSourceStreamGst(0, source.Element(), sf.gstScream); err != nil {
+		if err = sender.AddRTPSourceStreamGst(0, source.Element(), gstSCReAM); err != nil {
 			return err
 		}
 
-		rtcpSink, err := gstreamer.NewUDPSink(sf.remote, uint32(sf.rtcpSendPort))
+		rtcpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTCPSendPort))
 		if err != nil {
 			return err
 		}
@@ -146,7 +139,7 @@ Flags:
 			return err
 		}
 
-		rtcpSrc, err := gstreamer.NewUDPSrc(sf.local, uint32(sf.rtcpRecvPort))
+		rtcpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTCPRecvPort))
 		if err != nil {
 			return err
 		}
