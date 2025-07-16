@@ -13,7 +13,8 @@ import (
 )
 
 var (
-	gstSCReAM bool
+	gstSCReAM       bool
+	udpSinkTraceRTP bool
 )
 
 func Send(cmd string, args []string) error {
@@ -29,6 +30,7 @@ func Send(cmd string, args []string) error {
 		flags.SendVideoFileFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
+	fs.BoolVar(&udpSinkTraceRTP, "udp-sink-trace-rtp", false, "Log outgoing RTP packets on UDPSink")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a sender pipeline
@@ -120,7 +122,7 @@ Flags:
 		}
 
 	} else {
-		rtpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTPPort))
+		rtpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSinkPadProbe(udpSinkTraceRTP))
 		if err != nil {
 			return err
 		}
