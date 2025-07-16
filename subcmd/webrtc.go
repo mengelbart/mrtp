@@ -103,10 +103,10 @@ Usage:
 		webrtcOptions = append(webrtcOptions, webrtc.EnableCCFBReceiver())
 	}
 	if wf.pionGCC {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableGCC(100_000, 10_000, 1_000_000))
+		webrtcOptions = append(webrtcOptions, webrtc.EnableGCC(750_000, 150_000, 3_000_000))
 	}
 	if wf.nada {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableNADA(1_000, 100, 1_000_000))
+		webrtcOptions = append(webrtcOptions, webrtc.EnableNADA(750_000, 150_000, 3_000_000))
 	}
 
 	transport, err := webrtc.NewTransport(
