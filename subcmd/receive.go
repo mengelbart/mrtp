@@ -12,6 +12,10 @@ import (
 	"github.com/mengelbart/mrtp/roq"
 )
 
+var (
+	udpSrcTraceRTP bool
+)
+
 func Receive(cmd string, args []string) error {
 	fs := flag.NewFlagSet("receive", flag.ExitOnError)
 
@@ -29,6 +33,8 @@ func Receive(cmd string, args []string) error {
 		flags.RoQClientFlag,
 		flags.GstCCFBFlag,
 	}...)
+
+	fs.BoolVar(&udpSrcTraceRTP, "udp-src-trace-rtp", false, "Log incoming RTP packets on UDPSrc")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a receiver pipeline
@@ -107,7 +113,7 @@ Flags:
 			return err
 		}
 	} else {
-		rtpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTPPort))
+		rtpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSrcPadProbe(udpSrcTraceRTP))
 		if err != nil {
 			return err
 		}

@@ -1,12 +1,23 @@
 package gstreamer
 
-import "github.com/go-gst/go-gst/gst"
+import (
+	"github.com/go-gst/go-gst/gst"
+)
 
-type UDPSink struct {
-	e *gst.Element
+type UDPSinkOption func(*UDPSink)
+
+func EnabelUDPSinkPadProbe(enabled bool) UDPSinkOption {
+	return func(u *UDPSink) {
+		u.enablePadProbe = enabled
+	}
 }
 
-func NewUDPSink(address string, port uint32) (*UDPSink, error) {
+type UDPSink struct {
+	e              *gst.Element
+	enablePadProbe bool
+}
+
+func NewUDPSink(address string, port uint32, opts ...UDPSinkOption) (*UDPSink, error) {
 	e, err := gst.NewElementWithProperties(
 		"udpsink",
 		map[string]any{
@@ -19,10 +30,18 @@ func NewUDPSink(address string, port uint32) (*UDPSink, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	return &UDPSink{
+	sink := &UDPSink{
 		e: e,
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(sink)
+	}
+
+	if sink.enablePadProbe {
+		e.GetStaticPad("sink").AddProbe(gst.PadProbeTypeBuffer, getRTPLogPadProbe("UDPSink"))
+	}
+
+	return sink, nil
 }
 
 func (s *UDPSink) GetGstElement() *gst.Element {
