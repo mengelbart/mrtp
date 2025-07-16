@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
@@ -190,11 +189,11 @@ func (r *RTPBin) AddRTPSourceStreamGst(id int, src *gst.Element, enableSCReAM bo
 					panic(err)
 				}
 				if rate == 0 {
-					// gstreamer stats are empty
+					// scream wants new key frame
 					continue
 				}
 
-				err = r.SetTargetRateEncoder(uint(rate * 1000))
+				err = r.SetTargetRateEncoder(rate * 1000)
 				if err != nil {
 					panic(err)
 				}
@@ -386,29 +385,20 @@ func (r *RTPBin) ReceiveRTCPFromGst(src *gst.Element) error {
 }
 
 // getTargetBitRate returns the current target rate of SCReAM
-func (r *RTPBin) getTargetBitRate() (int, error) {
+func (r *RTPBin) getTargetBitRate() (uint, error) {
 	if r.screamTx == nil {
 		return 0, errors.New("screamTx element not initialized")
 	}
-	val, err := r.screamTx.GetProperty("stats")
+	val, err := r.screamTx.GetProperty("current-max-bitrate")
 	if err != nil {
 		return 0, err
 	}
-	stats, ok := val.(string)
+	rate, ok := val.(uint)
 	if !ok {
-		return 0, errors.New("stats property is not a string")
-	}
-	if len(stats) == 0 {
-		return 0, nil
+		return 0, fmt.Errorf("screams's current-max-bitrate not an uint")
 	}
 
-	statValues := strings.Split(stats, ",")
-	bitrate, err := strconv.Atoi(strings.Trim(statValues[13], " "))
-	if err != nil {
-		return 0, fmt.Errorf("screamTx targetBitrate is not an int: %v", err)
-	}
-
-	return bitrate, nil
+	return rate, nil
 }
 
 func getAppSinkWithWriteCloser(wc io.WriteCloser) (*gst.Element, error) {
