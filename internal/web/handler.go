@@ -13,12 +13,6 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-//go:embed frontend/dist/*
-var frontendFS embed.FS
-
-//go:embed frontend/dist
-var frontendPublicFS embed.FS
-
 //go:embed templates/*
 var templateFS embed.FS
 
