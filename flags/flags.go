@@ -2,8 +2,8 @@
 //
 // The design idea is taken from [upspin.io/flags], but most of the code is
 // modified. This package uses a slightly modified version of [RegisterInto] and
-// the internal [flags]-map. See [Upspin LICENSE] for detailed copyright and
-// license information about the parts copied from upspin.
+// the internal [flags]-map. See [Upspin LICENSE] for upspins copyright and
+// license information.
 //
 // [upspin.io/flags]: https://github.com/upspin/upspin/tree/334f107fe3d98225d7adfbb35b74e066fbca9875/flags
 // [Upspin LICENSE]: https://github.com/upspin/upspin/blob/334f107fe3d98225d7adfbb35b74e066fbca9875/LICENSE

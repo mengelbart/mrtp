@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/internal/http"
@@ -28,7 +29,18 @@ var (
 	sendVideoTrack bool
 )
 
-func WebRTC(cmd string, args []string) error {
+func init() {
+	cmdmain.RegisterSubCmd("webrtc", func() cmdmain.SubCmd { return new(WebRTC) })
+}
+
+type WebRTC struct{}
+
+// Help implements cmdmain.SubCmd.
+func (w *WebRTC) Help() string {
+	return "Run webrtc peer"
+}
+
+func (w *WebRTC) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("webrtc", flag.ExitOnError)
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.LocalAddrFlag,
