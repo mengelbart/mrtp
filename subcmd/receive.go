@@ -13,6 +13,10 @@ import (
 	"github.com/mengelbart/mrtp/roq"
 )
 
+var MakeStreamSink = func(name string) (gstreamer.RTPSinkBin, error) {
+	return gstreamer.NewStreamSink(name)
+}
+
 func init() {
 	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd {
 		return new(Receive)
@@ -25,7 +29,7 @@ var (
 
 type Receive struct {
 	receiver *gstreamer.RTPBin
-	sink     *gstreamer.StreamSink
+	sink     gstreamer.RTPSinkBin
 }
 
 func (r *Receive) Help() string {
@@ -90,7 +94,7 @@ Flags:
 		return err
 	}
 
-	r.sink, err = gstreamer.NewStreamSink("rtp-stream-sink")
+	r.sink, err = MakeStreamSink("rtp-stream-sink")
 	if err != nil {
 		return err
 	}
@@ -99,6 +103,9 @@ Flags:
 		err = r.setupRoQ()
 	} else {
 		err = r.setupUDP()
+	}
+	if err != nil {
+		return err
 	}
 	return r.receiver.Run()
 }
@@ -115,7 +122,7 @@ func (r *Receive) setupRoQ() error {
 	if err != nil {
 		return err
 	}
-	if err = r.receiver.AddRTPReceiveStreamSinkGst(0, r.sink); err != nil {
+	if err = r.receiver.AddRTPSink(0, r.sink); err != nil {
 		return err
 	}
 	if err = r.receiver.ReceiveRTPStreamFrom(0, rtpSrc, flags.GstCCFB); err != nil {
@@ -145,7 +152,7 @@ func (r *Receive) setupUDP() error {
 	if err != nil {
 		return err
 	}
-	if err = r.receiver.AddRTPReceiveStreamSinkGst(0, r.sink); err != nil {
+	if err = r.receiver.AddRTPSink(0, r.sink); err != nil {
 		return err
 	}
 	if err = r.receiver.ReceiveRTPStreamFromGst(0, rtpSrc.GetGstElement(), flags.GstCCFB); err != nil {

@@ -12,9 +12,18 @@ import (
 	"github.com/go-gst/go-gst/gst/app"
 )
 
+type RTPSinkBin interface {
+	Element() *gst.Element
+	SinkPad() (*gst.Pad, error)
+	ClockRate() int
+	EncodingName() string
+	PayloadType() int
+	MediaType() string
+}
+
 type RTPBin struct {
 	transports map[int]*gst.Element
-	streams    map[int]*StreamSink
+	streams    map[int]RTPSinkBin
 
 	pipeline *gst.Pipeline
 	rtpbin   *gst.Element
@@ -38,7 +47,7 @@ func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
 	}
 	r := &RTPBin{
 		transports:           map[int]*gst.Element{},
-		streams:              map[int]*StreamSink{},
+		streams:              map[int]RTPSinkBin{},
 		pipeline:             pipeline,
 		rtpbin:               rtpbin,
 		rtcpFunnels:          map[int]*gst.Element{},
@@ -87,7 +96,7 @@ func (r *RTPBin) setupRTPPipeline() error {
 				slog.Error("failed to sync stream state with pipeline state")
 				return
 			}
-			sinkPad, err := stream.GetSinkPad()
+			sinkPad, err := stream.SinkPad()
 			if err != nil {
 				slog.Error("failed to get stream sinkpad", "error", err)
 				return
@@ -250,7 +259,7 @@ func (r *RTPBin) SendRTCPForStreamGst(id int, sink *gst.Element) error {
 	return nil
 }
 
-func (r *RTPBin) AddRTPReceiveStreamSinkGst(id int, sink *StreamSink) error {
+func (r *RTPBin) AddRTPSink(id int, sink RTPSinkBin) error {
 	if _, ok := r.streams[id]; ok {
 		return errors.New("duplicate stream id")
 	}
@@ -269,7 +278,7 @@ func (r *RTPBin) ReceiveRTPStreamFrom(id int, rc io.ReadCloser, screamCCFB bool)
 func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element, screamCCFB bool) error {
 	sink, ok := r.streams[id]
 	if !ok {
-		return errors.New("unknown stream, did you forget to call AddRTPStreamSink first?")
+		return errors.New("unknown stream, did you forget to call AddRTPSink first?")
 	}
 	if err := r.pipeline.Add(src); err != nil {
 		return err

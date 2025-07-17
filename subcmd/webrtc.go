@@ -85,7 +85,7 @@ Usage:
 			if newSinkErr != nil {
 				panic(err)
 			}
-			if pipelineErr := pipeline.AddRTPReceiveStreamSinkGst(0, sink); pipelineErr != nil {
+			if pipelineErr := pipeline.AddRTPSink(0, sink); pipelineErr != nil {
 				panic(pipelineErr)
 			}
 			if pipelineErr := pipeline.ReceiveRTPStreamFrom(0, receiver, flags.GstCCFB); pipelineErr != nil {
