@@ -7,17 +7,29 @@ import (
 	"math"
 	"os"
 
+	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/roq"
 )
+
+func init() {
+	cmdmain.RegisterSubCmd("send", func() cmdmain.SubCmd { return new(Send) })
+}
 
 var (
 	gstSCReAM       bool
 	udpSinkTraceRTP bool
 )
 
-func Send(cmd string, args []string) error {
+type Send struct {
+}
+
+func (s *Send) Help() string {
+	return "Run sender pipeline"
+}
+
+func (s *Send) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.LocalAddrFlag,

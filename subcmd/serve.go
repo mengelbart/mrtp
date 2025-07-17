@@ -7,12 +7,24 @@ import (
 	"os"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/internal/http"
 	"github.com/mengelbart/mrtp/internal/web"
 )
 
-func Serve(cmd string, args []string) error {
+func init() {
+	cmdmain.RegisterSubCmd("serve", func() cmdmain.SubCmd { return new(Serve) })
+}
+
+type Serve struct{}
+
+// Help implements cmdmain.SubCmd.
+func (s *Serve) Help() string {
+	return "Run web server"
+}
+
+func (s *Serve) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.HTTPAddrFlag,
@@ -49,7 +61,7 @@ Flags:
 		return err
 	}
 
-	s, err := http.NewServer(
+	server, err := http.NewServer(
 		http.H1Address(flags.HTTPAddr),
 		http.H2Address(flags.HTTPSAddr),
 		http.H3Address(flags.HTTPSAddr),
@@ -62,5 +74,5 @@ Flags:
 		return err
 	}
 
-	return s.ListenAndServe()
+	return server.ListenAndServe()
 }

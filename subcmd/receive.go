@@ -7,16 +7,32 @@ import (
 	"math"
 	"os"
 
+	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/roq"
 )
 
+func init() {
+	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd {
+		return new(Receive)
+	})
+}
+
 var (
 	udpSrcTraceRTP bool
 )
 
-func Receive(cmd string, args []string) error {
+type Receive struct {
+	receiver *gstreamer.RTPBin
+	sink     *gstreamer.StreamSink
+}
+
+func (r *Receive) Help() string {
+	return "Run receiver pipeline"
+}
+
+func (r *Receive) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("receive", flag.ExitOnError)
 
 	// override default values
@@ -68,78 +84,88 @@ Flags:
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
-	receiver, err := gstreamer.NewRTPBin()
+	var err error
+	r.receiver, err = gstreamer.NewRTPBin()
 	if err != nil {
 		return err
 	}
 
-	sink, err := gstreamer.NewStreamSink("rtp-stream-sink")
+	r.sink, err = gstreamer.NewStreamSink("rtp-stream-sink")
 	if err != nil {
 		return err
 	}
 
 	if flags.RoQServer || flags.RoQClient {
-		transport, err := roq.New(
-			roq.WithRole(roq.Role(flags.RoQServer)),
-		)
-		if err != nil {
-			return err
-		}
-
-		rtpSrc, err := transport.NewReceiveFlow(uint64(flags.RTPPort))
-		if err != nil {
-			return err
-		}
-		if err = receiver.AddRTPReceiveStreamSinkGst(0, sink); err != nil {
-			return err
-		}
-		if err = receiver.ReceiveRTPStreamFrom(0, rtpSrc, flags.GstCCFB); err != nil {
-			return err
-		}
-
-		rtcpSink, err := transport.NewSendFlow(uint64(flags.RTCPSendPort))
-		if err != nil {
-			return err
-		}
-		if err = receiver.SendRTCPForStream(0, rtcpSink); err != nil {
-			return err
-		}
-
-		rtcpSrc, err := transport.NewReceiveFlow(uint64(flags.RTCPRecvPort))
-		if err != nil {
-			return err
-		}
-		if err = receiver.ReceiveRTCPFrom(rtcpSrc); err != nil {
-			return err
-		}
+		err = r.setupRoQ()
 	} else {
-		rtpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSrcPadProbe(udpSrcTraceRTP))
-		if err != nil {
-			return err
-		}
-		if err = receiver.AddRTPReceiveStreamSinkGst(0, sink); err != nil {
-			return err
-		}
-		if err = receiver.ReceiveRTPStreamFromGst(0, rtpSrc.GetGstElement(), flags.GstCCFB); err != nil {
-			return err
-		}
+		err = r.setupUDP()
+	}
+	return r.receiver.Run()
+}
 
-		rtcpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTCPSendPort))
-		if err != nil {
-			return err
-		}
-		if err = receiver.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
-			return err
-		}
-
-		rtcpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTCPRecvPort))
-		if err != nil {
-			return err
-		}
-		if err = receiver.ReceiveRTCPFromGst(rtcpSrc.GetGstElement()); err != nil {
-			return err
-		}
+func (r *Receive) setupRoQ() error {
+	transport, err := roq.New(
+		roq.WithRole(roq.Role(flags.RoQServer)),
+	)
+	if err != nil {
+		return err
 	}
 
-	return receiver.Run()
+	rtpSrc, err := transport.NewReceiveFlow(uint64(flags.RTPPort))
+	if err != nil {
+		return err
+	}
+	if err = r.receiver.AddRTPReceiveStreamSinkGst(0, r.sink); err != nil {
+		return err
+	}
+	if err = r.receiver.ReceiveRTPStreamFrom(0, rtpSrc, flags.GstCCFB); err != nil {
+		return err
+	}
+
+	rtcpSink, err := transport.NewSendFlow(uint64(flags.RTCPSendPort))
+	if err != nil {
+		return err
+	}
+	if err = r.receiver.SendRTCPForStream(0, rtcpSink); err != nil {
+		return err
+	}
+
+	rtcpSrc, err := transport.NewReceiveFlow(uint64(flags.RTCPRecvPort))
+	if err != nil {
+		return err
+	}
+	if err = r.receiver.ReceiveRTCPFrom(rtcpSrc); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *Receive) setupUDP() error {
+	rtpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSrcPadProbe(udpSrcTraceRTP))
+	if err != nil {
+		return err
+	}
+	if err = r.receiver.AddRTPReceiveStreamSinkGst(0, r.sink); err != nil {
+		return err
+	}
+	if err = r.receiver.ReceiveRTPStreamFromGst(0, rtpSrc.GetGstElement(), flags.GstCCFB); err != nil {
+		return err
+	}
+
+	rtcpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTCPSendPort))
+	if err != nil {
+		return err
+	}
+	if err = r.receiver.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
+		return err
+	}
+
+	rtcpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTCPRecvPort))
+	if err != nil {
+		return err
+	}
+	if err = r.receiver.ReceiveRTCPFromGst(rtcpSrc.GetGstElement()); err != nil {
+		return err
+	}
+	return nil
 }
