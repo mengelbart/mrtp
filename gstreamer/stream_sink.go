@@ -101,7 +101,7 @@ func (s *StreamSink) Element() *gst.Element {
 	return s.bin.Element
 }
 
-func (s *StreamSink) GetSinkPad() (*gst.Pad, error) {
+func (s *StreamSink) SinkPad() (*gst.Pad, error) {
 	pads, err := s.bin.GetSinkPads()
 	if err != nil {
 		return nil, err
