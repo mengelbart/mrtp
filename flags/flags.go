@@ -39,6 +39,8 @@ const (
 
 	SinkTypeFlag FlagName = "sink-type"
 	LocationFlag FlagName = "location"
+
+	LogFileFlag FlagName = "logfile"
 )
 
 // default values
@@ -94,6 +96,8 @@ var (
 	SinkType = defaultSinkType
 
 	Location = ""
+
+	LogFile = ""
 )
 
 type flagVar func(*flag.FlagSet)
@@ -143,6 +147,9 @@ var flags = map[FlagName]flagVar{
 	SendVideoFileFlag: stringVar(&SendVideoFile, SendVideoFileFlag, &SendVideoFile, "Which video to send"),
 	SinkTypeFlag:      uintVar(&SinkType, SinkTypeFlag, &SinkType, "Sink type (0: autovideosink, 1: filesink, requires <location> to be set)"),
 	LocationFlag:      stringVar(&Location, LocationFlag, &Location, "Location for filesink if <sink-type> is 1 (filesink)"),
+
+	// logging falg
+	LogFileFlag: stringVar(&LogFile, LogFileFlag, &LogFile, "Where to print logs: path-to-file or empty if stdout"),
 }
 
 func RegisterInto(fs *flag.FlagSet, names ...FlagName) {

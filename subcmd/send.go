@@ -10,6 +10,7 @@ import (
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
+	"github.com/mengelbart/mrtp/logging"
 	"github.com/mengelbart/mrtp/roq"
 )
 
@@ -60,6 +61,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RoQServerFlag,
 		flags.RoQClientFlag,
 		flags.SendVideoFileFlag,
+		flags.LogFileFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 	fs.BoolVar(&udpSinkTraceRTP, "udp-sink-trace-rtp", false, "Log outgoing RTP packets on UDPSink")
@@ -76,6 +78,17 @@ Flags:
 		fmt.Fprintln(os.Stderr)
 	}
 	fs.Parse(args)
+
+	// use log file
+	if flags.LogFile != "" {
+		f, err := os.Create(flags.LogFile)
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+
+		logging.UseFileForLogging(f)
+	}
 
 	if len(fs.Args()) > 1 {
 		fmt.Printf("error: unknown extra arguments: %v\n", flag.Args()[1:])
