@@ -263,7 +263,7 @@ func (t *Transport) Close() error {
 func (t *Transport) onCCFB(reports []ccfb.Report) error {
 	t.logger.Info("received ccfb packet report", "length", len(reports))
 
-	var tr int
+	var tr uint
 	for _, report := range reports {
 		rtt := report.Arrival.Sub(report.Arrival)
 
@@ -280,10 +280,11 @@ func (t *Transport) onCCFB(reports []ccfb.Report) error {
 						Arrival:   pr.Arrival,
 						ECN:       gcc.ECN(pr.ECN),
 					})
+					slog.Info("DELAY_MEASUREMENT", "delay", pr.Arrival.Sub(pr.Departure).Microseconds())
 				}
 			}
 
-			tr = t.bwe.OnAcks(report.Arrival, rtt, acks)
+			tr = uint(t.bwe.OnAcks(report.Arrival, rtt, acks))
 		}
 
 		// NADA as CC
@@ -301,21 +302,22 @@ func (t *Transport) onCCFB(reports []ccfb.Report) error {
 						Arrival:   pr.Arrival,
 						Marked:    pr.ECN == rtcp.ECNCE,
 					})
+
+					slog.Info("DELAY_MEASUREMENT", "delay", pr.Arrival.Sub(pr.Departure).Microseconds())
 				}
 			}
 
-			tr = int(t.nada.OnAcks(rtt, acks))
+			tr = uint(t.nada.OnAcks(rtt, acks))
 		}
 
 		if tr != 0 {
 			if t.SetTargetRate != nil {
 				// set target rate of encoder
-				err := t.SetTargetRate(uint(tr))
+				err := t.SetTargetRate(tr)
 				if err != nil {
 					return err
 				}
 			}
-			t.logger.Info("got new target rate", "tr", tr)
 		}
 	}
 

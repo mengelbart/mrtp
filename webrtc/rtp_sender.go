@@ -1,6 +1,7 @@
 package webrtc
 
 import (
+	"github.com/mengelbart/mrtp/logging"
 	"github.com/pion/interceptor/pkg/ccfb"
 	"github.com/pion/webrtc/v4"
 )
@@ -12,6 +13,10 @@ type RTPSender struct {
 }
 
 func (s *RTPSender) Write(pkt []byte) (int, error) {
+	err := logging.LogRTPpacket(pkt, "webRTC send")
+	if err != nil {
+		return 0, err
+	}
 	return s.track.Write(pkt)
 }
 
