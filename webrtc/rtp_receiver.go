@@ -1,6 +1,9 @@
 package webrtc
 
-import "github.com/pion/webrtc/v4"
+import (
+	"github.com/mengelbart/mrtp/logging"
+	"github.com/pion/webrtc/v4"
+)
 
 type RTPReceiver struct {
 	track    *webrtc.TrackRemote
@@ -9,6 +12,13 @@ type RTPReceiver struct {
 
 func (r *RTPReceiver) Read(buffer []byte) (int, error) {
 	n, _, err := r.track.Read(buffer)
+	if err != nil {
+		return n, err
+	}
+	err = logging.LogRTPpacket(buffer[:n], "webRTC send")
+	if err != nil {
+		return 0, err
+	}
 	return n, err
 }
 

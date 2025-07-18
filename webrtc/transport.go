@@ -264,7 +264,7 @@ func (t *Transport) Close() error {
 func (t *Transport) onCCFB(reports []ccfb.Report) error {
 	t.logger.Info("received ccfb packet report", "length", len(reports))
 
-	var tr int
+	var tr uint
 	for _, report := range reports {
 		// GCC as CC
 		if t.bwe != nil {
@@ -281,6 +281,7 @@ func (t *Transport) onCCFB(reports []ccfb.Report) error {
 						Arrival:   pr.Arrival,
 						ECN:       gcc.ECN(pr.ECN),
 					})
+					slog.Info("DELAY_MEASUREMENT", "delay", pr.Arrival.Sub(pr.Departure).Microseconds())
 					if pr.Arrival.After(latestAckedArrival) {
 						latestAckedArrival = pr.Arrival
 						latestAckedDeparture = pr.Departure
@@ -288,7 +289,7 @@ func (t *Transport) onCCFB(reports []ccfb.Report) error {
 				}
 			}
 			rtt := gcc.MeasureRTT(report.Departure, report.Arrival, latestAckedDeparture, latestAckedArrival)
-			tr = t.bwe.OnAcks(report.Arrival, rtt, acks)
+			tr = uint(t.bwe.OnAcks(report.Arrival, rtt, acks))
 		}
 
 		// NADA as CC
@@ -308,6 +309,7 @@ func (t *Transport) onCCFB(reports []ccfb.Report) error {
 						Arrival:   pr.Arrival,
 						Marked:    pr.ECN == rtcp.ECNCE,
 					})
+					slog.Info("DELAY_MEASUREMENT", "delay", pr.Arrival.Sub(pr.Departure).Microseconds())
 					if pr.Arrival.After(latestAckedArrival) {
 						latestAckedArrival = pr.Arrival
 						latestAckedDeparture = pr.Departure
@@ -316,18 +318,17 @@ func (t *Transport) onCCFB(reports []ccfb.Report) error {
 			}
 
 			rtt := gcc.MeasureRTT(report.Departure, report.Arrival, latestAckedDeparture, latestAckedArrival)
-			tr = int(t.nada.OnAcks(rtt, acks))
+			tr = uint(t.nada.OnAcks(rtt, acks))
 		}
 
 		if tr != 0 {
 			if t.SetTargetRate != nil {
 				// set target rate of encoder
-				err := t.SetTargetRate(uint(tr))
+				err := t.SetTargetRate(tr)
 				if err != nil {
 					return err
 				}
 			}
-			t.logger.Info("got new target rate", "tr", tr)
 		}
 	}
 

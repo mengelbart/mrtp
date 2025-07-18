@@ -3,6 +3,7 @@ package gstreamer
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/go-gst/go-gst/gst"
@@ -211,5 +212,8 @@ func (s *StreamSource) SrcPad() (*gst.Pad, error) {
 // SetBitrate sets the target bit rate of the encoder
 func (s *StreamSource) SetBitrate(ratebps uint) error {
 	rateKbps := ratebps / 1000
+
+	slog.Info("NEW_TARGET_RATE", "rate", ratebps)
+
 	return s.encoder.Set("bitrate", rateKbps)
 }
