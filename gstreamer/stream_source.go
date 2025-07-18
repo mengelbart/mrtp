@@ -200,6 +200,14 @@ func (s *StreamSource) Element() *gst.Element {
 	return s.bin.Element
 }
 
+func (s *StreamSource) SrcPad() (*gst.Pad, error) {
+	pad := s.bin.GetStaticPad("src")
+	if pad == nil {
+		return nil, errors.New("src pad not found")
+	}
+	return pad, nil
+}
+
 // SetBitrate sets the target bit rate of the encoder
 func (s *StreamSource) SetBitrate(ratebps uint) error {
 	rateKbps := ratebps / 1000

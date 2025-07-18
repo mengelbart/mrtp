@@ -13,14 +13,14 @@ import (
 	"github.com/mengelbart/mrtp/roq"
 )
 
-var MakeStreamSink = func(name string) (gstreamer.RTPSinkBin, error) {
-	return gstreamer.NewStreamSink(name)
-}
-
 func init() {
 	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd {
 		return new(Receive)
 	})
+}
+
+var MakeStreamSink = func(name string) (gstreamer.RTPSinkBin, error) {
+	return gstreamer.NewStreamSink(name)
 }
 
 var (
