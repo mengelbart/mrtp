@@ -12,6 +12,11 @@ import (
 	"github.com/go-gst/go-gst/gst/app"
 )
 
+type RTPSourceBin interface {
+	Element() *gst.Element
+	SrcPad() (*gst.Pad, error)
+}
+
 type RTPSinkBin interface {
 	Element() *gst.Element
 	SinkPad() (*gst.Pad, error)
@@ -151,8 +156,8 @@ func (r *RTPBin) AddRTPTransportSinkGst(id int, sink *gst.Element) error {
 	return nil
 }
 
-func (r *RTPBin) AddRTPSourceStreamGst(id int, src *gst.Element, enableSCReAM bool) error {
-	if err := r.pipeline.Add(src); err != nil {
+func (r *RTPBin) AddRTPSourceStreamGst(id int, src RTPSourceBin, enableSCReAM bool) error {
+	if err := r.pipeline.Add(src.Element()); err != nil {
 		return err
 	}
 
@@ -161,9 +166,9 @@ func (r *RTPBin) AddRTPSourceStreamGst(id int, src *gst.Element, enableSCReAM bo
 		return errors.New("failed to request sendRTPSinkPad")
 	}
 
-	srcPad := src.GetStaticPad("src")
-	if srcPad == nil {
-		return errors.New("source has no src pad?")
+	srcPad, err := src.SrcPad()
+	if err != nil {
+		return err
 	}
 
 	if enableSCReAM {
