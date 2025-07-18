@@ -17,13 +17,33 @@ func init() {
 	cmdmain.RegisterSubCmd("send", func() cmdmain.SubCmd { return new(Send) })
 }
 
+// BitrateAdapter is the interface implemented by source streams that can adapt
+// their bitrate to a target rate.
+type BitrateAdapter interface {
+	// SetBitrate sets the target bitrate for the stream source.
+	SetBitrate(uint) error
+}
+
+var MakeStreamSource = func(name string) (gstreamer.RTPSourceBin, error) {
+	streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
+	if flags.SendVideoFile != "videotestsrc" {
+		// check if file exists
+		if _, err := os.Stat(flags.SendVideoFile); errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("file does not exist: %v", flags.SendVideoFile)
+		}
+
+		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.SendVideoFile))
+		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
+	}
+	return gstreamer.NewStreamSource(name)
+}
+
 var (
 	gstSCReAM       bool
 	udpSinkTraceRTP bool
 )
 
-type Send struct {
-}
+type Send struct{}
 
 func (s *Send) Help() string {
 	return "Run sender pipeline"
@@ -76,18 +96,7 @@ Flags:
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
-	streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
-	if flags.SendVideoFile != "videotestsrc" {
-		// check if file exists
-		if _, err := os.Stat(flags.SendVideoFile); errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("file does not exist: %v", flags.SendVideoFile)
-		}
-
-		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.SendVideoFile))
-		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
-	}
-
-	source, err := gstreamer.NewStreamSource("rtp-stream-source", streamSourceOpts...)
+	source, err := MakeStreamSource("rtp-stream-source")
 	if err != nil {
 		return err
 	}
@@ -96,7 +105,9 @@ Flags:
 	if err != nil {
 		return err
 	}
-	sender.SetTargetRateEncoder = source.SetBitrate
+	if ba, ok := source.(BitrateAdapter); ok {
+		sender.SetTargetRateEncoder = ba.SetBitrate
+	}
 
 	if flags.RoQServer || flags.RoQClient {
 		transport, err := roq.New(
@@ -113,7 +124,7 @@ Flags:
 		if err = sender.AddRTPTransportSink(0, rtpSink); err != nil {
 			return err
 		}
-		if err = sender.AddRTPSourceStreamGst(0, source.Element(), gstSCReAM); err != nil {
+		if err = sender.AddRTPSourceStreamGst(0, source, gstSCReAM); err != nil {
 			return err
 		}
 
@@ -141,7 +152,7 @@ Flags:
 		if err = sender.AddRTPTransportSinkGst(0, rtpSink.GetGstElement()); err != nil {
 			return err
 		}
-		if err = sender.AddRTPSourceStreamGst(0, source.Element(), gstSCReAM); err != nil {
+		if err = sender.AddRTPSourceStreamGst(0, source, gstSCReAM); err != nil {
 			return err
 		}
 
