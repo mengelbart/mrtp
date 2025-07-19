@@ -184,7 +184,7 @@ Usage:
 		// the packet to the correct SSRC (because it cannot read the media SSRC
 		// from a raw RTCP packet. The ScreamTx sender on the other hand,
 		// expects the type set to 0.
-		if err = pipeline.AddRTPSourceStreamGst(0, source.Element(), false); err != nil {
+		if err = pipeline.AddRTPSourceStreamGst(0, source, false); err != nil {
 			return err
 		}
 		if err = pipeline.ReceiveRTCPFrom(rtpSink.RTCPReceiver()); err != nil {
