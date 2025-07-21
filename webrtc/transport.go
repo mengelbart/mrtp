@@ -3,6 +3,7 @@ package webrtc
 import (
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
@@ -30,6 +31,10 @@ type Transport struct {
 	pc       *webrtc.PeerConnection
 	signaler Signaler
 	offerer  bool
+
+	pendingICECandidatesLock sync.Mutex
+	hasRemoteDescription     bool
+	pendingICECandidates     []*webrtc.ICECandidate
 
 	onRemoteTrack func(*RTPReceiver)
 
@@ -195,6 +200,13 @@ func (t *Transport) onICECandidate(i *webrtc.ICECandidate) {
 	if i == nil {
 		return
 	}
+	t.pendingICECandidatesLock.Lock()
+	defer t.pendingICECandidatesLock.Unlock()
+
+	if !t.hasRemoteDescription {
+		t.pendingICECandidates = append(t.pendingICECandidates, i)
+		return
+	}
 	if err := t.signaler.SendICECandidate(i); err != nil {
 		t.logger.Error("signaler failed to send ICE candidate", "error", err)
 		return
@@ -220,6 +232,15 @@ func (t *Transport) HandleSessionDescription(description *webrtc.SessionDescript
 		t.logger.Error("failed to set remote description", "error", err)
 		return errors.New("failed to process session description")
 	}
+	t.pendingICECandidatesLock.Lock()
+	defer t.pendingICECandidatesLock.Unlock()
+	t.hasRemoteDescription = true
+	for _, c := range t.pendingICECandidates {
+		if err := t.signaler.SendICECandidate(c); err != nil {
+			t.logger.Error("signaler failed to send ICE candidate", "error", err)
+		}
+	}
+
 	if description.Type != webrtc.SDPTypeOffer {
 		return nil
 	}
