@@ -47,6 +47,8 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 		flags.RemoteAddrFlag,
 		flags.SendVideoFileFlag,
 		flags.GstCCFBFlag,
+		flags.SinkTypeFlag,
+		flags.LocationFlag,
 	}...)
 	fs.StringVar(&localPort, "local-port", "8080", "Local port of HTTP signaling server to listen on")
 	fs.StringVar(&remotePort, "remote-port", "8080", "Remote Port of HTTP signaling server to connect to")
@@ -81,7 +83,12 @@ Usage:
 
 	webrtcOptions := []webrtc.Option{
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
-			sink, newSinkErr := gstreamer.NewStreamSink("rtp-stream-sink", gstreamer.StreamSinkPayloadType(int(receiver.PayloadType())))
+			sink, newSinkErr := gstreamer.NewStreamSink(
+				"rtp-stream-sink",
+				gstreamer.StreamSinkPayloadType(int(receiver.PayloadType())),
+				gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
+				gstreamer.StreamSinkLocation(flags.Location),
+			)
 			if newSinkErr != nil {
 				panic(err)
 			}

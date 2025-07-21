@@ -8,27 +8,42 @@ import (
 	"github.com/mengelbart/mrtp"
 )
 
-type Sink int
+type SinkType uint
 
 const (
-	autovideosink Sink = iota
-	filesink
+	Autovideosink SinkType = iota
+	Filesink
 )
 
 type StreamSinkOption func(*StreamSink) error
 
 func StreamSinkPayloadType(pt int) StreamSinkOption {
-	return func(rs *StreamSink) error {
-		rs.payloadType = pt
+	return func(s *StreamSink) error {
+		s.payloadType = pt
+		return nil
+	}
+}
+
+func StreamSinkType(sinkType SinkType) StreamSinkOption {
+	return func(s *StreamSink) error {
+		s.sinkType = sinkType
+		return nil
+	}
+}
+
+func StreamSinkLocation(location string) StreamSinkOption {
+	return func(s *StreamSink) error {
+		s.location = location
 		return nil
 	}
 }
 
 type StreamSink struct {
-	sink             Sink
+	sinkType         SinkType
 	codec            mrtp.Codec
 	fileSinkLocation string
 	payloadType      int
+	location         string
 
 	bin      *gst.Bin
 	elements []*gst.Element
@@ -36,10 +51,11 @@ type StreamSink struct {
 
 func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 	s := &StreamSink{
-		sink:             autovideosink,
+		sinkType:         Autovideosink,
 		codec:            mrtp.H264,
 		fileSinkLocation: "",
 		payloadType:      96,
+		location:         "out.y4m",
 		bin:              gst.NewBin(name),
 		elements:         []*gst.Element{},
 	}
@@ -70,15 +86,27 @@ func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 		return nil, fmt.Errorf("unknown codec: %v", s.codec)
 	}
 
-	switch s.sink {
-	case autovideosink:
+	switch s.sinkType {
+	case Autovideosink:
 		avs, err := gst.NewElement("autovideosink")
 		if err != nil {
 			return nil, err
 		}
 		s.elements = append(s.elements, avs)
+	case Filesink:
+		fs, err := gst.NewElementWithProperties("filesink", map[string]any{
+			"location": s.location,
+		})
+		if err != nil {
+			return nil, err
+		}
+		enc, err := gst.NewElement("y4menc")
+		if err != nil {
+			return nil, err
+		}
+		s.elements = append(s.elements, enc, fs)
 	default:
-		return nil, fmt.Errorf("unknown sink format: %v", s.sink)
+		return nil, fmt.Errorf("unknown sink format: %v", s.sinkType)
 	}
 
 	if err := s.bin.AddMany(s.elements...); err != nil {
