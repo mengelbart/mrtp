@@ -20,7 +20,11 @@ func init() {
 }
 
 var MakeStreamSink = func(name string) (gstreamer.RTPSinkBin, error) {
-	return gstreamer.NewStreamSink(name)
+	return gstreamer.NewStreamSink(
+		name,
+		gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
+		gstreamer.StreamSinkLocation(flags.Location),
+	)
 }
 
 var (
@@ -52,6 +56,8 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.RoQServerFlag,
 		flags.RoQClientFlag,
 		flags.GstCCFBFlag,
+		flags.SinkTypeFlag,
+		flags.LocationFlag,
 	}...)
 
 	fs.BoolVar(&udpSrcTraceRTP, "udp-src-trace-rtp", false, "Log incoming RTP packets on UDPSrc")
@@ -73,6 +79,10 @@ Flags:
 		fmt.Printf("error: unknown extra arguments: %v\n", flag.Args()[1:])
 		fs.Usage()
 		os.Exit(1)
+	}
+
+	if flags.SinkType == uint(gstreamer.Filesink) && len(flags.Location) == 0 {
+		return errors.New("file-sink requires a location to be set via the -location flag")
 	}
 
 	for _, p := range []uint{
