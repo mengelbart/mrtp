@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
+	"github.com/mengelbart/mrtp/logging"
 	"github.com/pion/bwe-test/gcc"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/ccfb"
+	"github.com/pion/interceptor/pkg/packetdump"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 )
@@ -94,6 +96,28 @@ func EnableNADA(initRate, minRate, maxRate int) Option {
 func EnableCCFBReceiver() Option {
 	return func(t *Transport) error {
 		f, err := ccfb.NewInterceptor()
+		if err != nil {
+			return err
+		}
+		t.interceptorRegistry.Add(f)
+		return nil
+	}
+}
+
+func EnableRTPRecvTraceLogging() Option {
+	return func(t *Transport) error {
+		f, err := packetdump.NewReceiverInterceptor(packetdump.PacketLog(logging.NewRTPLogger("webrtc-recv", nil)))
+		if err != nil {
+			return err
+		}
+		t.interceptorRegistry.Add(f)
+		return nil
+	}
+}
+
+func EnableRTPSendTraceLogging() Option {
+	return func(t *Transport) error {
+		f, err := packetdump.NewSenderInterceptor(packetdump.PacketLog(logging.NewRTPLogger("webrtc-send", nil)))
 		if err != nil {
 			return err
 		}

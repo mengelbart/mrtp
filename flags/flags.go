@@ -40,7 +40,9 @@ const (
 	SinkTypeFlag FlagName = "sink-type"
 	LocationFlag FlagName = "location"
 
-	LogFileFlag FlagName = "logfile"
+	LogFileFlag      FlagName = "logfile"
+	TraceRTPRecvFlag FlagName = "trace-rtp-recv"
+	TraceRTPSendFlag FlagName = "trace-rtp-send"
 )
 
 // default values
@@ -98,6 +100,10 @@ var (
 	Location = ""
 
 	LogFile = ""
+
+	TraceRTPRecv = false
+
+	TraceRTPSend = false
 )
 
 type flagVar func(*flag.FlagSet)
@@ -149,7 +155,9 @@ var flags = map[FlagName]flagVar{
 	LocationFlag:      stringVar(&Location, LocationFlag, &Location, "Location for filesink if <sink-type> is 1 (filesink)"),
 
 	// logging falg
-	LogFileFlag: stringVar(&LogFile, LogFileFlag, &LogFile, "Where to print logs: path-to-file or empty if stdout"),
+	LogFileFlag:      stringVar(&LogFile, LogFileFlag, &LogFile, "Where to print logs: path-to-file or empty if stdout"),
+	TraceRTPRecvFlag: boolVar(&TraceRTPRecv, TraceRTPRecvFlag, &TraceRTPRecv, "Log incoming RTP packets"),
+	TraceRTPSendFlag: boolVar(&TraceRTPSend, TraceRTPSendFlag, &TraceRTPSend, "Log outgoing RTP packets"),
 }
 
 func RegisterInto(fs *flag.FlagSet, names ...FlagName) {
