@@ -3,6 +3,7 @@ package webrtc
 import (
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/Willi-42/go-nada/nada"
 	"github.com/pion/bwe-test/gcc"
@@ -265,11 +266,11 @@ func (t *Transport) onCCFB(reports []ccfb.Report) error {
 
 	var tr int
 	for _, report := range reports {
-		rtt := report.Arrival.Sub(report.Arrival)
-
 		// GCC as CC
 		if t.bwe != nil {
 			acks := []gcc.Acknowledgment{}
+			latestAckedArrival := time.Time{}
+			latestAckedDeparture := time.Time{}
 			for _, prs := range report.SSRCToPacketReports {
 				for _, pr := range prs {
 					acks = append(acks, gcc.Acknowledgment{
@@ -280,15 +281,21 @@ func (t *Transport) onCCFB(reports []ccfb.Report) error {
 						Arrival:   pr.Arrival,
 						ECN:       gcc.ECN(pr.ECN),
 					})
+					if pr.Arrival.After(latestAckedArrival) {
+						latestAckedArrival = pr.Arrival
+						latestAckedDeparture = pr.Departure
+					}
 				}
 			}
-
+			rtt := gcc.MeasureRTT(report.Departure, report.Arrival, latestAckedDeparture, latestAckedArrival)
 			tr = t.bwe.OnAcks(report.Arrival, rtt, acks)
 		}
 
 		// NADA as CC
 		if t.nada != nil {
 			acks := []nada.Acknowledgment{}
+			latestAckedArrival := time.Time{}
+			latestAckedDeparture := time.Time{}
 			for _, prs := range report.SSRCToPacketReports {
 				for _, pr := range prs {
 					if !pr.Arrived { // default NADA has no NACKs
@@ -301,9 +308,14 @@ func (t *Transport) onCCFB(reports []ccfb.Report) error {
 						Arrival:   pr.Arrival,
 						Marked:    pr.ECN == rtcp.ECNCE,
 					})
+					if pr.Arrival.After(latestAckedArrival) {
+						latestAckedArrival = pr.Arrival
+						latestAckedDeparture = pr.Departure
+					}
 				}
 			}
 
+			rtt := gcc.MeasureRTT(report.Departure, report.Arrival, latestAckedDeparture, latestAckedArrival)
 			tr = int(t.nada.OnAcks(rtt, acks))
 		}
 
