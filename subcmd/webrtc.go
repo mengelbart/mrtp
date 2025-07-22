@@ -51,6 +51,8 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 		flags.SinkTypeFlag,
 		flags.LocationFlag,
 		flags.LogFileFlag,
+		flags.TraceRTPRecvFlag,
+		flags.TraceRTPSendFlag,
 	}...)
 	fs.StringVar(&localPort, "local-port", "8080", "Local port of HTTP signaling server to listen on")
 	fs.StringVar(&remotePort, "remote-port", "8080", "Remote Port of HTTP signaling server to connect to")
@@ -137,6 +139,12 @@ Usage:
 	}
 	if pionNADA {
 		webrtcOptions = append(webrtcOptions, webrtc.EnableNADA(750_000, 150_000, 3_000_000))
+	}
+	if flags.TraceRTPRecv {
+		webrtcOptions = append(webrtcOptions, webrtc.EnableRTPRecvTraceLogging())
+	}
+	if flags.TraceRTPSend {
+		webrtcOptions = append(webrtcOptions, webrtc.EnableRTPSendTraceLogging())
 	}
 
 	transport, err := webrtc.NewTransport(

@@ -40,8 +40,7 @@ var MakeStreamSource = func(name string) (gstreamer.RTPSourceBin, error) {
 }
 
 var (
-	gstSCReAM       bool
-	udpSinkTraceRTP bool
+	gstSCReAM bool
 )
 
 type Send struct{}
@@ -62,9 +61,9 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RoQClientFlag,
 		flags.SendVideoFileFlag,
 		flags.LogFileFlag,
+		flags.TraceRTPSendFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
-	fs.BoolVar(&udpSinkTraceRTP, "udp-sink-trace-rtp", false, "Log outgoing RTP packets on UDPSink")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a sender pipeline
@@ -158,7 +157,7 @@ Flags:
 		}
 
 	} else {
-		rtpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSinkPadProbe(udpSinkTraceRTP))
+		rtpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSinkPadProbe(flags.TraceRTPSend))
 		if err != nil {
 			return err
 		}

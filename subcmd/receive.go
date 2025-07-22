@@ -60,9 +60,8 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.SinkTypeFlag,
 		flags.LocationFlag,
 		flags.LogFileFlag,
+		flags.TraceRTPRecvFlag,
 	}...)
-
-	fs.BoolVar(&udpSrcTraceRTP, "udp-src-trace-rtp", false, "Log incoming RTP packets on UDPSrc")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a receiver pipeline
@@ -171,7 +170,7 @@ func (r *Receive) setupRoQ() error {
 }
 
 func (r *Receive) setupUDP() error {
-	rtpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSrcPadProbe(udpSrcTraceRTP))
+	rtpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSrcPadProbe(flags.TraceRTPRecv))
 	if err != nil {
 		return err
 	}
