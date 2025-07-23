@@ -84,7 +84,8 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 
 	var pay *gst.Element
 	if s.codec == mrtp.H264 {
-		s.encoder, err = gst.NewElement("x264enc")
+		settings := map[string]any{"pass": 5, "speed-preset": 1, "tune": 6, "key-int-max": 10_000}
+		s.encoder, err = gst.NewElementWithProperties("x264enc", settings)
 		if err != nil {
 			return nil, err
 		}

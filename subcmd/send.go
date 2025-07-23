@@ -36,7 +36,7 @@ var MakeStreamSource = func(name string) (gstreamer.RTPSourceBin, error) {
 		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.SendVideoFile))
 		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
 	}
-	return gstreamer.NewStreamSource(name)
+	return gstreamer.NewStreamSource(name, streamSourceOpts...)
 }
 
 var (
