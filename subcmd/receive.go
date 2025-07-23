@@ -28,10 +28,6 @@ func init() {
 	})
 }
 
-var (
-	udpSrcTraceRTP bool
-)
-
 type Receive struct {
 	receiver *gstreamer.RTPBin
 	sink     gstreamer.RTPSinkBin
