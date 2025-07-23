@@ -1,6 +1,8 @@
 package logging
 
 import (
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -9,9 +11,30 @@ import (
 	"github.com/pion/rtp"
 )
 
-func UseFileForLogging(file *os.File) {
-	// set slog to use log file & to use json format
-	slog.SetDefault(slog.New(slog.NewJSONHandler(file, &slog.HandlerOptions{})))
+type Format string
+
+const (
+	TextFormat Format = "text"
+	JSONFormat Format = "json"
+)
+
+func Configure(format Format, level slog.Level, writer io.Writer) {
+	if writer == nil {
+		writer = os.Stderr
+	}
+	ho := &slog.HandlerOptions{
+		AddSource:   false,
+		Level:       level,
+		ReplaceAttr: nil,
+	}
+	switch format {
+	case JSONFormat:
+		slog.SetDefault(slog.New(slog.NewJSONHandler(writer, ho)))
+	case TextFormat:
+		slog.SetDefault(slog.New(slog.NewTextHandler(writer, ho)))
+	default:
+		panic(fmt.Sprintf("unexpected logging.format: %#v", format))
+	}
 }
 
 type RTPLogger struct {

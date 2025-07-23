@@ -12,12 +12,18 @@ package cmdmain
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"log/slog"
 	"os"
+
+	"github.com/mengelbart/mrtp/logging"
 )
 
 var (
-	verbose bool
+	logFormat string
+	logLevel  int
+	logFile   string
 )
 
 type command struct {
@@ -63,7 +69,9 @@ Usage:
 }
 
 func Main() {
-	flag.BoolVar(&verbose, "verbose", false, "enable verbose logging")
+	flag.StringVar(&logFile, "logfile", "", "Log file, empty string means stderr")
+	flag.StringVar(&logFormat, "log-format", "text", "Logging format: text or json")
+	flag.IntVar(&logLevel, "log-level", 0, "Logging level (slog.Level)")
 
 	flag.Usage = usage(os.Args[0])
 	flag.Parse()
@@ -73,6 +81,19 @@ func Main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	var lf io.Writer = nil
+	// use log file
+	if logFile != "" {
+		f, err := os.Create(logFile)
+		if err != nil {
+			fmt.Printf("failed to open log file: %v\n", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		lf = f
+	}
+	logging.Configure(logging.Format(logFormat), slog.Level(logLevel), lf)
 
 	subCmd, ok := subCmds[flag.Arg(0)]
 	if !ok {

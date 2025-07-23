@@ -10,7 +10,6 @@ import (
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
-	"github.com/mengelbart/mrtp/logging"
 	"github.com/mengelbart/mrtp/roq"
 )
 
@@ -55,7 +54,6 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.GstCCFBFlag,
 		flags.SinkTypeFlag,
 		flags.LocationFlag,
-		flags.LogFileFlag,
 		flags.TraceRTPRecvFlag,
 	}...)
 
@@ -71,17 +69,6 @@ Flags:
 		fmt.Fprintln(os.Stderr)
 	}
 	fs.Parse(args)
-
-	// use log file
-	if flags.LogFile != "" {
-		f, err := os.Create(flags.LogFile)
-		if err != nil {
-			panic(err)
-		}
-		defer f.Close()
-
-		logging.UseFileForLogging(f)
-	}
 
 	if len(fs.Args()) > 1 {
 		fmt.Printf("error: unknown extra arguments: %v\n", flag.Args()[1:])

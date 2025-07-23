@@ -12,7 +12,6 @@ import (
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/internal/http"
-	"github.com/mengelbart/mrtp/logging"
 	"github.com/mengelbart/mrtp/webrtc"
 )
 
@@ -50,7 +49,6 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 		flags.GstCCFBFlag,
 		flags.SinkTypeFlag,
 		flags.LocationFlag,
-		flags.LogFileFlag,
 		flags.TraceRTPRecvFlag,
 		flags.TraceRTPSendFlag,
 	}...)
@@ -77,17 +75,6 @@ Usage:
 		fmt.Fprintln(os.Stderr)
 	}
 	fs.Parse(args)
-
-	// use log file
-	if flags.LogFile != "" {
-		f, err := os.Create(flags.LogFile)
-		if err != nil {
-			panic(err)
-		}
-		defer f.Close()
-
-		logging.UseFileForLogging(f)
-	}
 
 	pipeline, err := gstreamer.NewRTPBin()
 	if err != nil {
