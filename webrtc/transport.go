@@ -37,6 +37,7 @@ type Transport struct {
 	pendingICECandidates     []*webrtc.ICECandidate
 
 	onRemoteTrack func(*RTPReceiver)
+	onConnected   func()
 
 	bwe           *gcc.SendSideController
 	nada          *nada.SenderOnly
@@ -48,6 +49,13 @@ type Option func(*Transport) error
 func OnTrack(handler func(*RTPReceiver)) Option {
 	return func(t *Transport) error {
 		t.onRemoteTrack = handler
+		return nil
+	}
+}
+
+func OnConnected(f func()) Option {
+	return func(t *Transport) error {
+		t.onConnected = f
 		return nil
 	}
 }
@@ -170,6 +178,11 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 	pc.OnTrack(t.onTrack)
 	pc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
 		t.logger.Info("connection state changed", "new_state", pcs)
+	})
+	pc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
+		if pcs == webrtc.PeerConnectionStateConnected {
+			t.onConnected()
+		}
 	})
 	t.pc = pc
 	return t, nil

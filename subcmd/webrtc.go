@@ -1,6 +1,7 @@
 package subcmd
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -147,6 +148,11 @@ Usage:
 		webrtcOptions = append(webrtcOptions, webrtc.EnableRTPSendTraceLogging())
 	}
 
+	connectedCtx, cancelConnectedCtx := context.WithCancel(context.Background())
+	webrtcOptions = append(webrtcOptions, webrtc.OnConnected(func() {
+		cancelConnectedCtx()
+	}))
+
 	transport, err := webrtc.NewTransport(
 		signaler,
 		offer,
@@ -228,5 +234,6 @@ Usage:
 		return err
 	}
 
+	<-connectedCtx.Done()
 	return pipeline.Run()
 }
