@@ -38,24 +38,21 @@ func Configure(format Format, level slog.Level, writer io.Writer) {
 }
 
 type RTPLogger struct {
-	logger           *slog.Logger
-	vantagePointName string
+	logger *slog.Logger
 }
 
 func NewRTPLogger(vantagePoint string, logger *slog.Logger) *RTPLogger {
 	if logger == nil {
-		logger = slog.Default()
+		logger = slog.Default().With("vantage-point", vantagePoint).WithGroup("rtp-packet")
 	}
 	return &RTPLogger{
-		logger:           logger,
-		vantagePointName: vantagePoint,
+		logger: logger,
 	}
 }
 
 func (l *RTPLogger) LogRTPPacket(header *rtp.Header, payload []byte, _ interceptor.Attributes) {
 	l.logger.Info(
-		"pad probe received RTP packet",
-		"vantage-point", l.vantagePointName,
+		"rtp packet",
 		"version", header.Version,
 		"padding", header.Padding,
 		"marker", header.Marker,
