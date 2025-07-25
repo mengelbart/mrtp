@@ -37,7 +37,7 @@ func NewUDPSrc(address string, port uint32, opts ...UDPSrcOption) (*UDPSrc, erro
 	}
 
 	if src.enablePadProbe {
-		e.GetStaticPad("src").AddProbe(gst.PadProbeTypeBuffer, getRTPLogPadProbe("UDPSrc"))
+		e.GetStaticPad("src").AddProbe(gst.PadProbeTypeBuffer|gst.PadProbeTypeBufferList, getRTPLogPadProbe("UDPSrc"))
 	}
 	return &UDPSrc{
 		e: e,
