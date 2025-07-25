@@ -38,7 +38,7 @@ func NewUDPSink(address string, port uint32, opts ...UDPSinkOption) (*UDPSink, e
 	}
 
 	if sink.enablePadProbe {
-		e.GetStaticPad("sink").AddProbe(gst.PadProbeTypeBuffer, getRTPLogPadProbe("UDPSink"))
+		e.GetStaticPad("sink").AddProbe(gst.PadProbeTypeBuffer|gst.PadProbeTypeBufferList, getRTPLogPadProbe("UDPSink"))
 	}
 
 	return sink, nil

@@ -9,15 +9,35 @@ import (
 func getRTPLogPadProbe(vantagePointName string) func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
 	logger := logging.NewRTPLogger(vantagePointName, nil)
 	return func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
-		buffer := ppi.GetBuffer()
-		mapinfo := buffer.Map(gst.MapRead)
-		defer buffer.Unmap()
-		pkt := mapinfo.AsUint8Slice()
-		b := rtp.Packet{}
-		if err := b.Unmarshal(pkt); err != nil {
-			return gst.PadProbeOK
+		if (ppi.Type() & gst.PadProbeTypeBufferList) > 0 {
+			list := ppi.GetBufferList()
+			if list != nil {
+				list.ForEach(func(buffer *gst.Buffer, idx uint) bool {
+					mapinfo := buffer.Map(gst.MapRead)
+					defer buffer.Unmap()
+					pkt := mapinfo.AsUint8Slice()
+					b := rtp.Packet{}
+					if err := b.Unmarshal(pkt); err != nil {
+						return true
+					}
+					logger.LogRTPPacket(&b.Header, b.Payload, nil)
+					return true
+				})
+			}
 		}
-		logger.LogRTPPacket(&b.Header, b.Payload, nil)
+		if (ppi.Type() & gst.PadProbeTypeBuffer) > 0 {
+			buffer := ppi.GetBuffer()
+			if buffer != nil {
+				mapinfo := buffer.Map(gst.MapRead)
+				defer buffer.Unmap()
+				pkt := mapinfo.AsUint8Slice()
+				b := rtp.Packet{}
+				if err := b.Unmarshal(pkt); err != nil {
+					return gst.PadProbeOK
+				}
+				logger.LogRTPPacket(&b.Header, b.Payload, nil)
+			}
+		}
 		return gst.PadProbeOK
 	}
 }
