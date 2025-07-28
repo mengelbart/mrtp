@@ -12,8 +12,16 @@ import (
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/ccfb"
 	"github.com/pion/interceptor/pkg/packetdump"
+	"github.com/pion/interceptor/pkg/rfc8888"
+	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/rtcp"
+	"github.com/pion/sdp/v2"
 	"github.com/pion/webrtc/v4"
+)
+
+const (
+	// TODO(ME): Make the interval configurable?
+	feedbackInterval = 20 * time.Millisecond
 )
 
 type Signaler interface {
@@ -74,13 +82,40 @@ func EnableRTCPReports() Option {
 
 func EnableTWCC() Option {
 	return func(t *Transport) error {
-		return webrtc.ConfigureTWCCSender(t.mediaEngine, t.interceptorRegistry)
+		t.mediaEngine.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC}, webrtc.RTPCodecTypeVideo)
+		if err := t.mediaEngine.RegisterHeaderExtension(
+			webrtc.RTPHeaderExtensionCapability{URI: sdp.TransportCCURI}, webrtc.RTPCodecTypeVideo,
+		); err != nil {
+			return err
+		}
+
+		t.mediaEngine.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBTransportCC}, webrtc.RTPCodecTypeAudio)
+		if err := t.mediaEngine.RegisterHeaderExtension(
+			webrtc.RTPHeaderExtensionCapability{URI: sdp.TransportCCURI}, webrtc.RTPCodecTypeAudio,
+		); err != nil {
+			return err
+		}
+
+		generator, err := twcc.NewSenderInterceptor(twcc.SendInterval(feedbackInterval))
+		if err != nil {
+			return err
+		}
+
+		t.interceptorRegistry.Add(generator)
+		return nil
 	}
 }
 
 func EnableCCFB() Option {
 	return func(t *Transport) error {
-		return webrtc.ConfigureCongestionControlFeedback(t.mediaEngine, t.interceptorRegistry)
+		t.mediaEngine.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBACK, Parameter: "ccfb"}, webrtc.RTPCodecTypeVideo)
+		t.mediaEngine.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBACK, Parameter: "ccfb"}, webrtc.RTPCodecTypeAudio)
+		generator, err := rfc8888.NewSenderInterceptor(rfc8888.SendInterval(feedbackInterval))
+		if err != nil {
+			return err
+		}
+		t.interceptorRegistry.Add(generator)
+		return nil
 	}
 }
 
