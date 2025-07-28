@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -195,6 +196,12 @@ func (r *RTPBin) AddRTPSourceStreamGst(id int, src RTPSourceBin, enableSCReAM bo
 
 		// every 100ms: manually get the rate of scream and set the encoder accordingly
 		go func() {
+			statsHeader, err := r.screamTx.GetProperty("stats-header")
+			if err != nil {
+				panic(err)
+			}
+			statsHeaderStr := statsHeader.(string)
+			keys := strings.Split(statsHeaderStr, ",")
 			for {
 				time.Sleep(100 * time.Millisecond)
 
@@ -206,6 +213,28 @@ func (r *RTPBin) AddRTPSourceStreamGst(id int, src RTPSourceBin, enableSCReAM bo
 					// scream wants new key frame
 					continue
 				}
+				stats, err := r.screamTx.GetProperty("stats")
+				if err != nil {
+					panic(err)
+				}
+				statsStr := stats.(string)
+				values := strings.Split(statsStr, ",")
+				anys := make([]any, 0, 2*len(keys))
+				for i, key := range keys {
+					var val any
+					if strings.Contains(values[i], "Log") {
+						val = strings.TrimSpace(values[i])
+					} else if strings.Contains(values[i], ".") {
+						val, err = strconv.ParseFloat(strings.TrimSpace(values[i]), 64)
+					} else {
+						val, err = strconv.Atoi(strings.TrimSpace(values[i]))
+					}
+					if err != nil {
+						panic(err)
+					}
+					anys = append(anys, key, val)
+				}
+				slog.Info("SCReAM stats", anys...)
 
 				err = r.SetTargetRateEncoder(rate * 1000)
 				if err != nil {
