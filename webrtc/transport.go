@@ -129,10 +129,11 @@ func EnableGCC(initRate, minRate, maxRate int) Option {
 func EnableNADA(initRate, minRate, maxRate int) Option {
 	return func(t *Transport) error {
 		nadaConfig := nada.Config{
-			MinRate:       uint64(minRate),
-			MaxRate:       uint64(maxRate),
-			StartRate:     uint64(initRate),
-			FeedbackDelta: 100, // ms
+			MinRate:                  uint64(minRate),
+			MaxRate:                  uint64(maxRate),
+			StartRate:                uint64(initRate),
+			FeedbackDelta:            uint64(feedbackInterval / time.Millisecond), // convert to ms
+			DeactivateQDelayWrapping: true,
 		}
 
 		nada := nada.NewSenderOnly(nadaConfig)
