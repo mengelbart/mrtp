@@ -13,6 +13,7 @@ type SinkType uint
 const (
 	Autovideosink SinkType = iota
 	Filesink
+	Fakesink
 )
 
 type StreamSinkOption func(*StreamSink) error
@@ -89,6 +90,12 @@ func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 	switch s.sinkType {
 	case Autovideosink:
 		avs, err := gst.NewElement("autovideosink")
+		if err != nil {
+			return nil, err
+		}
+		s.elements = append(s.elements, avs)
+	case Fakesink:
+		avs, err := gst.NewElement("fakesink")
 		if err != nil {
 			return nil, err
 		}
