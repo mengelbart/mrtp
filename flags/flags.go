@@ -148,7 +148,7 @@ var flags = map[FlagName]flagVar{
 
 	// IO Flags
 	SendVideoFileFlag: stringVar(&SendVideoFile, SendVideoFileFlag, &SendVideoFile, "Which video to send"),
-	SinkTypeFlag:      uintVar(&SinkType, SinkTypeFlag, &SinkType, "Sink type (0: autovideosink, 1: filesink, requires <location> to be set)"),
+	SinkTypeFlag:      uintVar(&SinkType, SinkTypeFlag, &SinkType, "Sink type (0: autovideosink, 1: filesink, requires <location> to be set, 2: fakesink)"),
 	LocationFlag:      stringVar(&Location, LocationFlag, &Location, "Location for filesink if <sink-type> is 1 (filesink)"),
 
 	// tracing flags
