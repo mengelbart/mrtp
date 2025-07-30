@@ -9,8 +9,8 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae
 	github.com/mengelbart/roq v0.3.1-0.20250618153000-ddcb2596a429
-	github.com/pion/bwe-test v0.0.0-20250322133831-76ae71cd4b00
-	github.com/pion/interceptor v0.1.41-0.20250722121734-bd848cdb11f0
+	github.com/pion/bwe-test v0.0.0-20250731151800-5362b62c9a75
+	github.com/pion/interceptor v0.1.41-0.20250731115150-266b5e5ce04a
 	github.com/pion/rtcp v1.2.16-0.20250423150132-b78b08322f5c
 	github.com/pion/rtp v1.8.21
 	github.com/pion/webrtc/v4 v4.1.1

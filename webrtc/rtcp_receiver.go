@@ -2,7 +2,7 @@ package webrtc
 
 import (
 	"github.com/pion/interceptor"
-	"github.com/pion/interceptor/pkg/ccfb"
+	"github.com/pion/interceptor/pkg/rtpfb"
 )
 
 type pionRTCPReceiver interface {
@@ -11,7 +11,7 @@ type pionRTCPReceiver interface {
 
 type RTCPReceiver struct {
 	receiver pionRTCPReceiver
-	onCCFB   func([]ccfb.Report) error
+	onCCFB   func([]rtpfb.Report) error
 }
 
 func (r *RTCPReceiver) Read(buffer []byte) (int, error) {
@@ -19,8 +19,8 @@ func (r *RTCPReceiver) Read(buffer []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
-	data := attr.Get(ccfb.CCFBAttributesKey)
-	reports, ok := data.([]ccfb.Report)
+	data := attr.Get(rtpfb.CCFBAttributesKey)
+	reports, ok := data.([]rtpfb.Report)
 	if ok && r.onCCFB != nil {
 		err = r.onCCFB(reports)
 		if err != nil {
