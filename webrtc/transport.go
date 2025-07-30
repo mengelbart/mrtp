@@ -121,8 +121,12 @@ func EnableCCFB() Option {
 
 func EnableGCC(initRate, minRate, maxRate int) Option {
 	return func(t *Transport) error {
-		t.bwe = gcc.NewSendSideController(initRate, minRate, maxRate)
-		return nil
+		log := &pionLogger{
+			sl: slog.Default(),
+		}
+		var err error
+		t.bwe, err = gcc.NewSendSideController(initRate, minRate, maxRate, gcc.Logger(log))
+		return err
 	}
 }
 

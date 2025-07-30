@@ -53,3 +53,5 @@ require (
 	golang.org/x/tools v0.25.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/pion/bwe-test v0.0.0-20250322133831-76ae71cd4b00 => ../../../pion/bwe-test
