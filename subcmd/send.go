@@ -26,13 +26,13 @@ type BitrateAdapter interface {
 
 var MakeStreamSource = func(name string) (gstreamer.RTPSourceBin, error) {
 	streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
-	if flags.SendVideoFile != "videotestsrc" {
+	if flags.Location != "videotestsrc" {
 		// check if file exists
-		if _, err := os.Stat(flags.SendVideoFile); errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("file does not exist: %v", flags.SendVideoFile)
+		if _, err := os.Stat(flags.Location); errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("file does not exist: %v", flags.Location)
 		}
 
-		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.SendVideoFile))
+		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.Location))
 		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
 	}
 	return gstreamer.NewStreamSource(name, streamSourceOpts...)
@@ -58,8 +58,8 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RTCPRecvPortFlag,
 		flags.RoQServerFlag,
 		flags.RoQClientFlag,
-		flags.SendVideoFileFlag,
 		flags.TraceRTPSendFlag,
+		flags.LocationFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 
