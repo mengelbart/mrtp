@@ -46,7 +46,6 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.LocalAddrFlag,
 		flags.RemoteAddrFlag,
-		flags.SendVideoFileFlag,
 		flags.GstCCFBFlag,
 		flags.SinkTypeFlag,
 		flags.LocationFlag,
@@ -176,13 +175,13 @@ Usage:
 			return err
 		}
 		streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
-		if flags.SendVideoFile != "videotestsrc" {
+		if flags.Location != "videotestsrc" {
 			// check if file exists
-			if _, err := os.Stat(flags.SendVideoFile); errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("file does not exist: %v", flags.SendVideoFile)
+			if _, err := os.Stat(flags.Location); errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("file does not exist: %v", flags.Location)
 			}
 
-			streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.SendVideoFile))
+			streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.Location))
 			streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
 		}
 
