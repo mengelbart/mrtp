@@ -13,6 +13,8 @@ import (
 	"github.com/mengelbart/mrtp/roq"
 )
 
+var recvBufferSize int
+
 var MakeStreamSink = func(name string) (gstreamer.RTPSinkBin, error) {
 	return gstreamer.NewStreamSink(
 		name,
@@ -56,6 +58,8 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.LocationFlag,
 		flags.TraceRTPRecvFlag,
 	}...)
+
+	fs.IntVar(&recvBufferSize, "recv-buffer-size", 0, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a receiver pipeline
@@ -153,7 +157,12 @@ func (r *Receive) setupRoQ() error {
 }
 
 func (r *Receive) setupUDP() error {
-	rtpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSrcPadProbe(flags.TraceRTPRecv))
+	rtpSrc, err := gstreamer.NewUDPSrc(
+		flags.LocalAddr,
+		uint32(flags.RTPPort),
+		gstreamer.EnabelUDPSrcPadProbe(flags.TraceRTPRecv),
+		gstreamer.SetReceiveBufferSize(recvBufferSize),
+	)
 	if err != nil {
 		return err
 	}
