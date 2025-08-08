@@ -17,7 +17,9 @@ func init() {
 	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd { return new(Receive) })
 }
 
-var recvBufferSize int
+// UDPRecvBufferSize is the default UDP Receive Buffer size for the Gstreamer
+// udpsrc element
+var UDPRecvBufferSize int
 
 type StreamSinkFactory interface {
 	ConfigureFlags(*flag.FlagSet)
@@ -72,7 +74,7 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.TraceRTPRecvFlag,
 	}...)
 
-	fs.IntVar(&recvBufferSize, "recv-buffer-size", 0, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
+	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
 
 	DefaultStreamSinkFactory.ConfigureFlags(fs)
 
@@ -176,7 +178,7 @@ func (r *Receive) setupUDP() error {
 		flags.LocalAddr,
 		uint32(flags.RTPPort),
 		gstreamer.EnabelUDPSrcPadProbe(flags.TraceRTPRecv),
-		gstreamer.SetReceiveBufferSize(recvBufferSize),
+		gstreamer.SetReceiveBufferSize(UDPRecvBufferSize),
 	)
 	if err != nil {
 		return err
