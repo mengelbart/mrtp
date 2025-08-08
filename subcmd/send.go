@@ -24,7 +24,21 @@ type BitrateAdapter interface {
 	SetBitrate(uint) error
 }
 
-var MakeStreamSource = func(name string) (gstreamer.RTPSourceBin, error) {
+type StreamSourceFactory interface {
+	ConfigureFlags(*flag.FlagSet)
+	MakeStreamSource(name string) (gstreamer.RTPSourceBin, error)
+}
+
+type gstreamerVideoStreamSourceFactory struct {
+}
+
+func (f *gstreamerVideoStreamSourceFactory) ConfigureFlags(fs *flag.FlagSet) {
+	flags.RegisterInto(fs, []flags.FlagName{
+		flags.LocationFlag,
+	}...)
+}
+
+func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstreamer.RTPSourceBin, error) {
 	streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
 	if flags.Location != "videotestsrc" {
 		// check if file exists
@@ -37,6 +51,8 @@ var MakeStreamSource = func(name string) (gstreamer.RTPSourceBin, error) {
 	}
 	return gstreamer.NewStreamSource(name, streamSourceOpts...)
 }
+
+var DefaultStreamSourceFactory StreamSourceFactory = &gstreamerVideoStreamSourceFactory{}
 
 var (
 	gstSCReAM bool
@@ -59,9 +75,10 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RoQServerFlag,
 		flags.RoQClientFlag,
 		flags.TraceRTPSendFlag,
-		flags.LocationFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
+
+	DefaultStreamSourceFactory.ConfigureFlags(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a sender pipeline
@@ -95,7 +112,7 @@ Flags:
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
-	source, err := MakeStreamSource("rtp-stream-source")
+	source, err := DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source")
 	if err != nil {
 		return err
 	}

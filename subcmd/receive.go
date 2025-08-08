@@ -13,9 +13,28 @@ import (
 	"github.com/mengelbart/mrtp/roq"
 )
 
+func init() {
+	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd { return new(Receive) })
+}
+
 var recvBufferSize int
 
-var MakeStreamSink = func(name string) (gstreamer.RTPSinkBin, error) {
+type StreamSinkFactory interface {
+	ConfigureFlags(*flag.FlagSet)
+	MakeStreamSink(name string) (gstreamer.RTPSinkBin, error)
+}
+
+type gstreamerVideoStreamSinkFactory struct {
+}
+
+func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
+	flags.RegisterInto(fs, []flags.FlagName{
+		flags.SinkTypeFlag,
+		flags.LocationFlag,
+	}...)
+}
+
+func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string) (gstreamer.RTPSinkBin, error) {
 	return gstreamer.NewStreamSink(
 		name,
 		gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
@@ -23,11 +42,7 @@ var MakeStreamSink = func(name string) (gstreamer.RTPSinkBin, error) {
 	)
 }
 
-func init() {
-	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd {
-		return new(Receive)
-	})
-}
+var DefaultStreamSinkFactory StreamSinkFactory = &gstreamerVideoStreamSinkFactory{}
 
 type Receive struct {
 	receiver *gstreamer.RTPBin
@@ -54,12 +69,12 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.RoQServerFlag,
 		flags.RoQClientFlag,
 		flags.GstCCFBFlag,
-		flags.SinkTypeFlag,
-		flags.LocationFlag,
 		flags.TraceRTPRecvFlag,
 	}...)
 
 	fs.IntVar(&recvBufferSize, "recv-buffer-size", 0, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
+
+	DefaultStreamSinkFactory.ConfigureFlags(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a receiver pipeline
@@ -103,7 +118,7 @@ Flags:
 		return err
 	}
 
-	r.sink, err = MakeStreamSink("rtp-stream-sink")
+	r.sink, err = DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink")
 	if err != nil {
 		return err
 	}
