@@ -24,19 +24,35 @@ type BitrateAdapter interface {
 	SetBitrate(uint) error
 }
 
-var MakeStreamSource = func(name string) (gstreamer.RTPSourceBin, error) {
+type StreamSourceFactory interface {
+	ConfigureFlags(*flag.FlagSet)
+	MakeStreamSource(name string) (gstreamer.RTPSourceBin, error)
+}
+
+type gstreamerVideoStreamSourceFactory struct {
+}
+
+func (f *gstreamerVideoStreamSourceFactory) ConfigureFlags(fs *flag.FlagSet) {
+	flags.RegisterInto(fs, []flags.FlagName{
+		flags.LocationFlag,
+	}...)
+}
+
+func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstreamer.RTPSourceBin, error) {
 	streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
-	if flags.SendVideoFile != "videotestsrc" {
+	if flags.Location != "videotestsrc" {
 		// check if file exists
-		if _, err := os.Stat(flags.SendVideoFile); errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("file does not exist: %v", flags.SendVideoFile)
+		if _, err := os.Stat(flags.Location); errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("file does not exist: %v", flags.Location)
 		}
 
-		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.SendVideoFile))
+		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.Location))
 		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
 	}
 	return gstreamer.NewStreamSource(name, streamSourceOpts...)
 }
+
+var DefaultStreamSourceFactory StreamSourceFactory = &gstreamerVideoStreamSourceFactory{}
 
 var (
 	gstSCReAM bool
@@ -60,12 +76,13 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RTCPRecvPortFlag,
 		flags.RoQServerFlag,
 		flags.RoQClientFlag,
-		flags.SendVideoFileFlag,
 		flags.TraceRTPSendFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 	fs.BoolVar(&nada, "nada", false, "Run NADA") // TODO: move to flags package
 	fs.IntVar(&quicCC, "quic-cc", 0, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer")
+
+	DefaultStreamSourceFactory.ConfigureFlags(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a sender pipeline
@@ -111,7 +128,7 @@ Flags:
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
-	source, err := MakeStreamSource("rtp-stream-source")
+	source, err := DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source")
 	if err != nil {
 		return err
 	}

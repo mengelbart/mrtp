@@ -17,7 +17,34 @@ var (
 	nadaFeedback bool
 )
 
-var MakeStreamSink = func(name string) (gstreamer.RTPSinkBin, error) {
+var (
+	nadaFeedback bool
+)
+
+func init() {
+	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd { return new(Receive) })
+}
+
+// UDPRecvBufferSize is the default UDP Receive Buffer size for the Gstreamer
+// udpsrc element
+var UDPRecvBufferSize int
+
+type StreamSinkFactory interface {
+	ConfigureFlags(*flag.FlagSet)
+	MakeStreamSink(name string) (gstreamer.RTPSinkBin, error)
+}
+
+type gstreamerVideoStreamSinkFactory struct {
+}
+
+func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
+	flags.RegisterInto(fs, []flags.FlagName{
+		flags.SinkTypeFlag,
+		flags.LocationFlag,
+	}...)
+}
+
+func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string) (gstreamer.RTPSinkBin, error) {
 	return gstreamer.NewStreamSink(
 		name,
 		gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
@@ -25,11 +52,7 @@ var MakeStreamSink = func(name string) (gstreamer.RTPSinkBin, error) {
 	)
 }
 
-func init() {
-	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd {
-		return new(Receive)
-	})
-}
+var DefaultStreamSinkFactory StreamSinkFactory = &gstreamerVideoStreamSinkFactory{}
 
 type Receive struct {
 	receiver *gstreamer.RTPBin
@@ -56,11 +79,13 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.RoQServerFlag,
 		flags.RoQClientFlag,
 		flags.GstCCFBFlag,
-		flags.SinkTypeFlag,
-		flags.LocationFlag,
 		flags.TraceRTPRecvFlag,
 	}...)
 	fs.BoolVar(&nadaFeedback, "nada-feedback", false, "Send NADA feedback")
+
+	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
+
+	DefaultStreamSinkFactory.ConfigureFlags(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a receiver pipeline
@@ -110,7 +135,7 @@ Flags:
 		return err
 	}
 
-	r.sink, err = MakeStreamSink("rtp-stream-sink")
+	r.sink, err = DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink")
 	if err != nil {
 		return err
 	}
@@ -171,7 +196,12 @@ func (r *Receive) setupRoQ() error {
 }
 
 func (r *Receive) setupUDP() error {
-	rtpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSrcPadProbe(flags.TraceRTPRecv))
+	rtpSrc, err := gstreamer.NewUDPSrc(
+		flags.LocalAddr,
+		uint32(flags.RTPPort),
+		gstreamer.EnabelUDPSrcPadProbe(flags.TraceRTPRecv),
+		gstreamer.SetReceiveBufferSize(UDPRecvBufferSize),
+	)
 	if err != nil {
 		return err
 	}

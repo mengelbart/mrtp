@@ -10,9 +10,9 @@ import (
 	"github.com/mengelbart/mrtp/logging"
 	"github.com/pion/bwe-test/gcc"
 	"github.com/pion/interceptor"
-	"github.com/pion/interceptor/pkg/ccfb"
 	"github.com/pion/interceptor/pkg/packetdump"
 	"github.com/pion/interceptor/pkg/rfc8888"
+	"github.com/pion/interceptor/pkg/rtpfb"
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v2"
@@ -121,8 +121,12 @@ func EnableCCFB() Option {
 
 func EnableGCC(initRate, minRate, maxRate int) Option {
 	return func(t *Transport) error {
-		t.bwe = gcc.NewSendSideController(initRate, minRate, maxRate)
-		return nil
+		log := &pionLogger{
+			sl: slog.Default(),
+		}
+		var err error
+		t.bwe, err = gcc.NewSendSideController(initRate, minRate, maxRate, gcc.Logger(log))
+		return err
 	}
 }
 
@@ -144,7 +148,7 @@ func EnableNADA(initRate, minRate, maxRate int) Option {
 
 func EnableCCFBReceiver() Option {
 	return func(t *Transport) error {
-		f, err := ccfb.NewInterceptor()
+		f, err := rtpfb.NewInterceptor()
 		if err != nil {
 			return err
 		}
@@ -355,8 +359,8 @@ func (t *Transport) Close() error {
 	return t.pc.Close()
 }
 
-func (t *Transport) onCCFB(reports []ccfb.Report) error {
-	t.logger.Info("received ccfb packet report", "length", len(reports))
+func (t *Transport) onCCFB(reports []rtpfb.Report) error {
+	t.logger.Info("received ccfb packet reports", "length", len(reports))
 
 	var tr uint
 	for _, report := range reports {
@@ -397,7 +401,7 @@ func (t *Transport) onCCFB(reports []ccfb.Report) error {
 						continue
 					}
 					acks = append(acks, nada.Acknowledgment{
-						SeqNr:     uint64(pr.SeqNr),
+						SeqNr:     pr.SeqNr,
 						SizeBit:   uint64(pr.Size * 8),
 						Departure: pr.Departure,
 						Arrival:   pr.Arrival,

@@ -12,38 +12,45 @@ func EnabelUDPSrcPadProbe(enabled bool) UDPSrcOption {
 	}
 }
 
+func SetReceiveBufferSize(size int) UDPSrcOption {
+	return func(u *UDPSrc) {
+		u.recvBufferSize = size
+	}
+}
+
 type UDPSrc struct {
-	e              *gst.Element
+	element        *gst.Element
 	enablePadProbe bool
+	recvBufferSize int
 }
 
 func NewUDPSrc(address string, port uint32, opts ...UDPSrcOption) (*UDPSrc, error) {
-	e, err := gst.NewElementWithProperties(
-		"udpsrc",
-		map[string]any{
-			"address": address,
-			"port":    port,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
 	src := &UDPSrc{
-		e:              e,
 		enablePadProbe: false,
 	}
 	for _, opt := range opts {
 		opt(src)
 	}
 
-	if src.enablePadProbe {
-		e.GetStaticPad("src").AddProbe(gst.PadProbeTypeBuffer|gst.PadProbeTypeBufferList, getRTPLogPadProbe("UDPSrc"))
+	element, err := gst.NewElementWithProperties(
+		"udpsrc",
+		map[string]any{
+			"address":     address,
+			"port":        port,
+			"buffer-size": src.recvBufferSize,
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
-	return &UDPSrc{
-		e: e,
-	}, nil
+	src.element = element
+
+	if src.enablePadProbe {
+		element.GetStaticPad("src").AddProbe(gst.PadProbeTypeBuffer|gst.PadProbeTypeBufferList, getRTPLogPadProbe("UDPSrc"))
+	}
+	return src, nil
 }
 
 func (s *UDPSrc) GetGstElement() *gst.Element {
-	return s.e
+	return s.element
 }
