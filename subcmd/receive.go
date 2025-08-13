@@ -13,6 +13,10 @@ import (
 	"github.com/mengelbart/mrtp/roq"
 )
 
+var (
+	nadaFeedback bool
+)
+
 func init() {
 	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd { return new(Receive) })
 }
@@ -73,6 +77,7 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.GstCCFBFlag,
 		flags.TraceRTPRecvFlag,
 	}...)
+	fs.BoolVar(&nadaFeedback, "nada-feedback", false, "Send NADA feedback")
 
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
 
@@ -93,6 +98,12 @@ Flags:
 
 	if len(fs.Args()) > 1 {
 		fmt.Printf("error: unknown extra arguments: %v\n", flag.Args()[1:])
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	if nadaFeedback && !(flags.RoQServer || flags.RoQClient) {
+		fmt.Printf("Nada Feedback only possible with RoQ\n")
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -137,14 +148,21 @@ Flags:
 }
 
 func (r *Receive) setupRoQ() error {
-	transport, err := roq.New(
-		roq.WithRole(roq.Role(flags.RoQServer)),
-	)
+	roqOptions := []roq.Option{roq.WithRole(
+		roq.Role(flags.RoQServer)),
+		roq.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
+		roq.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
+	}
+	if nadaFeedback {
+		roqOptions = append(roqOptions, roq.EnableNADAfeedback())
+	}
+
+	transport, err := roq.New(roqOptions...)
 	if err != nil {
 		return err
 	}
 
-	rtpSrc, err := transport.NewReceiveFlow(uint64(flags.RTPPort))
+	rtpSrc, err := transport.NewReceiveFlow(uint64(flags.RTPPort), flags.TraceRTPRecv)
 	if err != nil {
 		return err
 	}
@@ -155,7 +173,7 @@ func (r *Receive) setupRoQ() error {
 		return err
 	}
 
-	rtcpSink, err := transport.NewSendFlow(uint64(flags.RTCPSendPort))
+	rtcpSink, err := transport.NewSendFlow(uint64(flags.RTCPSendPort), false)
 	if err != nil {
 		return err
 	}
@@ -163,7 +181,7 @@ func (r *Receive) setupRoQ() error {
 		return err
 	}
 
-	rtcpSrc, err := transport.NewReceiveFlow(uint64(flags.RTCPRecvPort))
+	rtcpSrc, err := transport.NewReceiveFlow(uint64(flags.RTCPRecvPort), false)
 	if err != nil {
 		return err
 	}

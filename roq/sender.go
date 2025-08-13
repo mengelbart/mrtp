@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/mengelbart/mrtp/logging"
 	"github.com/mengelbart/roq"
 )
 
@@ -19,9 +20,10 @@ type Sender struct {
 	mode   SendMode
 	flow   *roq.SendFlow
 	stream *roq.RTPSendStream
+	logger *logging.RTPLogger
 }
 
-func newSender(flow *roq.SendFlow, mode SendMode) (*Sender, error) {
+func newSender(flow *roq.SendFlow, mode SendMode, logRTPpackets bool) (*Sender, error) {
 	var err error
 	var stream *roq.RTPSendStream
 	if mode == SendModeSingleStream {
@@ -35,10 +37,19 @@ func newSender(flow *roq.SendFlow, mode SendMode) (*Sender, error) {
 		flow:   flow,
 		stream: stream,
 	}
+	if logRTPpackets {
+		sender.logger = logging.NewRTPLogger("roq sink", nil)
+	}
+
 	return sender, nil
 }
 
 func (s *Sender) Write(data []byte) (int, error) {
+	// log rtp packet
+	if s.logger != nil {
+		s.logger.LogRTPPacketBuf(data, nil)
+	}
+
 	switch s.mode {
 	case SendModeDatagram:
 		return len(data), s.flow.WriteRTPBytes(data)
