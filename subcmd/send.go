@@ -40,6 +40,8 @@ var MakeStreamSource = func(name string) (gstreamer.RTPSourceBin, error) {
 
 var (
 	gstSCReAM bool
+	nada      bool
+	quicCC    int
 )
 
 type Send struct{}
@@ -62,6 +64,8 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.TraceRTPSendFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
+	fs.BoolVar(&nada, "nada", false, "Run NADA") // TODO: move to flags package
+	fs.IntVar(&quicCC, "quic-cc", 0, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a sender pipeline
@@ -75,6 +79,18 @@ Flags:
 		fmt.Fprintln(os.Stderr)
 	}
 	fs.Parse(args)
+
+	if quicCC < 0 || quicCC > 2 {
+		fmt.Printf("error: invalid quic-cc value, must be 0, 1 or 2\n")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	if (nada || quicCC != 0) && !(flags.RoQServer || flags.RoQClient) {
+		fmt.Printf("Flags -nada and -quic-cc only valid for RoQ\n")
+		fs.Usage()
+		os.Exit(1)
+	}
 
 	if len(fs.Args()) > 1 {
 		fmt.Printf("error: unknown extra arguments: %v\n", flag.Args()[1:])
@@ -104,19 +120,31 @@ Flags:
 	if err != nil {
 		return err
 	}
-	if ba, ok := source.(BitrateAdapter); ok {
+
+	ba, ok := source.(BitrateAdapter)
+	if ok {
 		sender.SetTargetRateEncoder = ba.SetBitrate
 	}
 
 	if flags.RoQServer || flags.RoQClient {
-		transport, err := roq.New(
+		roqOptions := []roq.Option{
 			roq.WithRole(roq.Role(flags.RoQServer)),
-		)
+			roq.SetQuicCC(quicCC),
+			roq.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
+			roq.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
+		}
+
+		if nada {
+			roqOptions = append(roqOptions, roq.EnableNADA(750_000, 150_000, 3_000_000))
+		}
+
+		transport, err := roq.New(roqOptions...)
 		if err != nil {
 			return err
 		}
+		transport.SetTargetRateEncoder = ba.SetBitrate
 
-		rtpSink, err := transport.NewSendFlow(uint64(flags.RTPPort))
+		rtpSink, err := transport.NewSendFlow(uint64(flags.RTPPort), flags.TraceRTPSend)
 		if err != nil {
 			return err
 		}
@@ -127,7 +155,7 @@ Flags:
 			return err
 		}
 
-		rtcpSink, err := transport.NewSendFlow(uint64(flags.RTCPSendPort))
+		rtcpSink, err := transport.NewSendFlow(uint64(flags.RTCPSendPort), false)
 		if err != nil {
 			return err
 		}
@@ -135,7 +163,7 @@ Flags:
 			return err
 		}
 
-		rtcpSrc, err := transport.NewReceiveFlow(uint64(flags.RTCPRecvPort))
+		rtcpSrc, err := transport.NewReceiveFlow(uint64(flags.RTCPRecvPort), false)
 		if err != nil {
 			return err
 		}
