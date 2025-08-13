@@ -3,27 +3,27 @@ module github.com/mengelbart/mrtp
 go 1.24.1
 
 require (
-	github.com/Willi-42/go-nada v0.0.0-20250730142608-a8852abc0564
+	github.com/Willi-42/go-nada v0.0.0-20250813071017-8b4bb9f8a3fd
 	github.com/go-gst/go-glib v1.4.0
 	github.com/go-gst/go-gst v1.4.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae
-	github.com/mengelbart/roq v0.3.1-0.20250618153000-ddcb2596a429
+	github.com/mengelbart/roq v0.3.1-0.20250806115233-58318148d6ba
 	github.com/pion/bwe-test v0.0.0-20250731151800-5362b62c9a75
 	github.com/pion/interceptor v0.1.41-0.20250731115150-266b5e5ce04a
 	github.com/pion/rtcp v1.2.16-0.20250423150132-b78b08322f5c
 	github.com/pion/rtp v1.8.21
 	github.com/pion/webrtc/v4 v4.1.1
-	github.com/quic-go/quic-go v0.52.0
+	github.com/quic-go/quic-go v0.53.0
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sync v0.11.0
 )
 
+require github.com/onsi/gomega v1.27.6 // indirect
+
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
-	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
-	github.com/google/pprof v0.0.0-20210407192527-94a9f03dee38 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
@@ -53,3 +53,5 @@ require (
 	golang.org/x/tools v0.25.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/quic-go/quic-go v0.53.0 => github.com/Willi-42/quic-go v0.1.0
