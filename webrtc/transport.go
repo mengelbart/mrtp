@@ -398,14 +398,12 @@ func (t *Transport) onCCFB(reports []rtpfb.Report) error {
 			latestAckedDeparture := time.Time{}
 			for _, prs := range report.SSRCToPacketReports {
 				for _, pr := range prs {
-					if !pr.Arrived { // default NADA has no NACKs
-						continue
-					}
 					acks = append(acks, nada.Acknowledgment{
 						SeqNr:     pr.SeqNr,
 						SizeBit:   uint64(pr.Size * 8),
 						Departure: pr.Departure,
 						Arrival:   pr.Arrival,
+						Arrived:   pr.Arrived,
 						Marked:    pr.ECN == rtcp.ECNCE,
 					})
 					slog.Info("DELAY_MEASUREMENT", "delay", pr.Arrival.Sub(pr.Departure).Microseconds())

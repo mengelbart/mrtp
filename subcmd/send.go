@@ -56,7 +56,6 @@ var DefaultStreamSourceFactory StreamSourceFactory = &gstreamerVideoStreamSource
 
 var (
 	gstSCReAM bool
-	nada      bool
 	quicCC    int
 )
 
@@ -77,9 +76,10 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RoQServerFlag,
 		flags.RoQClientFlag,
 		flags.TraceRTPSendFlag,
+		flags.CCgccFlag,
+		flags.CCnadaFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
-	fs.BoolVar(&nada, "nada", false, "Run NADA") // TODO: move to flags package
 	fs.IntVar(&quicCC, "quic-cc", 0, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer")
 
 	DefaultStreamSourceFactory.ConfigureFlags(fs)
@@ -103,8 +103,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if (nada || quicCC != 0) && !(flags.RoQServer || flags.RoQClient) {
-		fmt.Printf("Flags -nada and -quic-cc only valid for RoQ\n")
+	if (flags.CCnada || flags.CCgcc || quicCC != 0) && !(flags.RoQServer || flags.RoQClient) {
+		fmt.Printf("Flags %v and %v, -quic-cc only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -151,9 +151,15 @@ Flags:
 			roq.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
 		}
 
-		if nada {
+		if flags.CCnada {
 			roqOptions = append(roqOptions, roq.EnableNADA(750_000, 150_000, 3_000_000))
 		}
+
+		if flags.CCgcc {
+			roqOptions = append(roqOptions, roq.EnableGCC(750_000, 150_000, 3_000_000))
+		}
+
+		fmt.Println("nada: ", flags.CCnada, "gcc: ", flags.CCgcc)
 
 		transport, err := roq.New(roqOptions...)
 		if err != nil {
