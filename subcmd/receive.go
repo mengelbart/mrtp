@@ -17,10 +17,6 @@ var (
 	nadaFeedback bool
 )
 
-var (
-	nadaFeedback bool
-)
-
 func init() {
 	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd { return new(Receive) })
 }

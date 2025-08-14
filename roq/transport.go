@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
@@ -59,7 +60,7 @@ func EnableNADA(initRate, minRate, maxRate int) Option {
 			DeactivateQDelayWrapping: true,
 		}
 
-		useNacks := false
+		useNacks := true
 		nadaSo := nada.NewSenderOnly(nadaConfig, useNacks)
 		t.nada = &nadaSo
 		t.lostPackets = NewPacketEvents()
@@ -114,6 +115,7 @@ type Transport struct {
 	SetTargetRateEncoder func(ratebps uint) error
 	sendNadaFeedback     bool
 	quicCC               int
+	mtx                  sync.Mutex
 }
 
 func New(opts ...Option) (*Transport, error) {
@@ -135,6 +137,8 @@ func New(opts ...Option) (*Transport, error) {
 		t.lostPackets.AddEvent(ack)
 	}
 	addReceivedPacket := func(ack nada.Acknowledgment) {
+		t.mtx.Lock()
+		defer t.mtx.Unlock()
 		t.receivedPackets.AddEvent(ack)
 	}
 
@@ -220,6 +224,7 @@ func (t *Transport) nadaFeedbackSender() {
 
 	for {
 		time.Sleep(100 * time.Millisecond)
+		t.mtx.Lock()
 
 		// If small enough, send as-is
 		if len(t.receivedPackets.PacketEvents) <= maxEventsPerDatagram {
@@ -231,6 +236,11 @@ func (t *Transport) nadaFeedbackSender() {
 			if err != nil {
 				panic(err)
 			}
+
+			// Clear the event history
+			t.receivedPackets.Empty()
+			t.mtx.Unlock()
+			continue
 		}
 
 		// Split into batches
@@ -255,6 +265,7 @@ func (t *Transport) nadaFeedbackSender() {
 
 		// Clear the event history
 		t.receivedPackets.Empty()
+		t.mtx.Unlock()
 	}
 }
 
