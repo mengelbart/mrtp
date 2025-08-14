@@ -31,6 +31,10 @@ func TestPacketEvent(t *testing.T) {
 	data, err := acks.Marshal()
 	require.NoError(t, err)
 
+	for i := range acks.PacketEvents {
+		acks.PacketEvents[i].Arrived = true // marshal sets all to arrived
+	}
+
 	res, err := UnmarshalFeedback(data)
 	require.NoError(t, err)
 
