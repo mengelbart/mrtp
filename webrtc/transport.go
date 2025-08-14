@@ -140,7 +140,8 @@ func EnableNADA(initRate, minRate, maxRate int) Option {
 			DeactivateQDelayWrapping: true,
 		}
 
-		nada := nada.NewSenderOnly(nadaConfig)
+		useNacks := true
+		nada := nada.NewSenderOnly(nadaConfig, useNacks)
 		t.nada = &nada
 		return nil
 	}
@@ -372,7 +373,7 @@ func (t *Transport) onCCFB(reports []rtpfb.Report) error {
 			for _, prs := range report.SSRCToPacketReports {
 				for _, pr := range prs {
 					acks = append(acks, gcc.Acknowledgment{
-						SeqNr:     pr.SeqNr,
+						SeqNr:     int64(pr.SeqNr),
 						Size:      uint16(pr.Size),
 						Departure: pr.Departure,
 						Arrived:   pr.Arrived,

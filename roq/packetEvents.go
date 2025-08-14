@@ -34,8 +34,8 @@ func (ps *PacketEvents) Marshal() ([]byte, error) {
 	firstSeqNr := uint64(0)
 
 	for _, p := range ps.PacketEvents {
-		deparuredTs := uint64(p.Departure.UnixMilli())
-		arrivedTs := uint64(p.Arrival.UnixMilli())
+		deparuredTs := uint64(p.Departure.UnixMicro())
+		arrivedTs := uint64(p.Arrival.UnixMicro())
 		owd := arrivedTs - deparuredTs
 
 		if firstTs == 0 {
@@ -101,24 +101,24 @@ func UnmarshalFeedback(buf []byte) (PacketEvents, error) {
 			p.SeqNr = p.SeqNr + firstSeqNr
 		}
 
-		departureMilli, n, err := quicvarint.Parse(buf)
+		departureMicro, n, err := quicvarint.Parse(buf)
 		if n < 0 {
 			return PacketEvents{}, err
 		}
 		if firstTs == 0 {
-			firstTs = departureMilli
+			firstTs = departureMicro
 		} else {
-			departureMilli = departureMilli + firstTs
+			departureMicro = departureMicro + firstTs
 		}
 
-		p.Departure = time.UnixMilli(int64(departureMilli))
+		p.Departure = time.UnixMicro(int64(departureMicro))
 		buf = buf[n:]
 
 		owd, n, err := quicvarint.Parse(buf)
 		if n < 0 {
 			return PacketEvents{}, err
 		}
-		p.Arrival = time.UnixMilli(int64(departureMilli + owd))
+		p.Arrival = time.UnixMicro(int64(departureMicro + owd))
 		buf = buf[n:]
 
 		p.SizeBit, n, err = quicvarint.Parse(buf)
