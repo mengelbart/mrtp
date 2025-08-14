@@ -18,6 +18,7 @@ import (
 	"github.com/Willi-42/go-nada/nada"
 	"github.com/mengelbart/qlog"
 	"github.com/mengelbart/roq"
+	"github.com/pion/bwe-test/gcc"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/logging"
 	quicgoqlog "github.com/quic-go/quic-go/qlog"
@@ -50,6 +51,24 @@ func WithRole(r Role) Option {
 	}
 }
 
+type Transport struct {
+	role    Role
+	session *roq.Session
+
+	localAddress  string
+	remoteAddress string
+
+	nada                 *nada.SenderOnly
+	bwe                  *gcc.SendSideController
+	lastRTT              *RTT
+	lostPackets          *PacketEvents
+	receivedPackets      *PacketEvents
+	SetTargetRateEncoder func(ratebps uint) error
+	sendNadaFeedback     bool
+	quicCC               int
+	mtx                  sync.Mutex
+}
+
 func EnableNADA(initRate, minRate, maxRate int) Option {
 	return func(t *Transport) error {
 		nadaConfig := nada.Config{
@@ -65,6 +84,16 @@ func EnableNADA(initRate, minRate, maxRate int) Option {
 		t.nada = &nadaSo
 		t.lostPackets = NewPacketEvents()
 		return nil
+	}
+}
+
+func EnableGCC(initRate, minRate, maxRate int) Option {
+	return func(t *Transport) error {
+		// TODO: add pion logger
+		var err error
+		t.bwe, err = gcc.NewSendSideController(initRate, minRate, maxRate)
+		t.lostPackets = NewPacketEvents()
+		return err
 	}
 }
 
@@ -99,23 +128,6 @@ func SetRemoteAdress(address string, port uint) Option {
 		t.remoteAddress = fmt.Sprintf("%s:%d", address, port)
 		return nil
 	}
-}
-
-type Transport struct {
-	role    Role
-	session *roq.Session
-
-	localAddress  string
-	remoteAddress string
-
-	nada                 *nada.SenderOnly
-	lastRTT              *RTT
-	lostPackets          *PacketEvents
-	receivedPackets      *PacketEvents
-	SetTargetRateEncoder func(ratebps uint) error
-	sendNadaFeedback     bool
-	quicCC               int
-	mtx                  sync.Mutex
 }
 
 func New(opts ...Option) (*Transport, error) {
@@ -155,7 +167,7 @@ func New(opts ...Option) (*Transport, error) {
 			CcType:                         quic.CCType(t.quicCC),
 			SendTimestamps:                 true,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
-				if t.nada != nil {
+				if t.nada != nil || t.bwe != nil {
 					return newSenderTracers(p, id, addLostPacket, t.lastRTT)
 				}
 				if t.sendNadaFeedback {
@@ -178,7 +190,7 @@ func New(opts ...Option) (*Transport, error) {
 			CcType:                         quic.CCType(t.quicCC),
 			SendTimestamps:                 true,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
-				if t.nada != nil {
+				if t.nada != nil || t.bwe != nil {
 					return newSenderTracers(p, id, addLostPacket, t.lastRTT)
 				}
 				if t.sendNadaFeedback {
@@ -200,21 +212,21 @@ func New(opts ...Option) (*Transport, error) {
 		return nil, err
 	}
 
-	if t.nada != nil {
-		go t.nadaFeedbackReceiver()
+	if t.nada != nil || t.bwe != nil {
+		go t.feedbackReceiver()
 	}
 
 	if t.sendNadaFeedback {
-		go t.nadaFeedbackSender()
+		go t.sendFeedback()
 	}
 
 	t.session = s
 	return t, nil
 }
 
-// nadaFeedbackSender regularly sends the nada feedback.
+// sendFeedback regularly sends the nada/gcc feedback.
 // Splits it into several datagrams if the size is too large.
-func (t *Transport) nadaFeedbackSender() {
+func (t *Transport) sendFeedback() {
 	const maxEventsPerDatagram = 100 // Tune based on your measurements
 
 	sendFlow, err := t.NewSendFlow(42, false)
@@ -269,7 +281,7 @@ func (t *Transport) nadaFeedbackSender() {
 	}
 }
 
-func (t *Transport) nadaFeedbackReceiver() {
+func (t *Transport) feedbackReceiver() {
 	feedbackFlow, err := t.NewReceiveFlow(42, false)
 	if err != nil {
 		panic(err)
@@ -291,8 +303,17 @@ func (t *Transport) nadaFeedbackReceiver() {
 		acks.PacketEvents = append(acks.PacketEvents, t.lostPackets.PacketEvents...)
 		t.lostPackets.Empty()
 
-		// register feedback with nada
-		targetRate := t.nada.OnAcks(t.lastRTT.lastRtt, acks.PacketEvents)
+		// register feedback with cc
+		var targetRate uint64
+		if t.nada != nil {
+			targetRate = t.nada.OnAcks(t.lastRTT.lastRtt, acks.PacketEvents)
+		}
+		if t.bwe != nil {
+			gccAcks := acks.getGCCacks()
+			targetRate = uint64(t.bwe.OnAcks(time.Now(), t.lastRTT.lastRtt, gccAcks))
+		}
+
+		// set target rate of encoder
 		if t.SetTargetRateEncoder != nil {
 			t.SetTargetRateEncoder(uint(targetRate))
 		}
