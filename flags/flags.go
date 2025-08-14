@@ -40,6 +40,9 @@ const (
 
 	TraceRTPRecvFlag FlagName = "trace-rtp-recv"
 	TraceRTPSendFlag FlagName = "trace-rtp-send"
+
+	CCnadaFlag FlagName = "nada"
+	CCgccFlag  FlagName = "pion-gcc"
 )
 
 // default values
@@ -97,6 +100,10 @@ var (
 	TraceRTPRecv = false
 
 	TraceRTPSend = false
+
+	CCnada = false
+
+	CCgcc = false
 )
 
 type flagVar func(*flag.FlagSet)
@@ -149,6 +156,10 @@ var flags = map[FlagName]flagVar{
 	// tracing flags
 	TraceRTPRecvFlag: boolVar(&TraceRTPRecv, TraceRTPRecvFlag, &TraceRTPRecv, "Log incoming RTP packets"),
 	TraceRTPSendFlag: boolVar(&TraceRTPSend, TraceRTPSendFlag, &TraceRTPSend, "Log outgoing RTP packets"),
+
+	// CC flags
+	CCnadaFlag: boolVar(&CCnada, CCnadaFlag, &CCnada, "Enable NADA congestion control"),
+	CCgccFlag:  boolVar(&CCgcc, CCgccFlag, &CCgcc, "Enable GCC congestion control"),
 }
 
 func RegisterInto(fs *flag.FlagSet, names ...FlagName) {
