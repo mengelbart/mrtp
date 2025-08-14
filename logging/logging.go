@@ -64,4 +64,13 @@ func (l *RTPLogger) LogRTPPacket(header *rtp.Header, payload []byte, _ intercept
 	)
 }
 
+func (l *RTPLogger) LogRTPPacketBuf(rtpBuf []byte, ia interceptor.Attributes) {
+	var pkt rtp.Packet
+	if err := pkt.Unmarshal(rtpBuf); err != nil {
+		return
+	}
+
+	l.LogRTPPacket(&pkt.Header, pkt.Payload, ia)
+}
+
 func (l *RTPLogger) LogRTCPPackets([]rtcp.Packet, interceptor.Attributes) {}
