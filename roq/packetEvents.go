@@ -78,7 +78,7 @@ func (ps *PacketEvents) getGCCacks() []gcc.Acknowledgment {
 		}
 
 		acks = append(acks, gcc.Acknowledgment{
-			SeqNr:     int64(pr.SeqNr),
+			SeqNr:     pr.SeqNr,
 			Size:      uint16(pr.SizeBit / 8), // convert to bytes
 			Departure: pr.Departure,
 			Arrived:   pr.Arrived,
