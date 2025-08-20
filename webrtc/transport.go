@@ -373,7 +373,7 @@ func (t *Transport) onCCFB(reports []rtpfb.Report) error {
 			for _, prs := range report.SSRCToPacketReports {
 				for _, pr := range prs {
 					acks = append(acks, gcc.Acknowledgment{
-						SeqNr:     int64(pr.SeqNr),
+						SeqNr:     pr.SeqNr,
 						Size:      uint16(pr.Size),
 						Departure: pr.Departure,
 						Arrived:   pr.Arrived,
