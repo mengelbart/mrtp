@@ -39,6 +39,7 @@ func Configure(format Format, level slog.Level, writer io.Writer) {
 
 type RTPLogger struct {
 	logger *slog.Logger
+	seq    *unwrapper
 }
 
 func NewRTPLogger(vantagePoint string, logger *slog.Logger) *RTPLogger {
@@ -47,10 +48,12 @@ func NewRTPLogger(vantagePoint string, logger *slog.Logger) *RTPLogger {
 	}
 	return &RTPLogger{
 		logger: logger,
+		seq:    &unwrapper{},
 	}
 }
 
 func (l *RTPLogger) LogRTPPacket(header *rtp.Header, payload []byte, _ interceptor.Attributes) {
+	u := l.seq.Unwrap(header.SequenceNumber)
 	l.logger.Info(
 		"rtp packet",
 		"version", header.Version,
@@ -58,6 +61,7 @@ func (l *RTPLogger) LogRTPPacket(header *rtp.Header, payload []byte, _ intercept
 		"marker", header.Marker,
 		"payload-type", header.PayloadType,
 		"sequence-number", header.SequenceNumber,
+		"unwrapped-sequence-number", u,
 		"timestamp", header.Timestamp,
 		"ssrc", header.SSRC,
 		"payload-length", header.MarshalSize()+len(payload),
