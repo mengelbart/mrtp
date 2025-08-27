@@ -2,20 +2,14 @@ package roq
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
-	"log"
-	"math/big"
 	"sync"
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
+	quicutils "github.com/mengelbart/mrtp/quic-utils"
 	"github.com/mengelbart/qlog"
 	"github.com/mengelbart/roq"
 	"github.com/pion/bwe-test/gcc"
@@ -27,24 +21,9 @@ import (
 
 const roqALPN = "roq-09"
 
-type Role bool
-
-const (
-	RoleServer Role = true
-	RoleClient Role = false
-)
-
-func (r Role) String() string {
-	if r {
-		return "Server"
-	} else {
-		return "client"
-	}
-}
-
 type Option func(*Transport) error
 
-func WithRole(r Role) Option {
+func WithRole(r quicutils.Role) Option {
 	return func(t *Transport) error {
 		t.role = r
 		return nil
@@ -52,7 +31,7 @@ func WithRole(r Role) Option {
 }
 
 type Transport struct {
-	role    Role
+	role    quicutils.Role
 	session *roq.Session
 
 	localAddress  string
@@ -132,7 +111,7 @@ func SetRemoteAdress(address string, port uint) Option {
 
 func New(opts ...Option) (*Transport, error) {
 	t := &Transport{
-		role:            RoleServer,
+		role:            quicutils.RoleServer,
 		session:         nil,
 		lastRTT:         &RTT{},
 		lostPackets:     nil,
@@ -155,8 +134,8 @@ func New(opts ...Option) (*Transport, error) {
 	}
 
 	var conn roq.Connection
-	if t.role == RoleServer {
-		c, err := generateTLSConfig("", "", nil)
+	if t.role == quicutils.RoleServer {
+		c, err := quicutils.GenerateTLSConfig("", "", nil, []string{roqALPN})
 		if err != nil {
 			return nil, err
 		}
@@ -346,49 +325,4 @@ func accept(ctx context.Context, addr string, tlsConfig *tls.Config, quicConfig 
 		return nil, err
 	}
 	return roq.NewQUICGoConnection(conn), nil
-}
-
-func generateTLSConfig(certFile, keyFile string, keyLog io.Writer) (*tls.Config, error) {
-	tlsConfig, err := generateTLSConfigWithCertAndKey(certFile, keyFile, keyLog)
-	if err != nil {
-		log.Printf("failed to generate TLS config from cert file and key, generating in memory certs: %v", err)
-		tlsConfig, err = generateTLSConfigWithNewCert(keyLog)
-	}
-	return tlsConfig, err
-}
-
-func generateTLSConfigWithCertAndKey(certFile, keyFile string, keyLog io.Writer) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return nil, err
-	}
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		NextProtos:   []string{roqALPN},
-		KeyLogWriter: keyLog,
-	}, nil
-}
-
-// Setup a bare-bones TLS config for the server
-func generateTLSConfigWithNewCert(keyLog io.Writer) (*tls.Config, error) {
-	key, err := rsa.GenerateKey(rand.Reader, 1024)
-	if err != nil {
-		return nil, err
-	}
-	template := x509.Certificate{SerialNumber: big.NewInt(1)}
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
-	if err != nil {
-		return nil, err
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		return nil, err
-	}
-	return &tls.Config{
-		Certificates: []tls.Certificate{tlsCert},
-		NextProtos:   []string{roqALPN},
-		KeyLogWriter: keyLog,
-	}, nil
 }

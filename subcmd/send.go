@@ -10,6 +10,7 @@ import (
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
+	quicutils "github.com/mengelbart/mrtp/quic-utils"
 	"github.com/mengelbart/mrtp/roq"
 )
 
@@ -56,7 +57,6 @@ var DefaultStreamSourceFactory StreamSourceFactory = &gstreamerVideoStreamSource
 
 var (
 	gstSCReAM bool
-	quicCC    int
 )
 
 type Send struct{}
@@ -78,9 +78,9 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.TraceRTPSendFlag,
 		flags.CCgccFlag,
 		flags.CCnadaFlag,
+		flags.QuicCCFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
-	fs.IntVar(&quicCC, "quic-cc", 0, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer")
 
 	DefaultStreamSourceFactory.ConfigureFlags(fs)
 
@@ -97,13 +97,13 @@ Flags:
 	}
 	fs.Parse(args)
 
-	if quicCC < 0 || quicCC > 2 {
+	if flags.QuicCC > 2 {
 		fmt.Printf("error: invalid quic-cc value, must be 0, 1 or 2\n")
 		fs.Usage()
 		os.Exit(1)
 	}
 
-	if (flags.CCnada || flags.CCgcc || quicCC != 0) && !(flags.RoQServer || flags.RoQClient) {
+	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0) && !(flags.RoQServer || flags.RoQClient) {
 		fmt.Printf("Flags %v and %v, -quic-cc only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag)
 		fs.Usage()
 		os.Exit(1)
@@ -145,8 +145,8 @@ Flags:
 
 	if flags.RoQServer || flags.RoQClient {
 		roqOptions := []roq.Option{
-			roq.WithRole(roq.Role(flags.RoQServer)),
-			roq.SetQuicCC(quicCC),
+			roq.WithRole(quicutils.Role(flags.RoQServer)),
+			roq.SetQuicCC(int(flags.QuicCC)),
 			roq.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
 			roq.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
 		}
