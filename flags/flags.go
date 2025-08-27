@@ -43,6 +43,8 @@ const (
 
 	CCnadaFlag FlagName = "nada"
 	CCgccFlag  FlagName = "pion-gcc"
+
+	QuicCCFlag FlagName = "quic-cc"
 )
 
 // default values
@@ -61,6 +63,8 @@ const (
 	defaultLocation = "videotestsrc"
 
 	defaultSinkType = uint(0) // Corresponds to autovideosink
+
+	defaultQuicCC = uint(0)
 )
 
 // Flag vars
@@ -104,6 +108,8 @@ var (
 	CCnada = false
 
 	CCgcc = false
+
+	QuicCC = defaultQuicCC
 )
 
 type flagVar func(*flag.FlagSet)
@@ -160,6 +166,9 @@ var flags = map[FlagName]flagVar{
 	// CC flags
 	CCnadaFlag: boolVar(&CCnada, CCnadaFlag, &CCnada, "Enable NADA congestion control"),
 	CCgccFlag:  boolVar(&CCgcc, CCgccFlag, &CCgcc, "Enable GCC congestion control"),
+
+	// QUIC flags
+	QuicCCFlag: uintVar(&QuicCC, "quic-cc", &QuicCC, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer"),
 }
 
 func RegisterInto(fs *flag.FlagSet, names ...FlagName) {

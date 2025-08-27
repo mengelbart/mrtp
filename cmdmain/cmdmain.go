@@ -58,7 +58,7 @@ Usage:
 
 		fmt.Fprintln(os.Stderr, "\nCommands:")
 		for name, cmd := range subCmds {
-			fmt.Fprintf(os.Stderr, "  %-8s %s\n", name, cmd.Help())
+			fmt.Fprintf(os.Stderr, "  %-12s %s\n", name, cmd.Help())
 		}
 
 		fmt.Fprintln(os.Stderr, "\nFlags:")

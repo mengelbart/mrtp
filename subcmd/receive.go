@@ -10,6 +10,7 @@ import (
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
+	quicutils "github.com/mengelbart/mrtp/quic-utils"
 	"github.com/mengelbart/mrtp/roq"
 )
 
@@ -149,7 +150,7 @@ Flags:
 
 func (r *Receive) setupRoQ() error {
 	roqOptions := []roq.Option{roq.WithRole(
-		roq.Role(flags.RoQServer)),
+		quicutils.Role(flags.RoQServer)),
 		roq.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
 		roq.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
 	}
