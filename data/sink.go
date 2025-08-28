@@ -1,4 +1,4 @@
-package datasrc
+package data
 
 import (
 	"io"
@@ -9,13 +9,12 @@ type DataSink struct {
 	rc io.ReadCloser
 }
 
-func NewSink() (*DataSink, error) {
-	d := &DataSink{}
+// NewSink creates a new data sink. rc is the ReadCloser that provides the data to be consumed.
+func NewSink(rc io.ReadCloser) (*DataSink, error) {
+	d := &DataSink{
+		rc: rc,
+	}
 	return d, nil
-}
-
-func (d *DataSink) AddDataTransportSink(rc io.ReadCloser) {
-	d.rc = rc
 }
 
 func (d *DataSink) Run() error {

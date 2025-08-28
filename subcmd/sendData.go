@@ -7,10 +7,10 @@ import (
 	"os"
 
 	"github.com/mengelbart/mrtp/cmdmain"
-	datasrc "github.com/mengelbart/mrtp/data-src"
+	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/flags"
-	quicutils "github.com/mengelbart/mrtp/quic-utils"
+	"github.com/mengelbart/mrtp/quicutils"
 )
 
 var (
@@ -72,25 +72,23 @@ Flags:
 		return err
 	}
 
-	sourceOptions := []datasrc.DataBinOption{}
+	sourceOptions := []data.DataBinOption{}
 	if sourceFile != "" {
 		// check if file exists
 		if _, err := os.Stat(sourceFile); errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("file does not exist: %v", sourceFile)
 		}
-		sourceOptions = append(sourceOptions, datasrc.DataBinUseFileSource(sourceFile))
+		sourceOptions = append(sourceOptions, data.DataBinUseFileSource(sourceFile))
 	}
 
 	if rateLimit > 0 {
-		sourceOptions = append(sourceOptions, datasrc.DataBinUseRateLimiter(uint(rateLimit), burst))
+		sourceOptions = append(sourceOptions, data.DataBinUseRateLimiter(uint(rateLimit), burst))
 	}
 
-	source, err := datasrc.NewDataBin(sourceOptions...)
+	source, err := data.NewDataBin(sender, sourceOptions...)
 	if err != nil {
 		return err
 	}
-
-	source.AddDataTransportSink(sender)
 
 	return source.Run()
 }

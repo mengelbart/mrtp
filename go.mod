@@ -21,10 +21,7 @@ require (
 	golang.org/x/time v0.0.0-20181108054448-85acf8d2951c
 )
 
-require (
-	github.com/onsi/gomega v1.27.6 // indirect
-	go.uber.org/mock v0.5.0 // indirect
-)
+require github.com/onsi/gomega v1.27.6 // indirect
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -58,4 +55,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/quic-go/quic-go v0.53.0 => github.com/Willi-42/quic-go v0.2.0
+replace github.com/quic-go/quic-go v0.54.0 => github.com/Willi-42/quic-go v0.2.0

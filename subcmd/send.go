@@ -10,7 +10,7 @@ import (
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
-	quicutils "github.com/mengelbart/mrtp/quic-utils"
+	"github.com/mengelbart/mrtp/quicutils"
 	"github.com/mengelbart/mrtp/roq"
 )
 
