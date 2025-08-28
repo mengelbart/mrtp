@@ -130,7 +130,7 @@ func EnableGCC(initRate, minRate, maxRate int) Option {
 	}
 }
 
-func EnableNADA(initRate, minRate, maxRate int) Option {
+func EnableNADA(initRate, minRate, maxRate uint) Option {
 	return func(t *Transport) error {
 		nadaConfig := nada.Config{
 			MinRate:                  uint64(minRate),
@@ -380,7 +380,6 @@ func (t *Transport) onCCFB(reports []rtpfb.Report) error {
 						Arrival:   pr.Arrival,
 						ECN:       gcc.ECN(pr.ECN),
 					})
-					slog.Info("DELAY_MEASUREMENT", "delay", pr.Arrival.Sub(pr.Departure).Microseconds())
 					if pr.Arrival.After(latestAckedArrival) {
 						latestAckedArrival = pr.Arrival
 						latestAckedDeparture = pr.Departure
@@ -406,7 +405,6 @@ func (t *Transport) onCCFB(reports []rtpfb.Report) error {
 						Arrived:   pr.Arrived,
 						Marked:    pr.ECN == rtcp.ECNCE,
 					})
-					slog.Info("DELAY_MEASUREMENT", "delay", pr.Arrival.Sub(pr.Departure).Microseconds())
 					if pr.Arrival.After(latestAckedArrival) {
 						latestAckedArrival = pr.Arrival
 						latestAckedDeparture = pr.Departure

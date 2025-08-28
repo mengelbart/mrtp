@@ -41,8 +41,9 @@ const (
 	TraceRTPRecvFlag FlagName = "trace-rtp-recv"
 	TraceRTPSendFlag FlagName = "trace-rtp-send"
 
-	CCnadaFlag FlagName = "nada"
-	CCgccFlag  FlagName = "pion-gcc"
+	CCnadaFlag        FlagName = "nada"
+	CCgccFlag         FlagName = "pion-gcc"
+	MaxTragetRateFlag FlagName = "max-target-rate"
 
 	QuicCCFlag FlagName = "quic-cc"
 )
@@ -62,7 +63,8 @@ const (
 
 	defaultLocation = "videotestsrc"
 
-	defaultSinkType = uint(0) // Corresponds to autovideosink
+	defaultSinkType      = uint(0)         // Corresponds to autovideosink
+	defaultMaxTargetRate = uint(3_000_000) // 3 Mbps
 
 	defaultQuicCC = uint(0)
 )
@@ -108,6 +110,9 @@ var (
 	CCnada = false
 
 	CCgcc = false
+
+	// MaxTargetRate is the max target rate in bits per second
+	MaxTargetRate = defaultMaxTargetRate
 
 	QuicCC = defaultQuicCC
 )
@@ -164,8 +169,9 @@ var flags = map[FlagName]flagVar{
 	TraceRTPSendFlag: boolVar(&TraceRTPSend, TraceRTPSendFlag, &TraceRTPSend, "Log outgoing RTP packets"),
 
 	// CC flags
-	CCnadaFlag: boolVar(&CCnada, CCnadaFlag, &CCnada, "Enable NADA congestion control"),
-	CCgccFlag:  boolVar(&CCgcc, CCgccFlag, &CCgcc, "Enable GCC congestion control"),
+	CCnadaFlag:        boolVar(&CCnada, CCnadaFlag, &CCnada, "Enable NADA congestion control"),
+	CCgccFlag:         boolVar(&CCgcc, CCgccFlag, &CCgcc, "Enable GCC congestion control"),
+	MaxTragetRateFlag: uintVar(&MaxTargetRate, MaxTragetRateFlag, &MaxTargetRate, "Set the maximum target rate in bits per second of the congestion controler"),
 
 	// QUIC flags
 	QuicCCFlag: uintVar(&QuicCC, "quic-cc", &QuicCC, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer"),

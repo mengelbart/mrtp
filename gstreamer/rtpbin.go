@@ -40,6 +40,22 @@ type RTPBin struct {
 	SetTargetRateEncoder func(ratebps uint) error
 }
 
+func EnableSCReAM(initRateKbps, minRateKbps, maxRateKbps uint) RTPBinOption {
+	return func(r *RTPBin) error {
+		screamtx, err := gst.NewElementWithProperties(
+			"screamtx",
+			map[string]any{
+				"params": fmt.Sprintf("-initrate %d -minrate %d -maxrate %d", initRateKbps, minRateKbps, maxRateKbps),
+			},
+		)
+		if err != nil {
+			return err
+		}
+		r.screamTx = screamtx
+		return nil
+	}
+}
+
 func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
 	pipeline, err := gst.NewPipeline("mrtp-rtp-bin-pipeline")
 	if err != nil {
@@ -157,7 +173,7 @@ func (r *RTPBin) AddRTPTransportSinkGst(id int, sink *gst.Element) error {
 	return nil
 }
 
-func (r *RTPBin) AddRTPSourceStreamGst(id int, src RTPSourceBin, enableSCReAM bool) error {
+func (r *RTPBin) AddRTPSourceStreamGst(id int, src RTPSourceBin) error {
 	if err := r.pipeline.Add(src.Element()); err != nil {
 		return err
 	}
@@ -172,24 +188,14 @@ func (r *RTPBin) AddRTPSourceStreamGst(id int, src RTPSourceBin, enableSCReAM bo
 		return err
 	}
 
-	if enableSCReAM {
-		screamtx, err := gst.NewElementWithProperties(
-			"screamtx",
-			map[string]any{
-				"params": "-initrate 750 -minrate 150 -maxrate 3000", // kbps
-			},
-		)
-		if err != nil {
+	if r.screamTx != nil {
+		if err = r.pipeline.Add(r.screamTx); err != nil {
 			return err
 		}
-		r.screamTx = screamtx
-		if err = r.pipeline.Add(screamtx); err != nil {
-			return err
-		}
-		if ret := srcPad.Link(screamtx.GetStaticPad("sink")); ret != gst.PadLinkOK {
+		if ret := srcPad.Link(r.screamTx.GetStaticPad("sink")); ret != gst.PadLinkOK {
 			return fmt.Errorf("failed to link src pad to screamtx sink pad: %v", ret)
 		}
-		srcPad = screamtx.GetStaticPad("src")
+		srcPad = r.screamTx.GetStaticPad("src")
 		if srcPad == nil {
 			return errors.New("failed to get screamtx src pad")
 		}
