@@ -1,4 +1,4 @@
-package datasrc
+package data
 
 import (
 	"context"
@@ -40,10 +40,12 @@ func DataBinUseRateLimiter(initLimit, burst uint) DataBinOption {
 	}
 }
 
-func NewDataBin(options ...DataBinOption) (*DataBin, error) {
+// NewDataBin creates a new data source. wc is the WriteCloser where data will be written to.
+func NewDataBin(wc io.WriteCloser, options ...DataBinOption) (*DataBin, error) {
 	d := &DataBin{
 		useFileSrc: false,
 		filepath:   "",
+		wc:         wc,
 	}
 	for _, opt := range options {
 		if err := opt(d); err != nil {
@@ -51,10 +53,6 @@ func NewDataBin(options ...DataBinOption) (*DataBin, error) {
 		}
 	}
 	return d, nil
-}
-
-func (d *DataBin) AddDataTransportSink(wc io.WriteCloser) {
-	d.wc = wc
 }
 
 func (d *DataBin) SetRateLimit(ratebps uint) {

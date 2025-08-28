@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	quicutils "github.com/mengelbart/mrtp/quic-utils"
+	"github.com/mengelbart/mrtp/quicutils"
 	"github.com/mengelbart/quicdc"
 	"github.com/quic-go/quic-go"
 	quicgoqlog "github.com/quic-go/quic-go/qlog"

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
-	quicutils "github.com/mengelbart/mrtp/quic-utils"
+	"github.com/mengelbart/mrtp/quicutils"
 	"github.com/mengelbart/qlog"
 	"github.com/mengelbart/roq"
 	"github.com/pion/bwe-test/gcc"

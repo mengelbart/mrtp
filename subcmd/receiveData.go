@@ -6,10 +6,10 @@ import (
 	"os"
 
 	"github.com/mengelbart/mrtp/cmdmain"
-	datasrc "github.com/mengelbart/mrtp/data-src"
+	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/flags"
-	quicutils "github.com/mengelbart/mrtp/quic-utils"
+	"github.com/mengelbart/mrtp/quicutils"
 )
 
 func init() {
@@ -62,12 +62,10 @@ Flags:
 		return err
 	}
 
-	sink, err := datasrc.NewSink()
+	sink, err := data.NewSink(receiver)
 	if err != nil {
 		panic(err)
 	}
-
-	sink.AddDataTransportSink(receiver)
 
 	return sink.Run()
 }
