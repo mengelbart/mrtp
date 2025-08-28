@@ -78,6 +78,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.TraceRTPSendFlag,
 		flags.CCgccFlag,
 		flags.CCnadaFlag,
+		flags.MaxTragetRateFlag,
 		flags.QuicCCFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
@@ -133,7 +134,12 @@ Flags:
 		return err
 	}
 
-	sender, err := gstreamer.NewRTPBin()
+	rtpBinOpts := []gstreamer.RTPBinOption{}
+	if gstSCReAM {
+		rtpBinOpts = append(rtpBinOpts, gstreamer.EnableSCReAM(750, 150, flags.MaxTargetRate/1000))
+	}
+
+	sender, err := gstreamer.NewRTPBin(rtpBinOpts...)
 	if err != nil {
 		return err
 	}
@@ -152,14 +158,12 @@ Flags:
 		}
 
 		if flags.CCnada {
-			roqOptions = append(roqOptions, roq.EnableNADA(750_000, 150_000, 3_000_000))
+			roqOptions = append(roqOptions, roq.EnableNADA(750_000, 150_000, flags.MaxTargetRate))
 		}
 
 		if flags.CCgcc {
-			roqOptions = append(roqOptions, roq.EnableGCC(750_000, 150_000, 3_000_000))
+			roqOptions = append(roqOptions, roq.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate)))
 		}
-
-		fmt.Println("nada: ", flags.CCnada, "gcc: ", flags.CCgcc)
 
 		transport, err := roq.New(roqOptions...)
 		if err != nil {
@@ -174,7 +178,7 @@ Flags:
 		if err = sender.AddRTPTransportSink(0, rtpSink); err != nil {
 			return err
 		}
-		if err = sender.AddRTPSourceStreamGst(0, source, gstSCReAM); err != nil {
+		if err = sender.AddRTPSourceStreamGst(0, source); err != nil {
 			return err
 		}
 
@@ -202,7 +206,7 @@ Flags:
 		if err = sender.AddRTPTransportSinkGst(0, rtpSink.GetGstElement()); err != nil {
 			return err
 		}
-		if err = sender.AddRTPSourceStreamGst(0, source, gstSCReAM); err != nil {
+		if err = sender.AddRTPSourceStreamGst(0, source); err != nil {
 			return err
 		}
 

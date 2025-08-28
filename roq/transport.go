@@ -48,7 +48,7 @@ type Transport struct {
 	mtx                  sync.Mutex
 }
 
-func EnableNADA(initRate, minRate, maxRate int) Option {
+func EnableNADA(initRate, minRate, maxRate uint) Option {
 	return func(t *Transport) error {
 		nadaConfig := nada.Config{
 			MinRate:                  uint64(minRate),

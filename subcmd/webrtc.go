@@ -51,6 +51,7 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 		flags.TraceRTPSendFlag,
 		flags.CCgccFlag,
 		flags.CCnadaFlag,
+		flags.MaxTragetRateFlag,
 	}...)
 	fs.StringVar(&localPort, "local-port", "8080", "Local port of HTTP signaling server to listen on")
 	fs.StringVar(&remotePort, "remote-port", "8080", "Remote Port of HTTP signaling server to connect to")
@@ -120,10 +121,10 @@ Usage:
 		webrtcOptions = append(webrtcOptions, webrtc.EnableCCFBReceiver())
 	}
 	if flags.CCgcc {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableGCC(750_000, 150_000, 3_000_000))
+		webrtcOptions = append(webrtcOptions, webrtc.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate)))
 	}
 	if flags.CCnada {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableNADA(750_000, 150_000, 3_000_000))
+		webrtcOptions = append(webrtcOptions, webrtc.EnableNADA(750_000, 150_000, flags.MaxTargetRate))
 	}
 	if flags.TraceRTPRecv {
 		webrtcOptions = append(webrtcOptions, webrtc.EnableRTPRecvTraceLogging())
@@ -202,7 +203,7 @@ Usage:
 		// the packet to the correct SSRC (because it cannot read the media SSRC
 		// from a raw RTCP packet. The ScreamTx sender on the other hand,
 		// expects the type set to 0.
-		if err = pipeline.AddRTPSourceStreamGst(0, source, false); err != nil {
+		if err = pipeline.AddRTPSourceStreamGst(0, source); err != nil {
 			return err
 		}
 		if err = pipeline.ReceiveRTCPFrom(rtpSink.RTCPReceiver()); err != nil {
