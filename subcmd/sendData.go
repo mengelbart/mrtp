@@ -15,7 +15,8 @@ import (
 
 var (
 	sourceFile string
-	rateLimit  int
+	rateLimit  uint
+	burst      uint
 )
 
 func init() {
@@ -38,7 +39,8 @@ func (s *SendData) Exec(cmd string, args []string) error {
 	}...)
 
 	fs.StringVar(&sourceFile, "source-file", "", "File to be sent. If empty, random data will be sent.")
-	fs.IntVar(&rateLimit, "rate-limit", 0, "Rate limit in bits per second. 0 means no limit.")
+	fs.UintVar(&rateLimit, "rate-limit", 0, "Rate limit in bits per second. 0 means no limit.")
+	fs.UintVar(&burst, "burst", 10000, "Burst size in bytes for rate limiter.")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `%v
@@ -52,10 +54,6 @@ Flags:
 		fmt.Fprintln(os.Stderr)
 	}
 	fs.Parse(args)
-
-	if rateLimit < 0 {
-		return errors.New("rate limit must be >= 0")
-	}
 
 	roqOptions := []datachannels.Option{
 		datachannels.WithRole(quicutils.Role(quicutils.RoleClient)),
@@ -84,7 +82,7 @@ Flags:
 	}
 
 	if rateLimit > 0 {
-		sourceOptions = append(sourceOptions, datasrc.DataBinUseRateLimiter(uint(rateLimit), 10000))
+		sourceOptions = append(sourceOptions, datasrc.DataBinUseRateLimiter(uint(rateLimit), burst))
 	}
 
 	source, err := datasrc.NewDataBin(sourceOptions...)

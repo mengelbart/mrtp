@@ -8,18 +8,23 @@ require (
 	github.com/go-gst/go-gst v1.4.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae
+	github.com/mengelbart/quicdc v0.0.0-20250827092326-e1f831b8243a
 	github.com/mengelbart/roq v0.3.1-0.20250806115233-58318148d6ba
 	github.com/pion/bwe-test v0.0.0-20250731151800-5362b62c9a75
 	github.com/pion/interceptor v0.1.41-0.20250731115150-266b5e5ce04a
 	github.com/pion/rtcp v1.2.16-0.20250423150132-b78b08322f5c
 	github.com/pion/rtp v1.8.21
 	github.com/pion/webrtc/v4 v4.1.1
-	github.com/quic-go/quic-go v0.53.0
+	github.com/quic-go/quic-go v0.54.0
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sync v0.16.0
+	golang.org/x/time v0.0.0-20181108054448-85acf8d2951c
 )
 
-require github.com/onsi/gomega v1.27.6 // indirect
+require (
+	github.com/onsi/gomega v1.27.6 // indirect
+	go.uber.org/mock v0.5.0 // indirect
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

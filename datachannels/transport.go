@@ -134,6 +134,7 @@ func (t *Transport) AddDataChannelReceiver(channelID uint64) (*Receiver, error) 
 	// wating for data channel from callback
 	dc := <-dcCahn
 
+	// open receiver stream
 	rm, err := dc.ReceiveMessage(context.TODO())
 	if err != nil {
 		return nil, err
