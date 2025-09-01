@@ -2,7 +2,6 @@ package subcmd
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -84,12 +83,7 @@ Usage:
 
 	webrtcOptions := []webrtc.Option{
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
-			sink, newSinkErr := gstreamer.NewStreamSink(
-				"rtp-stream-sink",
-				gstreamer.StreamSinkPayloadType(int(receiver.PayloadType())),
-				gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
-				gstreamer.StreamSinkLocation(flags.Location),
-			)
+			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()))
 			if newSinkErr != nil {
 				panic(err)
 			}
@@ -165,33 +159,26 @@ Usage:
 	go s.ListenAndServe()
 
 	if sendVideoTrack {
+		var source gstreamer.RTPSourceBin
+		source, err = DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source")
+		if err != nil {
+			return err
+		}
+
 		var rtpSink *webrtc.RTPSender
-		rtpSink, err = transport.AddLocalTrack()
+		rtpSink, err = transport.AddLocalTrackWithCodec(source.EncodingName())
 		if err != nil {
 			return err
 		}
 		if err = pipeline.AddRTPTransportSink(0, rtpSink); err != nil {
 			return err
 		}
-		streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
-		if flags.Location != "videotestsrc" {
-			// check if file exists
-			if _, err := os.Stat(flags.Location); errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("file does not exist: %v", flags.Location)
-			}
-
-			streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.Location))
-			streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
-		}
-
-		var source *gstreamer.StreamSource
-		source, err = gstreamer.NewStreamSource("rtp-stream-source", streamSourceOpts...)
-		if err != nil {
-			return err
-		}
 
 		// set callback of transport, so CCs can set the target rate of the encoder
-		transport.SetTargetRate = source.SetBitrate
+		ba, ok := source.(BitrateAdapter)
+		if ok {
+			transport.SetTargetRate = ba.SetBitrate
+		}
 
 		// TODO(ME): Cannot enable SCReAM here because WebRTC rewrites the SSRCs
 		// of outgoing packets. Thus, the sender cannot use the feedback,
