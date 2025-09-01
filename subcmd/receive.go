@@ -150,10 +150,14 @@ Flags:
 }
 
 func (r *Receive) setupRoQ() error {
-	roqOptions := []roq.Option{roq.WithRole(
-		quicutils.Role(flags.RoQServer)),
-		roq.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-		roq.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
+	role := quicutils.Role(flags.RoQServer)
+	roqOptions := []roq.Option{
+		roq.WithRole(role),
+	}
+	if role == quicutils.RoleServer {
+		roqOptions = append(roqOptions, roq.SetLocalAdress(flags.LocalAddr))
+	} else {
+		roqOptions = append(roqOptions, roq.SetRemoteAdress(flags.RemoteAddr))
 	}
 	if nadaFeedback {
 		roqOptions = append(roqOptions, roq.EnableNADAfeedback())

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -95,16 +94,16 @@ func EnableNADAfeedback() Option {
 	}
 }
 
-func SetLocalAdress(address string, port uint) Option {
+func SetLocalAdress(address string) Option {
 	return func(t *Transport) error {
-		t.localAddress = fmt.Sprintf("%s:%d", address, port)
+		t.localAddress = address
 		return nil
 	}
 }
 
-func SetRemoteAdress(address string, port uint) Option {
+func SetRemoteAdress(address string) Option {
 	return func(t *Transport) error {
-		t.remoteAddress = fmt.Sprintf("%s:%d", address, port)
+		t.remoteAddress = address
 		return nil
 	}
 }
