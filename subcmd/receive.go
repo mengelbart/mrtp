@@ -29,7 +29,7 @@ var UDPRecvBufferSize int
 
 type StreamSinkFactory interface {
 	ConfigureFlags(*flag.FlagSet)
-	MakeStreamSink(name string) (gstreamer.RTPSinkBin, error)
+	MakeStreamSink(name string, payloadType int) (gstreamer.RTPSinkBin, error)
 }
 
 type gstreamerVideoStreamSinkFactory struct {
@@ -42,11 +42,12 @@ func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
 	}...)
 }
 
-func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string) (gstreamer.RTPSinkBin, error) {
+func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (gstreamer.RTPSinkBin, error) {
 	return gstreamer.NewStreamSink(
 		name,
 		gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
 		gstreamer.StreamSinkLocation(flags.Location),
+		gstreamer.StreamSinkPayloadType(pt),
 	)
 }
 
@@ -145,7 +146,7 @@ Flags:
 		return err
 	}
 
-	r.sink, err = DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink")
+	r.sink, err = DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", 96)
 	if err != nil {
 		return err
 	}

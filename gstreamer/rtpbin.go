@@ -16,6 +16,7 @@ import (
 type RTPSourceBin interface {
 	Element() *gst.Element
 	SrcPad() (*gst.Pad, error)
+	EncodingName() string
 }
 
 type RTPSinkBin interface {

@@ -218,3 +218,7 @@ func (s *StreamSource) SetBitrate(ratebps uint) error {
 
 	return s.encoder.Set("bitrate", rateKbps)
 }
+
+func (s *StreamSource) EncodingName() string {
+	return fmt.Sprintf("%v/%v", s.codec.MediaType(), s.codec.String())
+}
