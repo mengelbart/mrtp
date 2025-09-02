@@ -180,6 +180,21 @@ func EnableRTPSendTraceLogging() Option {
 	}
 }
 
+func AddExtraCodecs(name string, clockRate uint32, payloadType uint8) Option {
+	return func(t *Transport) error {
+		return t.mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				MimeType:     name,
+				ClockRate:    clockRate,
+				Channels:     0,
+				SDPFmtpLine:  "",
+				RTCPFeedback: []webrtc.RTCPFeedback{},
+			},
+			PayloadType: webrtc.PayloadType(payloadType),
+		}, webrtc.RTPCodecTypeVideo)
+	}
+}
+
 func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, error) {
 	t := &Transport{
 		logger:              slog.Default(),
