@@ -24,6 +24,7 @@ type RTPSinkBin interface {
 	SinkPad() (*gst.Pad, error)
 	ClockRate() int
 	EncodingName() string
+	PayloadTypeName() string
 	PayloadType() int
 	MediaType() string
 }
@@ -327,7 +328,7 @@ func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element, screamCCFB bo
 	capsString := fmt.Sprintf(
 		"application/x-rtp, clock-rate=%v,encoding-name=%v,payload=%v,media=%v",
 		sink.ClockRate(),
-		sink.EncodingName(),
+		sink.PayloadTypeName(),
 		sink.PayloadType(),
 		sink.MediaType(),
 	)

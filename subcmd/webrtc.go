@@ -31,6 +31,14 @@ func init() {
 	cmdmain.RegisterSubCmd("webrtc", func() cmdmain.SubCmd { return new(WebRTC) })
 }
 
+type WebRTCCodecParameters struct {
+	MimeType    string
+	ClockRate   uint32
+	PayloadType uint8
+}
+
+var WebRTCExtraCodecs = []WebRTCCodecParameters{}
+
 type WebRTC struct{}
 
 // Help implements cmdmain.SubCmd.
@@ -63,6 +71,9 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 	fs.BoolVar(&pionReadCCFB, "pion-read-ccfb", false, "Let Pion read incoming CCFB reports")
 	fs.BoolVar(&sendVideoTrack, "send-track", false, "Send a media track to the peer")
 
+	DefaultStreamSinkFactory.ConfigureFlags(fs)
+	DefaultStreamSourceFactory.ConfigureFlags(fs)
+
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a WebRTC pipeline
 
@@ -82,6 +93,7 @@ Usage:
 	signaler := webrtc.NewHTTPClientSignaler(fmt.Sprintf("http://%v:%v", flags.RemoteAddr, remotePort))
 
 	webrtcOptions := []webrtc.Option{
+		webrtc.RegisterDefaultCodecs(),
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
 			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()))
 			if newSinkErr != nil {
@@ -131,6 +143,12 @@ Usage:
 	webrtcOptions = append(webrtcOptions, webrtc.OnConnected(func() {
 		cancelConnectedCtx()
 	}))
+
+	if len(WebRTCExtraCodecs) > 0 {
+		for _, c := range WebRTCExtraCodecs {
+			webrtcOptions = append(webrtcOptions, webrtc.AddExtraCodecs(c.MimeType, c.ClockRate, c.PayloadType))
+		}
+	}
 
 	transport, err := webrtc.NewTransport(
 		signaler,
