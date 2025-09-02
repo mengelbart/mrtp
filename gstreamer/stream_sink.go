@@ -155,6 +155,10 @@ func (s *StreamSink) EncodingName() string {
 	return s.codec.String()
 }
 
+func (s *StreamSink) PayloadTypeName() string {
+	return s.codec.String()
+}
+
 func (s *StreamSink) PayloadType() int {
 	return s.payloadType
 }
