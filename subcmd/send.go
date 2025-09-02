@@ -150,11 +150,15 @@ Flags:
 	}
 
 	if flags.RoQServer || flags.RoQClient {
+		role := quicutils.Role(flags.RoQServer)
 		roqOptions := []roq.Option{
-			roq.WithRole(quicutils.Role(flags.RoQServer)),
+			roq.WithRole(role),
 			roq.SetQuicCC(int(flags.QuicCC)),
-			roq.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-			roq.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
+		}
+		if role == quicutils.RoleServer {
+			roqOptions = append(roqOptions, roq.SetLocalAdress(flags.LocalAddr))
+		} else {
+			roqOptions = append(roqOptions, roq.SetRemoteAdress(flags.RemoteAddr))
 		}
 
 		if flags.CCnada {

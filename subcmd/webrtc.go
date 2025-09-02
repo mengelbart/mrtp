@@ -2,7 +2,6 @@ package subcmd
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -31,6 +30,14 @@ var (
 func init() {
 	cmdmain.RegisterSubCmd("webrtc", func() cmdmain.SubCmd { return new(WebRTC) })
 }
+
+type WebRTCCodecParameters struct {
+	MimeType    string
+	ClockRate   uint32
+	PayloadType uint8
+}
+
+var WebRTCExtraCodecs = []WebRTCCodecParameters{}
 
 type WebRTC struct{}
 
@@ -64,6 +71,9 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 	fs.BoolVar(&pionReadCCFB, "pion-read-ccfb", false, "Let Pion read incoming CCFB reports")
 	fs.BoolVar(&sendVideoTrack, "send-track", false, "Send a media track to the peer")
 
+	DefaultStreamSinkFactory.ConfigureFlags(fs)
+	DefaultStreamSourceFactory.ConfigureFlags(fs)
+
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a WebRTC pipeline
 
@@ -84,12 +94,7 @@ Usage:
 
 	webrtcOptions := []webrtc.Option{
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
-			sink, newSinkErr := gstreamer.NewStreamSink(
-				"rtp-stream-sink",
-				gstreamer.StreamSinkPayloadType(int(receiver.PayloadType())),
-				gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
-				gstreamer.StreamSinkLocation(flags.Location),
-			)
+			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()))
 			if newSinkErr != nil {
 				panic(err)
 			}
@@ -138,6 +143,12 @@ Usage:
 		cancelConnectedCtx()
 	}))
 
+	if len(WebRTCExtraCodecs) > 0 {
+		for _, c := range WebRTCExtraCodecs {
+			webrtcOptions = append(webrtcOptions, webrtc.AddExtraCodecs(c.MimeType, c.ClockRate, c.PayloadType))
+		}
+	}
+
 	transport, err := webrtc.NewTransport(
 		signaler,
 		offer,
@@ -165,33 +176,26 @@ Usage:
 	go s.ListenAndServe()
 
 	if sendVideoTrack {
+		var source gstreamer.RTPSourceBin
+		source, err = DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source")
+		if err != nil {
+			return err
+		}
+
 		var rtpSink *webrtc.RTPSender
-		rtpSink, err = transport.AddLocalTrack()
+		rtpSink, err = transport.AddLocalTrackWithCodec(source.EncodingName())
 		if err != nil {
 			return err
 		}
 		if err = pipeline.AddRTPTransportSink(0, rtpSink); err != nil {
 			return err
 		}
-		streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
-		if flags.Location != "videotestsrc" {
-			// check if file exists
-			if _, err := os.Stat(flags.Location); errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("file does not exist: %v", flags.Location)
-			}
-
-			streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.Location))
-			streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
-		}
-
-		var source *gstreamer.StreamSource
-		source, err = gstreamer.NewStreamSource("rtp-stream-source", streamSourceOpts...)
-		if err != nil {
-			return err
-		}
 
 		// set callback of transport, so CCs can set the target rate of the encoder
-		transport.SetTargetRate = source.SetBitrate
+		ba, ok := source.(BitrateAdapter)
+		if ok {
+			transport.SetTargetRate = ba.SetBitrate
+		}
 
 		// TODO(ME): Cannot enable SCReAM here because WebRTC rewrites the SSRCs
 		// of outgoing packets. Thus, the sender cannot use the feedback,

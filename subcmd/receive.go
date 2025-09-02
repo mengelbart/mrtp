@@ -28,7 +28,7 @@ var UDPRecvBufferSize int
 
 type StreamSinkFactory interface {
 	ConfigureFlags(*flag.FlagSet)
-	MakeStreamSink(name string) (gstreamer.RTPSinkBin, error)
+	MakeStreamSink(name string, payloadType int) (gstreamer.RTPSinkBin, error)
 }
 
 type gstreamerVideoStreamSinkFactory struct {
@@ -41,11 +41,12 @@ func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
 	}...)
 }
 
-func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string) (gstreamer.RTPSinkBin, error) {
+func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (gstreamer.RTPSinkBin, error) {
 	return gstreamer.NewStreamSink(
 		name,
 		gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
 		gstreamer.StreamSinkLocation(flags.Location),
+		gstreamer.StreamSinkPayloadType(pt),
 	)
 }
 
@@ -132,7 +133,7 @@ Flags:
 		return err
 	}
 
-	r.sink, err = DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink")
+	r.sink, err = DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", 96)
 	if err != nil {
 		return err
 	}
@@ -149,10 +150,14 @@ Flags:
 }
 
 func (r *Receive) setupRoQ() error {
-	roqOptions := []roq.Option{roq.WithRole(
-		quicutils.Role(flags.RoQServer)),
-		roq.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-		roq.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
+	role := quicutils.Role(flags.RoQServer)
+	roqOptions := []roq.Option{
+		roq.WithRole(role),
+	}
+	if role == quicutils.RoleServer {
+		roqOptions = append(roqOptions, roq.SetLocalAdress(flags.LocalAddr))
+	} else {
+		roqOptions = append(roqOptions, roq.SetRemoteAdress(flags.RemoteAddr))
 	}
 	if nadaFeedback {
 		roqOptions = append(roqOptions, roq.EnableNADAfeedback())
