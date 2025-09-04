@@ -1,23 +1,36 @@
 package datachannels
 
 import (
+	"context"
+
 	"github.com/mengelbart/quicdc"
 )
 
 type Sender struct {
-	mw *quicdc.DataChannelWriteMessage
+	dc *quicdc.DataChannel
 }
 
-func newSender(mw *quicdc.DataChannelWriteMessage) *Sender {
+func newSender(dc *quicdc.DataChannel) *Sender {
 	return &Sender{
-		mw: mw,
+		dc: dc,
 	}
 }
 
 func (s *Sender) Write(data []byte) (int, error) {
-	return s.mw.Write(data)
+	mw, err := s.dc.SendMessage(context.TODO())
+	if err != nil {
+		return 0, err
+	}
+
+	n, err := mw.Write(data)
+	if err != nil {
+		return n, err
+	}
+
+	return n, mw.Close()
 }
 
 func (s *Sender) Close() error {
-	return s.mw.Close()
+	// TODO
+	return nil
 }

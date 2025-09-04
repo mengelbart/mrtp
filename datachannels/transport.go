@@ -2,7 +2,6 @@ package datachannels
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 
@@ -22,6 +21,8 @@ type Transport struct {
 
 	quicCC  int
 	session *quicdc.Session
+
+	quicConn *quic.Conn
 }
 
 type Option func(*Transport) error
@@ -58,6 +59,13 @@ func SetRemoteAdress(address string, port uint) Option {
 	}
 }
 
+func SetExistingQuicConn(conn *quic.Conn) Option {
+	return func(t *Transport) error {
+		t.quicConn = conn
+		return nil
+	}
+}
+
 func New(opts ...Option) (*Transport, error) {
 	t := &Transport{
 		role: quicutils.RoleServer,
@@ -69,39 +77,45 @@ func New(opts ...Option) (*Transport, error) {
 		}
 	}
 
+	if t.quicConn != nil {
+		println("quicdc: use existing quic connection")
+		// use existing quic connection
+		t.session = quicdc.NewSession(t.quicConn)
+		return t, nil
+	}
+
 	if t.role == quicutils.RoleServer {
-		c, err := quicutils.GenerateTLSConfig("", "", nil, []string{nextProto})
-		if err != nil {
-			return nil, err
-		}
-		t.session, err = accept(context.TODO(), t.localAddress, c, &quic.Config{
+		conf := &quic.Config{
 			EnableDatagrams:                true,
 			InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			CcType:                         quic.CCType(t.quicCC),
 			SendTimestamps:                 false,
 			Tracer:                         quicgoqlog.DefaultConnectionTracer,
-		})
+		}
+
+		var err error
+		t.quicConn, err = quicutils.OpenServerConn(t.localAddress, conf, []string{nextProto})
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		quicConn, err := quic.DialAddr(context.TODO(), t.remoteAddress, &tls.Config{
-			InsecureSkipVerify: true,
-			NextProtos:         []string{nextProto},
-		}, &quic.Config{
+		conf := &quic.Config{
 			EnableDatagrams:                true,
 			InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			CcType:                         quic.CCType(t.quicCC),
 			SendTimestamps:                 false,
 			Tracer:                         quicgoqlog.DefaultConnectionTracer,
-		})
-		t.session = quicdc.NewSession(quicConn)
+		}
+		var err error
+		t.quicConn, err = quicutils.OpenClientConn(t.remoteAddress, conf, []string{nextProto})
 		if err != nil {
 			return nil, err
 		}
 	}
+
+	t.session = quicdc.NewSession(t.quicConn)
 
 	return t, nil
 }
@@ -112,45 +126,24 @@ func (t *Transport) NewDataChannelSender(channelID uint64, priority uint32) (*Se
 		return nil, err
 	}
 
-	// SendMessage opens a stream
-	mw, err := dc.SendMessage(context.TODO())
-	if err != nil {
-		return nil, err
-	}
+	return newSender(dc), nil
+}
 
-	return newSender(mw), nil
+// ReadStream registers a QUIC stream to the quicdc session
+func (t *Transport) ReadStream(ctx context.Context, stream *quic.ReceiveStream, channelID uint64) error {
+	return t.session.ReadStream(ctx, stream, channelID)
 }
 
 func (t *Transport) AddDataChannelReceiver(channelID uint64) (*Receiver, error) {
 
+	// TODO: incorrect: this sets a handler. If AddDataChannelReceiver is called again, it overwrites the previous handler
 	dcCahn := make(chan *quicdc.DataChannel)
 	t.session.OnIncomingDataChannel(func(dc *quicdc.DataChannel) {
 		dcCahn <- dc
 	})
 
-	// start reader loop
-	go t.session.Read()
-
 	// wating for data channel from callback
 	dc := <-dcCahn
 
-	// open receiver stream
-	rm, err := dc.ReceiveMessage(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
-	return newReceiver(rm), nil
-}
-
-func accept(ctx context.Context, addr string, tlsConfig *tls.Config, quicConfig *quic.Config) (*quicdc.Session, error) {
-	listener, err := quic.ListenAddr(addr, tlsConfig, quicConfig)
-	if err != nil {
-		return nil, err
-	}
-	conn, err := listener.Accept(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return quicdc.NewSession(conn), nil
+	return newReceiver(dc), nil
 }

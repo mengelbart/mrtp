@@ -10,9 +10,14 @@ import (
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
+	"github.com/mengelbart/mrtp/quictransport"
 	"github.com/mengelbart/mrtp/quicutils"
 	"github.com/mengelbart/mrtp/roq"
+	roqProtocol "github.com/mengelbart/roq"
+	"github.com/quic-go/quic-go"
 )
+
+const roqALPN = "roq-09"
 
 func init() {
 	cmdmain.RegisterSubCmd("send", func() cmdmain.SubCmd { return new(Send) })
@@ -150,28 +155,45 @@ Flags:
 	}
 
 	if flags.RoQServer || flags.RoQClient {
-		roqOptions := []roq.Option{
-			roq.WithRole(quicutils.Role(flags.RoQServer)),
-			roq.SetQuicCC(int(flags.QuicCC)),
-			roq.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-			roq.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
+
+		quicOptions := []quictransport.Option{
+			quictransport.WithRole(quicutils.Role(flags.RoQServer)),
+			quictransport.SetQuicCC(int(flags.QuicCC)),
+			quictransport.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
+			quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
 		}
 
 		if flags.CCnada {
-			roqOptions = append(roqOptions, roq.EnableNADA(750_000, 150_000, flags.MaxTargetRate))
+			quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate))
 		}
 
 		if flags.CCgcc {
-			roqOptions = append(roqOptions, roq.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate)))
+			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate)))
 		}
 
-		transport, err := roq.New(roqOptions...)
+		// open quic connection
+		quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)
 		if err != nil {
 			return err
 		}
-		transport.SetTargetRateEncoder = ba.SetBitrate
+		quicConn.SetSourceTargetRate = ba.SetBitrate
 
-		rtpSink, err := transport.NewSendFlow(uint64(flags.RTPPort), flags.TraceRTPSend)
+		// open roq connection
+		roqTransport, err := roq.New(quicConn.GetQuicConnection())
+		if err != nil {
+			return err
+		}
+
+		// set handlers for datagrams and streams
+		quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
+			roqTransport.HandleDatagram(dgram)
+		}
+		quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
+			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+		}
+		quicConn.StartHandlers()
+
+		rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPPort), flags.TraceRTPSend)
 		if err != nil {
 			return err
 		}
@@ -182,7 +204,7 @@ Flags:
 			return err
 		}
 
-		rtcpSink, err := transport.NewSendFlow(uint64(flags.RTCPSendPort), false)
+		rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendPort), false)
 		if err != nil {
 			return err
 		}
@@ -190,7 +212,7 @@ Flags:
 			return err
 		}
 
-		rtcpSrc, err := transport.NewReceiveFlow(uint64(flags.RTCPRecvPort), false)
+		rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTCPRecvPort), false)
 		if err != nil {
 			return err
 		}
