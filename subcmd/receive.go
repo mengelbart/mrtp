@@ -10,8 +10,11 @@ import (
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
+	"github.com/mengelbart/mrtp/quictransport"
 	"github.com/mengelbart/mrtp/quicutils"
 	"github.com/mengelbart/mrtp/roq"
+	roqProtocol "github.com/mengelbart/roq"
+	"github.com/quic-go/quic-go"
 )
 
 var (
@@ -149,21 +152,36 @@ Flags:
 }
 
 func (r *Receive) setupRoQ() error {
-	roqOptions := []roq.Option{roq.WithRole(
-		quicutils.Role(flags.RoQServer)),
-		roq.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-		roq.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
-	}
-	if nadaFeedback {
-		roqOptions = append(roqOptions, roq.EnableNADAfeedback())
+	quicOptions := []quictransport.Option{
+		quictransport.WithRole(quicutils.Role(flags.RoQServer)),
+		quictransport.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
+		quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
 	}
 
-	transport, err := roq.New(roqOptions...)
+	if nadaFeedback {
+		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback())
+	}
+
+	quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)
 	if err != nil {
 		return err
 	}
 
-	rtpSrc, err := transport.NewReceiveFlow(uint64(flags.RTPPort), flags.TraceRTPRecv)
+	roqTransport, err := roq.New(quicConn.GetQuicConnection())
+	if err != nil {
+		return err
+	}
+
+	// set handlers for datagrams and streams
+	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
+		roqTransport.HandleDatagram(dgram)
+	}
+	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
+		roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+	}
+	quicConn.StartHandlers()
+
+	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPPort), flags.TraceRTPRecv)
 	if err != nil {
 		return err
 	}
@@ -174,7 +192,7 @@ func (r *Receive) setupRoQ() error {
 		return err
 	}
 
-	rtcpSink, err := transport.NewSendFlow(uint64(flags.RTCPSendPort), false)
+	rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendPort), false)
 	if err != nil {
 		return err
 	}
@@ -182,7 +200,7 @@ func (r *Receive) setupRoQ() error {
 		return err
 	}
 
-	rtcpSrc, err := transport.NewReceiveFlow(uint64(flags.RTCPRecvPort), false)
+	rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTCPRecvPort), false)
 	if err != nil {
 		return err
 	}
