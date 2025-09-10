@@ -10,8 +10,8 @@ git.apache.org/thrift.git v0.0.0-20180902110319-2566ecd5d999/go.mod h1:fPE2ZNJGy
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/Willi-42/go-nada v0.0.0-20250820151511-fc9f66eca3fb h1:YTScjf1j60wxowT9yiY2UUtKwj+6Myig5E9HGFlLX7w=
 github.com/Willi-42/go-nada v0.0.0-20250820151511-fc9f66eca3fb/go.mod h1:phbthXW20k81T2WY4cqUD5rWX3sPkXaN2aglf4YO/JM=
-github.com/Willi-42/quic-go v0.2.0 h1:TfQgcuI83Oif2XiSI88GQszgznwKtJbSsu8aFufkMDw=
-github.com/Willi-42/quic-go v0.2.0/go.mod h1:DR51ilwU1uE164KuWXhinFcKWGlEjzys2l8zUl5Ss1U=
+github.com/Willi-42/quic-go v0.3.0 h1:oLT1PZL5c+xmsutCQkdrDfevO1fDIo23WWymhpLEO2c=
+github.com/Willi-42/quic-go v0.3.0/go.mod h1:DR51ilwU1uE164KuWXhinFcKWGlEjzys2l8zUl5Ss1U=
 github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239/go.mod h1:2FmKhYUyUczH0OGQWaF5ceTx0UBShxjsH6f8oGKYe2c=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=
 github.com/bradfitz/go-smtpd v0.0.0-20170404230938-deb6d6237625/go.mod h1:HYsPBTaaSFSlLx/70C2HPIMNZpVV8+vt/A+FMnYP11g=
@@ -83,8 +83,8 @@ github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae h1:PtXCQWyh3sadRa/
 github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae/go.mod h1:nIlGcUugkfDu41B8LKdAwjHQ1NxAF54D9hS2EDOlVyk=
 github.com/mengelbart/quicdc v0.0.0-20250827092326-e1f831b8243a h1:WU/n9UIVX4lbskq8W8FDvsA7K5aAwBAlwdyIZI0Yjrg=
 github.com/mengelbart/quicdc v0.0.0-20250827092326-e1f831b8243a/go.mod h1:M9XURUQ2cyWxdROyS089cs3J02jnkoGECcbCUZT/UJs=
-github.com/mengelbart/roq v0.3.1-0.20250806115233-58318148d6ba h1:OQoF9CqtSx2Fb7NEw7qY+XGASVtkIHvcG8F2uo9D8AQ=
-github.com/mengelbart/roq v0.3.1-0.20250806115233-58318148d6ba/go.mod h1:N5tnzwgmzLDtxtZJx7HVPazUobLw1G2qChyrtQfCZ/c=
+github.com/mengelbart/roq v0.3.1-0.20250904124336-5b57f8dff945 h1:Z5OpnzP7pQkKg8BcQN8rRvBLKZoec6dXKBsm4OdScDU=
+github.com/mengelbart/roq v0.3.1-0.20250904124336-5b57f8dff945/go.mod h1:N5tnzwgmzLDtxtZJx7HVPazUobLw1G2qChyrtQfCZ/c=
 github.com/microcosm-cc/bluemonday v1.0.1/go.mod h1:hsXNsILzKxV+sX77C5b8FSuKF00vh2OMYv+xgHpAMF4=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/reflect2 v1.0.1/go.mod h1:bx2lNnkwVCuqBIxFjflWJWanXIb3RllmbCylyMrvgv0=

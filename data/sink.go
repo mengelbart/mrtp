@@ -2,6 +2,7 @@ package data
 
 import (
 	"io"
+	"log/slog"
 )
 
 // DataSink currently only a noop sink
@@ -19,8 +20,8 @@ func NewSink(rc io.ReadCloser) (*DataSink, error) {
 
 func (d *DataSink) Run() error {
 	for {
-		buf := make([]byte, 4096)
-		_, err := d.rc.Read(buf)
+		buf := make([]byte, 1024)
+		n, err := d.rc.Read(buf)
 		if err != nil {
 			if err == io.EOF {
 				return nil
@@ -28,6 +29,6 @@ func (d *DataSink) Run() error {
 			return err
 		}
 
-		// do nothing with the data
+		slog.Info("DataSink received data", "payload-length", n)
 	}
 }

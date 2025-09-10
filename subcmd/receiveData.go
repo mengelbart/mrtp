@@ -1,6 +1,7 @@
 package subcmd
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -9,7 +10,9 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/flags"
+	"github.com/mengelbart/mrtp/quictransport"
 	"github.com/mengelbart/mrtp/quicutils"
+	"github.com/quic-go/quic-go"
 )
 
 func init() {
@@ -30,6 +33,7 @@ func (r *ReceiveData) Exec(cmd string, args []string) error {
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.LocalAddrFlag,
 		flags.RemoteAddrFlag,
+		flags.NadaFeedbackFlag,
 	}...)
 
 	fs.Usage = func() {
@@ -45,19 +49,45 @@ Flags:
 	}
 	fs.Parse(args)
 
-	roqOptions := []datachannels.Option{
-		datachannels.WithRole(quicutils.Role(quicutils.RoleServer)),
-		datachannels.SetQuicCC(int(flags.QuicCC)),
-		datachannels.SetLocalAdress(flags.LocalAddr, 8080),
-		datachannels.SetRemoteAdress(flags.RemoteAddr, 8080),
+	quicOptions := []quictransport.Option{
+		quictransport.WithRole(quicutils.Role(quicutils.RoleServer)),
+		quictransport.SetLocalAdress(flags.LocalAddr, 8080),
+		quictransport.SetRemoteAdress(flags.RemoteAddr, 8080),
 	}
 
-	transport, err := datachannels.New(roqOptions...)
+	if flags.NadaFeedback {
+		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback())
+	}
+
+	quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)
 	if err != nil {
 		return err
 	}
 
-	receiver, err := transport.AddDataChannelReceiver(42)
+	dcTransport := quicConn.GetQuicDataChannel()
+
+	go r.startDataChannelReceiver(dcTransport)
+
+	// set handlers for datagrams and streams
+	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
+		// no datagrams expected
+	}
+
+	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
+		err := dcTransport.ReadStream(context.Background(), rs, flowID)
+		if err != nil {
+			panic(fmt.Sprintf("forward stream with flowID: %v: %v", flowID, err))
+		}
+	}
+
+	// start handler
+	quicConn.StartHandlers()
+
+	select {}
+}
+
+func (r *ReceiveData) startDataChannelReceiver(dcTransport *datachannels.Transport) error {
+	receiver, err := dcTransport.AddDataChannelReceiver(42)
 	if err != nil {
 		return err
 	}
@@ -67,5 +97,10 @@ Flags:
 		panic(err)
 	}
 
-	return sink.Run()
+	err = sink.Run()
+	if err != nil {
+		panic(err)
+	}
+
+	return nil
 }
