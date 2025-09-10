@@ -1,6 +1,7 @@
 package subcmd
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 
 	"github.com/mengelbart/mrtp/cmdmain"
+	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/quictransport"
@@ -15,10 +17,6 @@ import (
 	"github.com/mengelbart/mrtp/roq"
 	roqProtocol "github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
-)
-
-var (
-	nadaFeedback bool
 )
 
 func init() {
@@ -80,8 +78,9 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.RoQClientFlag,
 		flags.GstCCFBFlag,
 		flags.TraceRTPRecvFlag,
+		flags.NadaFeedbackFlag,
+		flags.DataChannelFlag,
 	}...)
-	fs.BoolVar(&nadaFeedback, "nada-feedback", false, "Send NADA feedback")
 
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
 
@@ -106,8 +105,14 @@ Flags:
 		os.Exit(1)
 	}
 
-	if nadaFeedback && !(flags.RoQServer || flags.RoQClient) {
+	if flags.NadaFeedback && !(flags.RoQServer || flags.RoQClient) {
 		fmt.Printf("Nada Feedback only possible with RoQ\n")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	if flags.DataChannel && !(flags.RoQServer || flags.RoQClient) {
+		fmt.Printf("Flag -%v only valid for RoQ\n", flags.DataChannelFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -158,7 +163,7 @@ func (r *Receive) setupRoQ() error {
 		quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
 	}
 
-	if nadaFeedback {
+	if flags.NadaFeedback {
 		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback())
 	}
 
@@ -172,14 +177,42 @@ func (r *Receive) setupRoQ() error {
 		return err
 	}
 
+	dcTransport := quicConn.GetQuicDataChannel()
+
 	// set handlers for datagrams and streams
+	// have to forward it ether to roq or dc
 	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+		if flowID == uint64(flags.RTPPort) || flowID == uint64(flags.RTCPSendPort) {
+			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+			return
+		}
+
+		if flags.DataChannel {
+			dcTransport.ReadStream(context.Background(), rs, flowID)
+		}
 	}
+
+	// start handler
 	quicConn.StartHandlers()
+
+	if flags.DataChannel {
+		// setup data channel receiver
+		// quic tranpsorts has to be started before
+		dcReceiver, err := dcTransport.AddDataChannelReceiver(42) // TODO
+		if err != nil {
+			return err
+		}
+
+		dataSink, err := data.NewSink(dcReceiver)
+		if err != nil {
+			return err
+		}
+
+		go dataSink.Run()
+	}
 
 	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPPort), flags.TraceRTPRecv)
 	if err != nil {

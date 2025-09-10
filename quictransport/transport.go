@@ -142,6 +142,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			EnableDatagrams:                true,
 			InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
+			MaxIncomingUniStreams:          quicvarint.Max,
 			CcType:                         quic.CCType(t.quicCC),
 			SendTimestamps:                 true,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
@@ -165,6 +166,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			EnableDatagrams:                true,
 			InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
+			MaxIncomingUniStreams:          quicvarint.Max,
 			CcType:                         quic.CCType(t.quicCC),
 			SendTimestamps:                 true,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
@@ -216,26 +218,26 @@ func (t *Transport) GetQuicDataChannel() *datachannels.Transport {
 	return t.dcTransport
 }
 
-func (t *Transport) receiveUniStreams() error {
+func (t *Transport) receiveUniStreams() {
 	for {
 
 		rs, err := t.quicConn.AcceptUniStream(context.Background())
 		if err != nil {
-			return err
+			panic(err)
 		}
 
 		// read flowID
 		reader := quicvarint.NewReader(rs)
 		flowID, err := quicvarint.Read(reader)
 		if err != nil {
-			return err
+			panic(err)
 		}
 
 		if flowID == feedbackChannelID {
 			// register feedback channel with dc transport
 			err := t.dcTransport.ReadStream(context.Background(), rs, flowID)
 			if err != nil {
-				return err
+				panic(err)
 			}
 
 			continue
@@ -249,17 +251,17 @@ func (t *Transport) receiveUniStreams() error {
 	}
 }
 
-func (t *Transport) receiveDatagrams() error {
+func (t *Transport) receiveDatagrams() {
 	for {
 		dgram, err := t.quicConn.ReceiveDatagram(context.TODO())
 		if err != nil {
-			return err
+			panic(err)
 		}
 
 		// read flowID
 		flowID, _, err := quicvarint.Parse(dgram)
 		if err != nil {
-			return err
+			panic(err)
 		}
 
 		if t.HandleDatagram != nil {
@@ -269,12 +271,8 @@ func (t *Transport) receiveDatagrams() error {
 }
 
 func (t *Transport) openDataChannelConn() error {
-	dcOpts := []datachannels.Option{
-		datachannels.SetExistingQuicConn(t.quicConn),
-	}
-
 	var err error
-	t.dcTransport, err = datachannels.New(dcOpts...)
+	t.dcTransport, err = datachannels.New(t.quicConn)
 	if err != nil {
 		return err
 	}
@@ -293,6 +291,7 @@ func (t *Transport) sendFeedback() {
 	}
 
 	for {
+		// TODO: make interval configurable
 		time.Sleep(100 * time.Millisecond)
 		t.mtx.Lock()
 

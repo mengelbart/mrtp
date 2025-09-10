@@ -1,6 +1,7 @@
 package subcmd
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 
 	"github.com/mengelbart/mrtp/cmdmain"
+	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/quictransport"
@@ -61,7 +63,8 @@ func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstre
 var DefaultStreamSourceFactory StreamSourceFactory = &gstreamerVideoStreamSourceFactory{}
 
 var (
-	gstSCReAM bool
+	gstSCReAM   bool
+	dcPercatage uint
 )
 
 type Send struct{}
@@ -85,8 +88,10 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.CCnadaFlag,
 		flags.MaxTragetRateFlag,
 		flags.QuicCCFlag,
+		flags.DataChannelFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
+	fs.UintVar(&dcPercatage, "dc-tr-share", 30, "Percentage of target rate to be used for data channel (RoQ only)")
 
 	DefaultStreamSourceFactory.ConfigureFlags(fs)
 
@@ -111,6 +116,12 @@ Flags:
 
 	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0) && !(flags.RoQServer || flags.RoQClient) {
 		fmt.Printf("Flags %v and %v, -quic-cc only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag)
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	if flags.DataChannel && !(flags.RoQServer || flags.RoQClient) {
+		fmt.Printf("Flag -%v only valid for RoQ\n", flags.DataChannelFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -149,9 +160,9 @@ Flags:
 		return err
 	}
 
-	ba, ok := source.(BitrateAdapter)
+	mediaBa, ok := source.(BitrateAdapter)
 	if ok {
-		sender.SetTargetRateEncoder = ba.SetBitrate
+		sender.SetTargetRateEncoder = mediaBa.SetBitrate
 	}
 
 	if flags.RoQServer || flags.RoQClient {
@@ -163,12 +174,13 @@ Flags:
 			quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
 		}
 
+		initrlRate := 750_000 * (100 - dcPercatage) / 100
 		if flags.CCnada {
-			quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate))
+			quicOptions = append(quicOptions, quictransport.EnableNADA(initrlRate, 150_000, flags.MaxTargetRate))
 		}
 
 		if flags.CCgcc {
-			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate)))
+			quicOptions = append(quicOptions, quictransport.EnableGCC(int(initrlRate), 150_000, int(flags.MaxTargetRate)))
 		}
 
 		// open quic connection
@@ -176,7 +188,7 @@ Flags:
 		if err != nil {
 			return err
 		}
-		quicConn.SetSourceTargetRate = ba.SetBitrate
+		dcTransport := quicConn.GetQuicDataChannel()
 
 		// open roq connection
 		roqTransport, err := roq.New(quicConn.GetQuicConnection())
@@ -186,12 +198,62 @@ Flags:
 
 		// set handlers for datagrams and streams
 		quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
+			// all datagrams belong to RoQ for now
 			roqTransport.HandleDatagram(dgram)
 		}
 		quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+			if flowID == uint64(flags.RTCPSendPort) || flowID == uint64(flags.RTPPort) {
+				roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+				return
+			}
+			if flags.DataChannel && dcTransport != nil {
+				dcTransport.ReadStream(context.Background(), rs, flowID)
+				return
+			}
+
+			panic(fmt.Sprint("unknown stream", flowID))
 		}
 		quicConn.StartHandlers()
+
+		// open dc connection
+		var dataSource *data.DataBin
+		if flags.DataChannel {
+			dcSender, err := dcTransport.NewDataChannelSender(42, 0) // TODO
+			if err != nil {
+				return err
+			}
+
+			initDataRate := 750_000 * (dcPercatage) / 100
+			sourceOptions := []data.DataBinOption{
+				data.DataBinUseRateLimiter(initDataRate, 10000*8), // TODO: burst to flag?
+			}
+
+			dataSource, err = data.NewDataBin(dcSender, sourceOptions...)
+			if err != nil {
+				return err
+			}
+
+			go dataSource.Run()
+		}
+
+		// set rate callbacks
+		quicConn.SetSourceTargetRate = func(ratebps uint) error {
+			mediaTargetRate := ratebps
+			if flags.DataChannel {
+				mediaTargetRate = ratebps * (100 - dcPercatage) / 100
+			}
+			err := mediaBa.SetBitrate(mediaTargetRate)
+			if err != nil {
+				panic(err)
+			}
+
+			if flags.DataChannel && dataSource != nil {
+				dataRate := ratebps * dcPercatage / 100
+				dataSource.SetRateLimit(dataRate) // TODO: use bitrate adapter interface?
+			}
+
+			return nil
+		}
 
 		rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPPort), flags.TraceRTPSend)
 		if err != nil {

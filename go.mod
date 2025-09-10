@@ -9,7 +9,7 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae
 	github.com/mengelbart/quicdc v0.0.0-20250827092326-e1f831b8243a
-	github.com/mengelbart/roq v0.3.1-0.20250806115233-58318148d6ba
+	github.com/mengelbart/roq v0.3.1-0.20250904124336-5b57f8dff945
 	github.com/pion/bwe-test v0.0.0-20250731151800-5362b62c9a75
 	github.com/pion/interceptor v0.1.41-0.20250731115150-266b5e5ce04a
 	github.com/pion/rtcp v1.2.16-0.20250423150132-b78b08322f5c
@@ -55,4 +55,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/quic-go/quic-go v0.54.0 => github.com/Willi-42/quic-go v0.2.0
+replace github.com/quic-go/quic-go v0.54.0 => github.com/Willi-42/quic-go v0.3.0

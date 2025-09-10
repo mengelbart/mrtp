@@ -1,6 +1,7 @@
 package subcmd
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,7 +11,9 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/flags"
+	"github.com/mengelbart/mrtp/quictransport"
 	"github.com/mengelbart/mrtp/quicutils"
+	"github.com/quic-go/quic-go"
 )
 
 var (
@@ -36,10 +39,13 @@ func (s *SendData) Exec(cmd string, args []string) error {
 		flags.LocalAddrFlag,
 		flags.RemoteAddrFlag,
 		flags.QuicCCFlag,
+		flags.CCnadaFlag,
+		flags.CCgccFlag,
+		flags.MaxTragetRateFlag,
 	}...)
 
 	fs.StringVar(&sourceFile, "source-file", "", "File to be sent. If empty, random data will be sent.")
-	fs.UintVar(&rateLimit, "rate-limit", 0, "Rate limit in bits per second. 0 means no limit.")
+	fs.UintVar(&rateLimit, "fixed-rate-limit", 0, "Rate limit in bits per second. 0 means no limit.")
 	fs.UintVar(&burst, "burst", 10000, "Burst size in bytes for rate limiter.")
 
 	fs.Usage = func() {
@@ -55,40 +61,83 @@ Flags:
 	}
 	fs.Parse(args)
 
-	roqOptions := []datachannels.Option{
-		datachannels.WithRole(quicutils.Role(quicutils.RoleClient)),
-		datachannels.SetQuicCC(int(flags.QuicCC)),
-		datachannels.SetLocalAdress(flags.LocalAddr, 8080),
-		datachannels.SetRemoteAdress(flags.RemoteAddr, 8080),
+	if (flags.CCnada || flags.CCgcc) && rateLimit > 0 {
+		return fmt.Errorf("cannot use fixed rate limit with NADA or GCC")
 	}
 
-	transport, err := datachannels.New(roqOptions...)
+	quicTOptions := []quictransport.Option{
+		quictransport.WithRole(quicutils.Role(quicutils.RoleClient)),
+		quictransport.SetQuicCC(int(flags.QuicCC)),
+		quictransport.SetLocalAdress(flags.LocalAddr, 8080),
+		quictransport.SetRemoteAdress(flags.RemoteAddr, 8080),
+	}
+
+	if flags.CCnada {
+		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate))
+	}
+
+	if flags.CCgcc {
+		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate)))
+	}
+
+	// open quic connection
+	quicConn, err := quictransport.New([]string{roqALPN}, quicTOptions...)
+	if err != nil {
+		return err
+	}
+	dcTransport := quicConn.GetQuicDataChannel()
+
+	// set handlers for datagrams and streams
+	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
+		// no datagrams expected
+	}
+	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
+		err := dcTransport.ReadStream(context.Background(), rs, flowID)
+		if err != nil {
+			panic(fmt.Sprintf("forward stream with flowID: %v: %v", flowID, err))
+		}
+	}
+	quicConn.StartHandlers()
+
+	// blocks until we get OpenChannelOk
+	sender, err := dcTransport.NewDataChannelSender(42, 0)
 	if err != nil {
 		return err
 	}
 
-	sender, err := transport.NewDataChannelSender(42, 0)
+	source, err := createDataSource(sender)
 	if err != nil {
 		return err
 	}
 
-	sourceOptions := []data.DataBinOption{}
+	go source.Run()
+
+	if flags.CCgcc || flags.CCnada {
+		// rate is controlled by cc
+		quicConn.SetSourceTargetRate = func(ratebps uint) error {
+			source.SetRateLimit(ratebps)
+			return nil
+		}
+	} else if rateLimit > 0 {
+		// fixed rate limit
+		source.SetRateLimit(rateLimit)
+	}
+
+	select {}
+}
+
+func createDataSource(sender *datachannels.Sender) (*data.DataBin, error) {
+	sourceOptions := []data.DataBinOption{
+		data.DataBinUseRateLimiter(750_000, burst),
+	}
 	if sourceFile != "" {
 		// check if file exists
 		if _, err := os.Stat(sourceFile); errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("file does not exist: %v", sourceFile)
+			return nil, fmt.Errorf("file does not exist: %v", sourceFile)
 		}
 		sourceOptions = append(sourceOptions, data.DataBinUseFileSource(sourceFile))
 	}
 
-	if rateLimit > 0 {
-		sourceOptions = append(sourceOptions, data.DataBinUseRateLimiter(uint(rateLimit), burst))
-	}
+	return data.NewDataBin(sender, sourceOptions...)
 
-	source, err := data.NewDataBin(sender, sourceOptions...)
-	if err != nil {
-		return err
-	}
-
-	return source.Run()
 }

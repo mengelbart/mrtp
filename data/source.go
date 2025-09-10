@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"math"
 	"os"
 
@@ -57,6 +58,8 @@ func NewDataBin(wc io.WriteCloser, options ...DataBinOption) (*DataBin, error) {
 
 func (d *DataBin) SetRateLimit(ratebps uint) {
 	if d.rateLimiter != nil {
+		slog.Info("NEW_DATA_RATE", "rate", ratebps)
+
 		rateBytes := bitRateToBytesPerSec(ratebps)
 		d.rateLimiter.SetLimit(rate.Limit(rateBytes))
 	}
@@ -77,10 +80,10 @@ func (d *DataBin) startFileSource() error {
 	}
 	defer file.Close()
 
-	buf := make([]byte, 1028)
+	buf := make([]byte, 1024)
 	for {
 		if d.rateLimiter != nil {
-			err := d.rateLimiter.WaitN(context.TODO(), 1028)
+			err := d.rateLimiter.WaitN(context.TODO(), 1024)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -92,6 +95,8 @@ func (d *DataBin) startFileSource() error {
 			if writeErr != nil {
 				return fmt.Errorf("failed to write to sink: %w", writeErr)
 			}
+
+			logDataEvent(n)
 		}
 		if readErr == io.EOF {
 			break
@@ -109,20 +114,22 @@ func (d *DataBin) startRandomSource() error {
 		return fmt.Errorf("data sink not set")
 	}
 
-	buf := make([]byte, 4096)
+	buf := make([]byte, 1024)
+	rand.Read(buf)
+
 	for {
 		if d.rateLimiter != nil {
-			err := d.rateLimiter.WaitN(context.TODO(), 4096)
+			err := d.rateLimiter.WaitN(context.TODO(), 1024)
 			if err != nil {
 				log.Fatal(err)
 			}
 		}
 
-		rand.Read(buf)
-		_, err := d.wc.Write(buf)
+		n, err := d.wc.Write(buf)
 		if err != nil {
 			return err
 		}
+		logDataEvent(n)
 	}
 }
 
@@ -135,4 +142,8 @@ func (d *DataBin) Run() error {
 	}
 
 	return d.startRandomSource()
+}
+
+func logDataEvent(len int) {
+	slog.Info("DataSource sent data", "payload-length", len)
 }
