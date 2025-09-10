@@ -56,7 +56,8 @@ Flags:
 	}
 
 	if flags.NadaFeedback {
-		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback())
+		feedbackDelta := uint64(20)
+		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta))
 	}
 
 	quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)

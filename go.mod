@@ -8,7 +8,7 @@ require (
 	github.com/go-gst/go-gst v1.4.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae
-	github.com/mengelbart/quicdc v0.0.0-20250827092326-e1f831b8243a
+	github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6
 	github.com/mengelbart/roq v0.3.1-0.20250904124336-5b57f8dff945
 	github.com/pion/bwe-test v0.0.0-20250731151800-5362b62c9a75
 	github.com/pion/interceptor v0.1.41-0.20250731115150-266b5e5ce04a
