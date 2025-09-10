@@ -33,6 +33,6 @@ func (r *Receiver) Read(buf []byte) (int, error) {
 }
 
 func (r *Receiver) Close() error {
-	// TODO
+	// TODO: datachannel module currently does not support closing a channel
 	return nil
 }

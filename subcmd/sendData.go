@@ -19,7 +19,6 @@ import (
 var (
 	sourceFile string
 	rateLimit  uint
-	burst      uint
 )
 
 func init() {
@@ -46,7 +45,6 @@ func (s *SendData) Exec(cmd string, args []string) error {
 
 	fs.StringVar(&sourceFile, "source-file", "", "File to be sent. If empty, random data will be sent.")
 	fs.UintVar(&rateLimit, "fixed-rate-limit", 0, "Rate limit in bits per second. 0 means no limit.")
-	fs.UintVar(&burst, "burst", 10000, "Burst size in bytes for rate limiter.")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `%v
@@ -129,7 +127,7 @@ Flags:
 
 func createDataSource(sender *datachannels.Sender) (*data.DataBin, error) {
 	sourceOptions := []data.DataBinOption{
-		data.DataBinUseRateLimiter(750_000, burst),
+		data.DataBinUseRateLimiter(750_000, 10000), // burst not relevant, as data source sends small chunks anyways
 	}
 	if sourceFile != "" {
 		// check if file exists
