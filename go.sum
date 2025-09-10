@@ -81,8 +81,8 @@ github.com/mattn/go-pointer v0.0.1/go.mod h1:2zXcozF6qYGgmsG+SeTZz3oAbFLdD3OWqnU
 github.com/matttproud/golang_protobuf_extensions v1.0.1/go.mod h1:D8He9yQNgCq6Z5Ld7szi9bcBfOoFv/3dc6xSMkL2PC0=
 github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae h1:PtXCQWyh3sadRa/eXokxOPgS1UOif89w1Me8W+hN7ls=
 github.com/mengelbart/qlog v0.0.0-20250304144032-13728b0b6fae/go.mod h1:nIlGcUugkfDu41B8LKdAwjHQ1NxAF54D9hS2EDOlVyk=
-github.com/mengelbart/quicdc v0.0.0-20250827092326-e1f831b8243a h1:WU/n9UIVX4lbskq8W8FDvsA7K5aAwBAlwdyIZI0Yjrg=
-github.com/mengelbart/quicdc v0.0.0-20250827092326-e1f831b8243a/go.mod h1:M9XURUQ2cyWxdROyS089cs3J02jnkoGECcbCUZT/UJs=
+github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6 h1:Cyix8k5mbv9ttLPzUw2ARuTN9koTIhC+Iyve6zXjRC0=
+github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6/go.mod h1:M9XURUQ2cyWxdROyS089cs3J02jnkoGECcbCUZT/UJs=
 github.com/mengelbart/roq v0.3.1-0.20250904124336-5b57f8dff945 h1:Z5OpnzP7pQkKg8BcQN8rRvBLKZoec6dXKBsm4OdScDU=
 github.com/mengelbart/roq v0.3.1-0.20250904124336-5b57f8dff945/go.mod h1:N5tnzwgmzLDtxtZJx7HVPazUobLw1G2qChyrtQfCZ/c=
 github.com/microcosm-cc/bluemonday v1.0.1/go.mod h1:hsXNsILzKxV+sX77C5b8FSuKF00vh2OMYv+xgHpAMF4=

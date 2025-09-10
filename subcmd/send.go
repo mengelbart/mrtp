@@ -176,7 +176,8 @@ Flags:
 
 		initrlRate := 750_000 * (100 - dcPercatage) / 100
 		if flags.CCnada {
-			quicOptions = append(quicOptions, quictransport.EnableNADA(initrlRate, 150_000, flags.MaxTargetRate))
+			feedbackDelta := uint64(20)
+			quicOptions = append(quicOptions, quictransport.EnableNADA(initrlRate, 150_000, flags.MaxTargetRate, uint(feedbackDelta)))
 		}
 
 		if flags.CCgcc {

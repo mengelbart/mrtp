@@ -32,8 +32,10 @@ type Transport struct {
 
 	dcTransport *datachannels.Transport
 
-	nada             *nada.SenderOnly
-	bwe              *gcc.SendSideController
+	nada          *nada.SenderOnly
+	bwe           *gcc.SendSideController
+	feedbackDelta uint64 // ms
+
 	lastRTT          *RTT
 	lostPackets      *PacketEvents
 	receivedPackets  *PacketEvents
@@ -46,13 +48,13 @@ type Transport struct {
 	HandleDatagram      func(flowID uint64, datagram []byte)
 }
 
-func EnableNADA(initRate, minRate, maxRate uint) Option {
+func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint) Option {
 	return func(t *Transport) error {
 		nadaConfig := nada.Config{
 			MinRate:                  uint64(minRate),
 			MaxRate:                  uint64(maxRate),
 			StartRate:                uint64(initRate),
-			FeedbackDelta:            100, // ms
+			FeedbackDelta:            uint64(expectedFeedbackDelta), // ms
 			DeactivateQDelayWrapping: true,
 		}
 
@@ -92,10 +94,11 @@ func SetQuicCC(quicCC int) Option {
 	}
 }
 
-func EnableNADAfeedback() Option {
+func EnableNADAfeedback(feedbackDelta uint64) Option {
 	return func(t *Transport) error {
 		t.sendNadaFeedback = true
 		t.receivedPackets = NewPacketEvents()
+		t.feedbackDelta = feedbackDelta
 		return nil
 	}
 }
@@ -291,8 +294,7 @@ func (t *Transport) sendFeedback() {
 	}
 
 	for {
-		// TODO: make interval configurable
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(time.Duration(t.feedbackDelta) * time.Millisecond)
 		t.mtx.Lock()
 
 		// If small enough, send as-is

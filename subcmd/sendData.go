@@ -73,7 +73,8 @@ Flags:
 	}
 
 	if flags.CCnada {
-		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate))
+		feedbackDelta := uint64(20)
+		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate, uint(feedbackDelta)))
 	}
 
 	if flags.CCgcc {
