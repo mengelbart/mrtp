@@ -31,6 +31,6 @@ func (s *Sender) Write(data []byte) (int, error) {
 }
 
 func (s *Sender) Close() error {
-	// TODO
+	// TODO: datachannel module currently does not support closing a channel
 	return nil
 }

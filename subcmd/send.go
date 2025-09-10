@@ -174,14 +174,14 @@ Flags:
 			quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
 		}
 
-		initrlRate := 750_000 * (100 - dcPercatage) / 100
+		initRate := 750_000 * (100 - dcPercatage) / 100
 		if flags.CCnada {
 			feedbackDelta := uint64(20)
-			quicOptions = append(quicOptions, quictransport.EnableNADA(initrlRate, 150_000, flags.MaxTargetRate, uint(feedbackDelta)))
+			quicOptions = append(quicOptions, quictransport.EnableNADA(initRate, 150_000, flags.MaxTargetRate, uint(feedbackDelta)))
 		}
 
 		if flags.CCgcc {
-			quicOptions = append(quicOptions, quictransport.EnableGCC(int(initrlRate), 150_000, int(flags.MaxTargetRate)))
+			quicOptions = append(quicOptions, quictransport.EnableGCC(int(initRate), 150_000, int(flags.MaxTargetRate)))
 		}
 
 		// open quic connection
@@ -226,7 +226,7 @@ Flags:
 
 			initDataRate := 750_000 * (dcPercatage) / 100
 			sourceOptions := []data.DataBinOption{
-				data.DataBinUseRateLimiter(initDataRate, 10000*8), // TODO: burst to flag?
+				data.DataBinUseRateLimiter(initDataRate, 10000), // burst not relevant, as data source sends small chunks anyways
 			}
 
 			dataSource, err = data.NewDataBin(dcSender, sourceOptions...)
@@ -250,7 +250,7 @@ Flags:
 
 			if flags.DataChannel && dataSource != nil {
 				dataRate := ratebps * dcPercatage / 100
-				dataSource.SetRateLimit(dataRate) // TODO: use bitrate adapter interface?
+				dataSource.SetRateLimit(dataRate)
 			}
 
 			return nil
