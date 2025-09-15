@@ -81,6 +81,9 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RTPPortFlag,
 		flags.RTCPSendPortFlag,
 		flags.RTCPRecvPortFlag,
+		flags.RTPFlowIDFlag,
+		flags.RTCPRecvFlowIDFlag,
+		flags.RTCPSendFlowIDFlag,
 		flags.RoQServerFlag,
 		flags.RoQClientFlag,
 		flags.TraceRTPSendFlag,
@@ -256,7 +259,7 @@ Flags:
 			return nil
 		}
 
-		rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPPort), flags.TraceRTPSend)
+		rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), flags.TraceRTPSend)
 		if err != nil {
 			return err
 		}
@@ -267,7 +270,7 @@ Flags:
 			return err
 		}
 
-		rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendPort), false)
+		rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendFlowID), false)
 		if err != nil {
 			return err
 		}
@@ -275,7 +278,7 @@ Flags:
 			return err
 		}
 
-		rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTCPRecvPort), false)
+		rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTCPRecvFlowID), false)
 		if err != nil {
 			return err
 		}
