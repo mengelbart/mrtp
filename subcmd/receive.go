@@ -68,12 +68,17 @@ func (r *Receive) Exec(cmd string, args []string) error {
 	flags.RTPPort = 5000
 	flags.RTCPSendPort = 5002
 	flags.RTCPRecvPort = 5001
+	flags.RTCPRecvFlowID = 2
+	flags.RTCPSendFlowID = 1
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.LocalAddrFlag,
 		flags.RemoteAddrFlag,
 		flags.RTPPortFlag,
 		flags.RTCPSendPortFlag,
 		flags.RTCPRecvPortFlag,
+		flags.RTPFlowIDFlag,
+		flags.RTCPRecvFlowIDFlag,
+		flags.RTCPSendFlowIDFlag,
 		flags.RoQServerFlag,
 		flags.RoQClientFlag,
 		flags.GstCCFBFlag,
@@ -215,7 +220,7 @@ func (r *Receive) setupRoQ() error {
 		go dataSink.Run()
 	}
 
-	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPPort), flags.TraceRTPRecv)
+	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPFlowID), flags.TraceRTPRecv)
 	if err != nil {
 		return err
 	}
@@ -226,7 +231,7 @@ func (r *Receive) setupRoQ() error {
 		return err
 	}
 
-	rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendPort), false)
+	rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendFlowID), false)
 	if err != nil {
 		return err
 	}
@@ -234,7 +239,7 @@ func (r *Receive) setupRoQ() error {
 		return err
 	}
 
-	rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTCPRecvPort), false)
+	rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTCPRecvFlowID), false)
 	if err != nil {
 		return err
 	}
