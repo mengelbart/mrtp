@@ -222,7 +222,7 @@ Flags:
 		// open dc connection
 		var dataSource *data.DataBin
 		if flags.DataChannel {
-			dcSender, err := dcTransport.NewDataChannelSender(42, 0) // TODO
+			dcSender, err := dcTransport.NewDataChannelSender(42, 0, true) // TODO
 			if err != nil {
 				return err
 			}

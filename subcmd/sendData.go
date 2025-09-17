@@ -99,7 +99,7 @@ Flags:
 	quicConn.StartHandlers()
 
 	// blocks until we get OpenChannelOk
-	sender, err := dcTransport.NewDataChannelSender(42, 0)
+	sender, err := dcTransport.NewDataChannelSender(42, 0, true)
 	if err != nil {
 		return err
 	}

@@ -29,29 +29,13 @@ func (ps *PacketEvents) Empty() {
 func (ps *PacketEvents) Marshal() ([]byte, error) {
 	buf := make([]byte, 0)
 	buf = quicvarint.Append(buf, uint64(len(ps.PacketEvents)))
-	firstTs := uint64(0)
-
-	gotFirstSeqNr := false
-	firstSeqNr := uint64(0)
 
 	for _, p := range ps.PacketEvents {
 		deparuredTs := uint64(p.Departure.UnixMicro())
 		arrivedTs := uint64(p.Arrival.UnixMicro())
 		owd := arrivedTs - deparuredTs
 
-		if firstTs == 0 {
-			firstTs = deparuredTs
-		} else {
-			deparuredTs = deparuredTs - firstTs
-		}
-
 		seqNr := p.SeqNr
-		if !gotFirstSeqNr {
-			firstSeqNr = seqNr
-			gotFirstSeqNr = true
-		} else {
-			seqNr = seqNr - firstSeqNr
-		}
 
 		buf = quicvarint.Append(buf, seqNr)
 		buf = quicvarint.Append(buf, deparuredTs)
@@ -95,7 +79,6 @@ func UnmarshalFeedback(buf []byte) (PacketEvents, error) {
 	var err error
 
 	ps.PacketEvents = make([]nada.Acknowledgment, 0)
-	firstTs := uint64(0)
 
 	// read the number of packets
 	numPackets, n, err := quicvarint.Parse(buf)
@@ -103,9 +86,6 @@ func UnmarshalFeedback(buf []byte) (PacketEvents, error) {
 		return PacketEvents{}, err
 	}
 	buf = buf[n:]
-
-	gotFirstSeqNr := false
-	firstSeqNr := uint64(0)
 
 	for range numPackets {
 		p := nada.Acknowledgment{
@@ -118,21 +98,9 @@ func UnmarshalFeedback(buf []byte) (PacketEvents, error) {
 		}
 		buf = buf[n:]
 
-		if !gotFirstSeqNr {
-			firstSeqNr = p.SeqNr
-			gotFirstSeqNr = true
-		} else {
-			p.SeqNr = p.SeqNr + firstSeqNr
-		}
-
 		departureMicro, n, err := quicvarint.Parse(buf)
 		if n < 0 {
 			return PacketEvents{}, err
-		}
-		if firstTs == 0 {
-			firstTs = departureMicro
-		} else {
-			departureMicro = departureMicro + firstTs
 		}
 
 		p.Departure = time.UnixMicro(int64(departureMicro))
