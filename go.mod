@@ -3,7 +3,7 @@ module github.com/mengelbart/mrtp
 go 1.24.1
 
 require (
-	github.com/Willi-42/go-nada v0.0.0-20250820151511-fc9f66eca3fb
+	github.com/Willi-42/go-nada v0.0.0-20250917150156-abed9a73c328
 	github.com/go-gst/go-glib v1.4.0
 	github.com/go-gst/go-gst v1.4.0
 	github.com/julienschmidt/httprouter v1.3.0

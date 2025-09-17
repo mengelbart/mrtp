@@ -42,8 +42,8 @@ func New(conn *quic.Conn, opts ...Option) (*Transport, error) {
 	return t, nil
 }
 
-func (t *Transport) NewDataChannelSender(channelID uint64, priority uint32) (*Sender, error) {
-	dc, err := t.session.OpenDataChannel(channelID, uint64(priority), true, 0, "", "")
+func (t *Transport) NewDataChannelSender(channelID uint64, priority uint64, ordered bool) (*Sender, error) {
+	dc, err := t.session.OpenDataChannel(channelID, priority, ordered, 0, "", "")
 	if err != nil {
 		return nil, err
 	}

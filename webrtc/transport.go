@@ -140,8 +140,7 @@ func EnableNADA(initRate, minRate, maxRate uint) Option {
 			DeactivateQDelayWrapping: true,
 		}
 
-		useNacks := true
-		nada := nada.NewSenderOnly(nadaConfig, useNacks)
+		nada := nada.NewSenderOnly(nadaConfig)
 		t.nada = &nada
 		return nil
 	}

@@ -58,8 +58,7 @@ func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint) Option {
 			DeactivateQDelayWrapping: true,
 		}
 
-		useNacks := true
-		nadaSo := nada.NewSenderOnly(nadaConfig, useNacks)
+		nadaSo := nada.NewSenderOnly(nadaConfig)
 		t.nada = &nadaSo
 		t.lostPackets = NewPacketEvents()
 		return nil
@@ -288,7 +287,7 @@ func (t *Transport) openDataChannelConn() error {
 func (t *Transport) sendFeedback() {
 	const maxEventsPerDatagram = 100
 
-	sendFlow, err := t.dcTransport.NewDataChannelSender(feedbackChannelID, 0)
+	sendFlow, err := t.dcTransport.NewDataChannelSender(feedbackChannelID, 0, false)
 	if err != nil {
 		panic(err)
 	}
