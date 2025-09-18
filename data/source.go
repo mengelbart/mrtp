@@ -58,7 +58,7 @@ func NewDataBin(wc io.WriteCloser, options ...DataBinOption) (*DataBin, error) {
 
 func (d *DataBin) SetRateLimit(ratebps uint) {
 	if d.rateLimiter != nil {
-		slog.Info("NEW_DATA_RATE", "rate", ratebps)
+		slog.Info("NEW_TARGET_DATA_RATE", "rate", ratebps)
 
 		rateBytes := bitRateToBytesPerSec(ratebps)
 		d.rateLimiter.SetLimit(rate.Limit(rateBytes))
