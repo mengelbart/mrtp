@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 
@@ -242,6 +243,8 @@ Flags:
 
 		// set rate callbacks
 		quicConn.SetSourceTargetRate = func(ratebps uint) error {
+			slog.Info("NEW_TARGET_RATE", "rate", ratebps)
+
 			mediaTargetRate := ratebps
 			if flags.DataChannel {
 				mediaTargetRate = ratebps * (100 - dcPercatage) / 100

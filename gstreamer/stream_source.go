@@ -214,7 +214,7 @@ func (s *StreamSource) SrcPad() (*gst.Pad, error) {
 func (s *StreamSource) SetBitrate(ratebps uint) error {
 	rateKbps := ratebps / 1000
 
-	slog.Info("NEW_TARGET_RATE", "rate", ratebps)
+	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", ratebps)
 
 	return s.encoder.Set("bitrate", rateKbps)
 }

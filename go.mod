@@ -3,7 +3,7 @@ module github.com/mengelbart/mrtp
 go 1.24.1
 
 require (
-	github.com/Willi-42/go-nada v0.0.0-20250917150156-abed9a73c328
+	github.com/Willi-42/go-nada v0.0.0-20250918135705-6a600030be0b
 	github.com/go-gst/go-glib v1.4.0
 	github.com/go-gst/go-gst v1.4.0
 	github.com/julienschmidt/httprouter v1.3.0
@@ -11,12 +11,12 @@ require (
 	github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6
 	github.com/mengelbart/roq v0.3.1-0.20250904124336-5b57f8dff945
 	github.com/pion/bwe-test v0.0.0-20250731151800-5362b62c9a75
-	github.com/pion/interceptor v0.1.41-0.20250731115150-266b5e5ce04a
+	github.com/pion/interceptor v0.1.41-0.20250918133005-ab70b00249ad
 	github.com/pion/rtcp v1.2.16-0.20250423150132-b78b08322f5c
-	github.com/pion/rtp v1.8.21
+	github.com/pion/rtp v1.8.22
 	github.com/pion/webrtc/v4 v4.1.1
 	github.com/quic-go/quic-go v0.54.0
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	golang.org/x/sync v0.16.0
 	golang.org/x/time v0.0.0-20181108054448-85acf8d2951c
 )
