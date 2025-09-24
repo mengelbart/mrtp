@@ -2,6 +2,7 @@ package quictransport
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
@@ -63,9 +64,8 @@ func newTsTracer(tsCallback TimestampCallback) *logging.ConnectionTracer {
 	}
 }
 
-func receiveTracer(p logging.Perspective, id quic.ConnectionID, tsCallback TimestampCallback) *logging.ConnectionTracer {
-
-	qlogTracer := quicgoqlog.DefaultConnectionTracer(context.TODO(), p, id)
+func receiveTracer(p logging.Perspective, id quic.ConnectionID, tsCallback TimestampCallback, qlogWriter io.WriteCloser) *logging.ConnectionTracer {
+	qlogTracer := onlyQlogTracer(p, id, qlogWriter)
 
 	tracers := []*logging.ConnectionTracer{newTsTracer(tsCallback)}
 	if qlogTracer != nil {
@@ -97,14 +97,26 @@ func newSenderTracers(
 	id quic.ConnectionID,
 	onLossEvent OnLossEventFunc,
 	lastRtt *RTT,
+	qlogWriter io.WriteCloser,
 ) *logging.ConnectionTracer {
 	rttLossTracer := newRttAndLossTracer(lastRtt, onLossEvent)
 	tracers := []*logging.ConnectionTracer{rttLossTracer}
 
-	qlogTracer := quicgoqlog.DefaultConnectionTracer(context.TODO(), p, id)
+	qlogTracer := onlyQlogTracer(p, id, qlogWriter)
 	if qlogTracer != nil {
 		tracers = append(tracers, qlogTracer)
 	}
 
 	return logging.NewMultiplexedConnectionTracer(tracers...)
+}
+
+func onlyQlogTracer(p logging.Perspective, id quic.ConnectionID, qlogWriter io.WriteCloser) *logging.ConnectionTracer {
+	var qlogTracer *logging.ConnectionTracer
+	if qlogWriter != nil {
+		qlogTracer = quicgoqlog.NewConnectionTracer(qlogWriter, p, id)
+	} else {
+		qlogTracer = quicgoqlog.DefaultConnectionTracer(context.TODO(), p, id)
+	}
+
+	return qlogTracer
 }
