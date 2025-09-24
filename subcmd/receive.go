@@ -39,6 +39,7 @@ func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.SinkTypeFlag,
 		flags.LocationFlag,
+		flags.LogQuicFlag,
 	}...)
 }
 
@@ -117,8 +118,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if flags.DataChannel && !(flags.RoQServer || flags.RoQClient) {
-		fmt.Printf("Flag -%v only valid for RoQ\n", flags.DataChannelFlag)
+	if (flags.DataChannel || flags.LogQuic) && !(flags.RoQServer || flags.RoQClient) {
+		fmt.Printf("Flag -%v and -%v only valid for RoQ\n", flags.DataChannelFlag, flags.LogQuicFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -172,6 +173,14 @@ func (r *Receive) setupRoQ() error {
 	if flags.NadaFeedback {
 		feedbackDelta := uint64(20)
 		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta))
+	}
+
+	if flags.LogQuic {
+		qlogWriter, err := os.Create("./receiver.qlog")
+		if err != nil {
+			return err
+		}
+		quicOptions = append(quicOptions, quictransport.EnableQLogs(qlogWriter))
 	}
 
 	quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)

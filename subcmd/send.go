@@ -92,6 +92,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.CCnadaFlag,
 		flags.MaxTragetRateFlag,
 		flags.QuicCCFlag,
+		flags.LogQuicFlag,
 		flags.DataChannelFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
@@ -118,8 +119,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0) && !(flags.RoQServer || flags.RoQClient) {
-		fmt.Printf("Flags %v and %v, -quic-cc only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag)
+	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.LogQuic) && !(flags.RoQServer || flags.RoQClient) {
+		fmt.Printf("Flags -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, flags.LogQuicFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -170,7 +171,6 @@ Flags:
 	}
 
 	if flags.RoQServer || flags.RoQClient {
-
 		quicOptions := []quictransport.Option{
 			quictransport.WithRole(quicutils.Role(flags.RoQServer)),
 			quictransport.SetQuicCC(int(flags.QuicCC)),
@@ -186,6 +186,13 @@ Flags:
 
 		if flags.CCgcc {
 			quicOptions = append(quicOptions, quictransport.EnableGCC(int(initRate), 150_000, int(flags.MaxTargetRate)))
+		}
+		if flags.LogQuic {
+			qlogWriter, err := os.Create("./sender.qlog")
+			if err != nil {
+				return err
+			}
+			quicOptions = append(quicOptions, quictransport.EnableQLogs(qlogWriter))
 		}
 
 		// open quic connection

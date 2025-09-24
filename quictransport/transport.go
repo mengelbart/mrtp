@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/pion/bwe-test/gcc"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/logging"
-	quicgoqlog "github.com/quic-go/quic-go/qlog"
 	"github.com/quic-go/quic-go/quicvarint"
 )
 
@@ -42,6 +42,7 @@ type Transport struct {
 	sendNadaFeedback bool
 	quicCC           int
 	mtx              sync.Mutex
+	qlogWriter       io.WriteCloser
 
 	SetSourceTargetRate func(ratebps uint) error
 	HandleUintStream    func(flowID uint64, rs *quic.ReceiveStream)
@@ -116,12 +117,20 @@ func SetRemoteAdress(address string, port uint) Option {
 	}
 }
 
+func EnableQLogs(qlogWriter io.WriteCloser) Option {
+	return func(t *Transport) error {
+		t.qlogWriter = qlogWriter
+		return nil
+	}
+}
+
 func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 	t := &Transport{
 		role:            quicutils.RoleServer,
 		lastRTT:         &RTT{},
 		lostPackets:     nil,
 		receivedPackets: nil,
+		qlogWriter:      nil,
 	}
 
 	for _, opt := range opts {
@@ -149,12 +158,12 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			SendTimestamps:                 true,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
 				if t.nada != nil || t.bwe != nil {
-					return newSenderTracers(p, id, addLostPacket, t.lastRTT)
+					return newSenderTracers(p, id, addLostPacket, t.lastRTT, t.qlogWriter)
 				}
 				if t.sendNadaFeedback {
-					return receiveTracer(p, id, addReceivedPacket)
+					return receiveTracer(p, id, addReceivedPacket, t.qlogWriter)
 				}
-				return quicgoqlog.DefaultConnectionTracer(context.TODO(), p, id)
+				return onlyQlogTracer(p, id, t.qlogWriter)
 			},
 		}
 
@@ -173,12 +182,12 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			SendTimestamps:                 true,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
 				if t.nada != nil || t.bwe != nil {
-					return newSenderTracers(p, id, addLostPacket, t.lastRTT)
+					return newSenderTracers(p, id, addLostPacket, t.lastRTT, t.qlogWriter)
 				}
 				if t.sendNadaFeedback {
-					return receiveTracer(p, id, addReceivedPacket)
+					return receiveTracer(p, id, addReceivedPacket, t.qlogWriter)
 				}
-				return quicgoqlog.DefaultConnectionTracer(context.TODO(), p, id)
+				return onlyQlogTracer(p, id, t.qlogWriter)
 			},
 		}
 
