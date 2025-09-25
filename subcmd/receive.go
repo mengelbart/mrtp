@@ -38,7 +38,7 @@ type gstreamerVideoStreamSinkFactory struct {
 func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.SinkTypeFlag,
-		flags.LocationFlag,
+		flags.SinkLocationFlag,
 		flags.LogQuicFlag,
 	}...)
 }
@@ -47,7 +47,7 @@ func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (g
 	return gstreamer.NewStreamSink(
 		name,
 		gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
-		gstreamer.StreamSinkLocation(flags.Location),
+		gstreamer.StreamSinkLocation(flags.SinkLocation),
 		gstreamer.StreamSinkPayloadType(pt),
 	)
 }
@@ -123,8 +123,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if flags.SinkType == uint(gstreamer.Filesink) && len(flags.Location) == 0 {
-		return errors.New("file-sink requires a location to be set via the -location flag")
+	if flags.SinkType == uint(gstreamer.Filesink) && len(flags.SinkLocation) == 0 {
+		return errors.New("file-sink requires a location to be set via the -sink-location flag")
 	}
 
 	for _, p := range []uint{
