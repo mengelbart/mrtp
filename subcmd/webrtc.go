@@ -52,8 +52,6 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 		flags.LocalAddrFlag,
 		flags.RemoteAddrFlag,
 		flags.GstCCFBFlag,
-		flags.SinkTypeFlag,
-		flags.LocationFlag,
 		flags.TraceRTPRecvFlag,
 		flags.TraceRTPSendFlag,
 		flags.CCgccFlag,

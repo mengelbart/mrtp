@@ -43,19 +43,19 @@ type gstreamerVideoStreamSourceFactory struct {
 
 func (f *gstreamerVideoStreamSourceFactory) ConfigureFlags(fs *flag.FlagSet) {
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.LocationFlag,
+		flags.SourceLocationFlag,
 	}...)
 }
 
 func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstreamer.RTPSourceBin, error) {
 	streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
-	if flags.Location != "videotestsrc" {
+	if flags.SourceLocation != "videotestsrc" {
 		// check if file exists
-		if _, err := os.Stat(flags.Location); errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("file does not exist: %v", flags.Location)
+		if _, err := os.Stat(flags.SourceLocation); errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("file does not exist: %v", flags.SourceLocation)
 		}
 
-		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.Location))
+		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.SourceLocation))
 		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
 	}
 	return gstreamer.NewStreamSource(name, streamSourceOpts...)
