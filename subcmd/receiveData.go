@@ -34,6 +34,7 @@ func (r *ReceiveData) Exec(cmd string, args []string) error {
 		flags.LocalAddrFlag,
 		flags.RemoteAddrFlag,
 		flags.NadaFeedbackFlag,
+		flags.LogQuicFlag,
 	}...)
 
 	fs.Usage = func() {
@@ -60,12 +61,23 @@ Flags:
 		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta))
 	}
 
+	if flags.LogQuic {
+		qlogWriter, err := os.Create("./receiver.qlog")
+		if err != nil {
+			return err
+		}
+		quicOptions = append(quicOptions, quictransport.EnableQLogs(qlogWriter))
+	}
+
 	quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)
 	if err != nil {
 		return err
 	}
 
 	dcTransport := quicConn.GetQuicDataChannel()
+
+	// start handler
+	quicConn.StartHandlers()
 
 	go r.startDataChannelReceiver(dcTransport)
 
@@ -80,9 +92,6 @@ Flags:
 			panic(fmt.Sprintf("forward stream with flowID: %v: %v", flowID, err))
 		}
 	}
-
-	// start handler
-	quicConn.StartHandlers()
 
 	select {}
 }
