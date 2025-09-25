@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/mengelbart/mrtp/cmdmain"
@@ -41,6 +42,7 @@ func (s *SendData) Exec(cmd string, args []string) error {
 		flags.CCnadaFlag,
 		flags.CCgccFlag,
 		flags.MaxTragetRateFlag,
+		flags.LogQuicFlag,
 	}...)
 
 	fs.StringVar(&sourceFile, "source-file", "", "File to be sent. If empty, random data will be sent.")
@@ -79,6 +81,14 @@ Flags:
 		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate)))
 	}
 
+	if flags.LogQuic {
+		qlogWriter, err := os.Create("./sender.qlog")
+		if err != nil {
+			return err
+		}
+		quicTOptions = append(quicTOptions, quictransport.EnableQLogs(qlogWriter))
+	}
+
 	// open quic connection
 	quicConn, err := quictransport.New([]string{roqALPN}, quicTOptions...)
 	if err != nil {
@@ -114,6 +124,9 @@ Flags:
 	if flags.CCgcc || flags.CCnada {
 		// rate is controlled by cc
 		quicConn.SetSourceTargetRate = func(ratebps uint) error {
+			// log "combined" target rate even if we do not split it. Makes plotting easier
+			slog.Info("NEW_TARGET_RATE", "rate", ratebps)
+
 			source.SetRateLimit(ratebps)
 			return nil
 		}
@@ -138,5 +151,4 @@ func createDataSource(sender *datachannels.Sender) (*data.DataBin, error) {
 	}
 
 	return data.NewDataBin(sender, sourceOptions...)
-
 }
