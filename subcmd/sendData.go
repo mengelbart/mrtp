@@ -43,6 +43,8 @@ func (s *SendData) Exec(cmd string, args []string) error {
 		flags.CCgccFlag,
 		flags.MaxTragetRateFlag,
 		flags.LogQuicFlag,
+		flags.NadaFeedbackFlowIDFlag,
+		flags.DataChannelFlowIDFlag,
 	}...)
 
 	fs.StringVar(&sourceFile, "source-file", "", "File to be sent. If empty, random data will be sent.")
@@ -74,11 +76,11 @@ Flags:
 
 	if flags.CCnada {
 		feedbackDelta := uint64(20)
-		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate, uint(feedbackDelta)))
+		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
 	}
 
 	if flags.CCgcc {
-		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate)))
+		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
 	}
 
 	if flags.LogQuic {
@@ -109,7 +111,7 @@ Flags:
 	quicConn.StartHandlers()
 
 	// blocks until we get OpenChannelOk
-	sender, err := dcTransport.NewDataChannelSender(42, 0, true)
+	sender, err := dcTransport.NewDataChannelSender(uint64(flags.DataChannelFlowID), 0, true)
 	if err != nil {
 		return err
 	}

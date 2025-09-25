@@ -94,6 +94,8 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.QuicCCFlag,
 		flags.LogQuicFlag,
 		flags.DataChannelFlag,
+		flags.NadaFeedbackFlowIDFlag,
+		flags.DataChannelFlowIDFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 	fs.UintVar(&dcPercatage, "dc-tr-share", 30, "Percentage of target rate to be used for data channel (RoQ only)")
@@ -181,11 +183,11 @@ Flags:
 		initRate := 750_000 * (100 - dcPercatage) / 100
 		if flags.CCnada {
 			feedbackDelta := uint64(20)
-			quicOptions = append(quicOptions, quictransport.EnableNADA(initRate, 150_000, flags.MaxTargetRate, uint(feedbackDelta)))
+			quicOptions = append(quicOptions, quictransport.EnableNADA(initRate, 150_000, flags.MaxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
 		}
 
 		if flags.CCgcc {
-			quicOptions = append(quicOptions, quictransport.EnableGCC(int(initRate), 150_000, int(flags.MaxTargetRate)))
+			quicOptions = append(quicOptions, quictransport.EnableGCC(int(initRate), 150_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
 		}
 		if flags.LogQuic {
 			qlogWriter, err := os.Create("./sender.qlog")
@@ -230,7 +232,7 @@ Flags:
 		// open dc connection
 		var dataSource *data.DataBin
 		if flags.DataChannel {
-			dcSender, err := dcTransport.NewDataChannelSender(42, 0, true) // TODO
+			dcSender, err := dcTransport.NewDataChannelSender(uint64(flags.DataChannelFlowID), 0, true)
 			if err != nil {
 				return err
 			}

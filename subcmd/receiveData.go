@@ -35,6 +35,8 @@ func (r *ReceiveData) Exec(cmd string, args []string) error {
 		flags.RemoteAddrFlag,
 		flags.NadaFeedbackFlag,
 		flags.LogQuicFlag,
+		flags.NadaFeedbackFlowIDFlag,
+		flags.DataChannelFlowIDFlag,
 	}...)
 
 	fs.Usage = func() {
@@ -58,7 +60,7 @@ Flags:
 
 	if flags.NadaFeedback {
 		feedbackDelta := uint64(20)
-		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta))
+		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)))
 	}
 
 	if flags.LogQuic {
@@ -97,7 +99,7 @@ Flags:
 }
 
 func (r *ReceiveData) startDataChannelReceiver(dcTransport *datachannels.Transport) error {
-	receiver, err := dcTransport.AddDataChannelReceiver(42)
+	receiver, err := dcTransport.AddDataChannelReceiver(uint64(flags.DataChannelFlowID))
 	if err != nil {
 		return err
 	}

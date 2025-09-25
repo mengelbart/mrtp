@@ -17,18 +17,17 @@ import (
 	"github.com/quic-go/quic-go/quicvarint"
 )
 
-const feedbackChannelID = 0
-
 type Option func(*Transport) error
 
 // Transport is a quic connection that can be real-time congestion controlled.
 // Opens a quic datachannel connection over it for the feedback.
 // Only works with application data that use quicdc or roq format.
 type Transport struct {
-	quicConn      *quic.Conn
-	role          quicutils.Role
-	localAddress  string
-	remoteAddress string
+	quicConn              *quic.Conn
+	role                  quicutils.Role
+	localAddress          string
+	remoteAddress         string
+	feedbackChannelFlowID uint64
 
 	dcTransport *datachannels.Transport
 
@@ -49,8 +48,10 @@ type Transport struct {
 	HandleDatagram      func(flowID uint64, datagram []byte)
 }
 
-func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint) Option {
+func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint, feedbackChannelFlowID uint64) Option {
 	return func(t *Transport) error {
+		t.feedbackChannelFlowID = feedbackChannelFlowID
+
 		nadaConfig := nada.Config{
 			MinRate:                  uint64(minRate),
 			MaxRate:                  uint64(maxRate),
@@ -66,12 +67,13 @@ func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint) Option {
 	}
 }
 
-func EnableGCC(initRate, minRate, maxRate int) Option {
+func EnableGCC(initRate, minRate, maxRate int, feedbackChannelFlowID uint64) Option {
 	return func(t *Transport) error {
 		// TODO: add pion logger
 		var err error
 		t.bwe, err = gcc.NewSendSideController(initRate, minRate, maxRate)
 		t.lostPackets = NewPacketEvents()
+		t.feedbackChannelFlowID = feedbackChannelFlowID
 		return err
 	}
 }
@@ -94,8 +96,9 @@ func SetQuicCC(quicCC int) Option {
 	}
 }
 
-func EnableNADAfeedback(feedbackDelta uint64) Option {
+func EnableNADAfeedback(feedbackDelta, feedbackChannelFlowID uint64) Option {
 	return func(t *Transport) error {
+		t.feedbackChannelFlowID = feedbackChannelFlowID
 		t.sendNadaFeedback = true
 		t.receivedPackets = NewPacketEvents()
 		t.feedbackDelta = feedbackDelta
@@ -230,8 +233,9 @@ func (t *Transport) GetQuicDataChannel() *datachannels.Transport {
 }
 
 func (t *Transport) receiveUniStreams() {
-	for {
+	haveFeedbackChannel := t.nada != nil || t.bwe != nil || t.sendNadaFeedback
 
+	for {
 		rs, err := t.quicConn.AcceptUniStream(context.Background())
 		if err != nil {
 			panic(err)
@@ -244,7 +248,7 @@ func (t *Transport) receiveUniStreams() {
 			panic(err)
 		}
 
-		if flowID == feedbackChannelID {
+		if haveFeedbackChannel && flowID == t.feedbackChannelFlowID {
 			// register feedback channel with dc transport
 			err := t.dcTransport.ReadStream(context.Background(), rs, flowID)
 			if err != nil {
@@ -296,7 +300,7 @@ func (t *Transport) openDataChannelConn() error {
 func (t *Transport) sendFeedback() {
 	const maxEventsPerDatagram = 100
 
-	sendFlow, err := t.dcTransport.NewDataChannelSender(feedbackChannelID, 0, false)
+	sendFlow, err := t.dcTransport.NewDataChannelSender(t.feedbackChannelFlowID, 0, false)
 	if err != nil {
 		panic(err)
 	}
@@ -349,7 +353,7 @@ func (t *Transport) sendFeedback() {
 }
 
 func (t *Transport) feedbackReceiver() {
-	feedbackFlow, err := t.dcTransport.AddDataChannelReceiver(feedbackChannelID)
+	feedbackFlow, err := t.dcTransport.AddDataChannelReceiver(t.feedbackChannelFlowID)
 	if err != nil {
 		panic(err)
 	}

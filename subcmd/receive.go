@@ -66,12 +66,9 @@ func (r *Receive) Help() string {
 func (r *Receive) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("receive", flag.ExitOnError)
 
-	// override default values
-	flags.RTPPort = 5000
-	flags.RTCPSendPort = 5002
-	flags.RTCPRecvPort = 5001
-	flags.RTCPRecvFlowID = 2
-	flags.RTCPSendFlowID = 1
+	// swap default values
+	flags.SwapRTCPDefaults()
+
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.LocalAddrFlag,
 		flags.RemoteAddrFlag,
@@ -87,6 +84,8 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.TraceRTPRecvFlag,
 		flags.NadaFeedbackFlag,
 		flags.DataChannelFlag,
+		flags.NadaFeedbackFlowIDFlag,
+		flags.DataChannelFlowIDFlag,
 	}...)
 
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
@@ -172,7 +171,7 @@ func (r *Receive) setupRoQ() error {
 
 	if flags.NadaFeedback {
 		feedbackDelta := uint64(20)
-		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta))
+		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)))
 	}
 
 	if flags.LogQuic {
@@ -217,7 +216,7 @@ func (r *Receive) setupRoQ() error {
 	if flags.DataChannel {
 		// setup data channel receiver
 		// quic tranpsorts has to be started before
-		dcReceiver, err := dcTransport.AddDataChannelReceiver(42) // TODO
+		dcReceiver, err := dcTransport.AddDataChannelReceiver(uint64(flags.DataChannelFlowID))
 		if err != nil {
 			return err
 		}
