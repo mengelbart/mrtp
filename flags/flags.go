@@ -27,9 +27,11 @@ const (
 	RTCPRecvPortFlag FlagName = "rtcp-recv-porto"
 	RTCPSendPortFlag FlagName = "rtcp-send-porto"
 
-	RTPFlowIDFlag      FlagName = "rtp-flow-id"
-	RTCPRecvFlowIDFlag FlagName = "rtcp-recv-flow-id"
-	RTCPSendFlowIDFlag FlagName = "rtcp-send-flow-id"
+	RTPFlowIDFlag          FlagName = "rtp-flow-id"
+	RTCPRecvFlowIDFlag     FlagName = "rtcp-recv-flow-id"
+	RTCPSendFlowIDFlag     FlagName = "rtcp-send-flow-id"
+	DataChannelFlowIDFlag  FlagName = "dc-flow-id"
+	NadaFeedbackFlowIDFlag FlagName = "nada-feedback-flow-id"
 
 	CertFlag FlagName = "cert"
 	KeyFlag  FlagName = "key"
@@ -69,6 +71,12 @@ const (
 	defaultRTCPSendPort = uint(5001)
 	defaultRTCPRecvPort = uint(5002)
 
+	defaultRTPFlowID          = uint(0)
+	defaultRTCPRecvFlowID     = uint(1)
+	defaultRTCPSendFlowID     = uint(2)
+	defaultDataChannelFlowID  = uint(3)
+	defaultNadaFeedbackFlowID = uint(4)
+
 	defaultLocation = "videotestsrc"
 
 	defaultSinkType      = uint(0)         // Corresponds to autovideosink
@@ -101,11 +109,16 @@ var (
 
 	RTCPSendPort = defaultRTCPSendPort
 
-	RTPFlowID = uint(0)
+	// Flow IDs for RoQ and datachannels
+	RTPFlowID = defaultRTPFlowID
 
-	RTCPRecvFlowID = uint(1)
+	RTCPRecvFlowID = defaultRTCPRecvFlowID
 
-	RTCPSendFlowID = uint(2)
+	RTCPSendFlowID = defaultRTCPSendFlowID
+
+	DataChannelFlowID = defaultDataChannelFlowID
+
+	NadaFeedbackFlowID = defaultNadaFeedbackFlowID
 
 	RoQServer = false
 
@@ -168,18 +181,20 @@ var flags = map[FlagName]flagVar{
 	RTCPRecvPortFlag: uintVar(&RTCPRecvPort, RTCPRecvPortFlag, &RTCPRecvPort, "UDP port for incoming RTCP stream"),
 	RTCPSendPortFlag: uintVar(&RTCPSendPort, RTCPSendPortFlag, &RTCPSendPort, "UDP port for outgoing RTCP stream"),
 
-	RTPFlowIDFlag:      uintVar(&RTPFlowID, RTPFlowIDFlag, &RTPFlowID, "RTP Flow ID when using RTP over QUIC"),
-	RTCPRecvFlowIDFlag: uintVar(&RTCPRecvFlowID, RTCPRecvFlowIDFlag, &RTCPRecvFlowID, "RTP Flow ID when using RTP over QUIC"),
-	RTCPSendFlowIDFlag: uintVar(&RTCPSendFlowID, RTCPSendFlowIDFlag, &RTCPSendFlowID, "RTP Flow ID when using RTP over QUIC"),
+	// flow ID flags
+	RTPFlowIDFlag:          uintVar(&RTPFlowID, RTPFlowIDFlag, &RTPFlowID, "RTP Flow ID when using RTP over QUIC"),
+	RTCPRecvFlowIDFlag:     uintVar(&RTCPRecvFlowID, RTCPRecvFlowIDFlag, &RTCPRecvFlowID, "RTP Flow ID when using RTP over QUIC"),
+	RTCPSendFlowIDFlag:     uintVar(&RTCPSendFlowID, RTCPSendFlowIDFlag, &RTCPSendFlowID, "RTP Flow ID when using RTP over QUIC"),
+	DataChannelFlowIDFlag:  uintVar(&DataChannelFlowID, DataChannelFlowIDFlag, &DataChannelFlowID, "Data Channel Flow ID when using quic data channels"),
+	NadaFeedbackFlowIDFlag: uintVar(&NadaFeedbackFlowID, NadaFeedbackFlowIDFlag, &NadaFeedbackFlowID, "NADA Feedback Flow ID when using NADA or GCC with QUIC"),
 
 	// TLS Certificate
 	CertFlag: stringVar(&Cert, CertFlag, &Cert, "TLS Certificate"),
 	KeyFlag:  stringVar(&Key, KeyFlag, &Key, "TLS Certificate key"),
 
 	// RoQ Flags
-	// TODO: Add separate flags for RoQ flow ids
-	RoQServerFlag:   boolVar(&RoQServer, RoQServerFlag, &RoQServer, "Use RoQ server transport. Port flags are used as flow IDs"),
-	RoQClientFlag:   boolVar(&RoQClient, RoQClientFlag, &RoQClient, "Use RoQ client transport. Port flags are used as flow IDs"),
+	RoQServerFlag:   boolVar(&RoQServer, RoQServerFlag, &RoQServer, "Use RoQ server transport."),
+	RoQClientFlag:   boolVar(&RoQClient, RoQClientFlag, &RoQClient, "Use RoQ client transport."),
 	DataChannelFlag: boolVar(&DataChannel, DataChannelFlag, &DataChannel, "Send/Receive data with data channels"),
 
 	// CC flags
@@ -218,4 +233,13 @@ func RegisterInto(fs *flag.FlagSet, names ...FlagName) {
 			f(fs)
 		}
 	}
+}
+
+// SwapRTCPDefaults swaps the default values for RTCP ports and flow IDs.
+// This needs to be done for one side, as these ports and flow IDs are asymmetric.
+func SwapRTCPDefaults() {
+	RTCPSendPort = defaultRTCPRecvPort
+	RTCPRecvPort = defaultRTCPSendPort
+	RTCPRecvFlowID = defaultRTCPSendFlowID
+	RTCPSendFlowID = defaultRTCPRecvFlowID
 }
