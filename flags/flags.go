@@ -59,96 +59,58 @@ const (
 	DataChannelFlag FlagName = "dc"
 )
 
-// default values
-const (
-	defaultAddr      = "127.0.0.1"
-	defaultHTTPAddr  = "127.0.0.1:8080"
-	defaultHTTPSAddr = "127.0.0.1:4443"
-
-	defaultCert = "localhost.pem"
-	defaultKey  = "localhost-key.pem"
-
-	defaultRTPPort      = uint(5000)
-	defaultRTCPSendPort = uint(5001)
-	defaultRTCPRecvPort = uint(5002)
-
-	defaultRTPFlowID          = uint(0)
-	defaultRTCPRecvFlowID     = uint(1)
-	defaultRTCPSendFlowID     = uint(2)
-	defaultDataChannelFlowID  = uint(3)
-	defaultNadaFeedbackFlowID = uint(4)
-
-	defaultSourceLocation = "videotestsrc"
-
-	defaultSinkType      = uint(0)         // Corresponds to autovideosink
-	defaultMaxTargetRate = uint(3_000_000) // 3 Mbps
-
-	defaultQuicCC = uint(0)
-)
-
 // Flag vars
 var (
 	// LocalAddr
-	LocalAddr = defaultAddr
+	LocalAddr = "127.0.0.1"
 
 	// RemoteAddr
-	RemoteAddr = defaultAddr
+	RemoteAddr = "127.0.0.1"
 
 	// HTTP Server
-	HTTPAddr = defaultHTTPAddr
+	HTTPAddr = "127.0.0.1:8080"
 
-	HTTPSAddr = defaultHTTPSAddr
+	HTTPSAddr = "127.0.0.1:4443"
 
-	Cert = defaultCert
+	Cert = "localhost.pem"
 
-	Key = defaultKey
+	Key = "localhost-key.pem"
 
 	// RTP Receive Port
-	RTPPort = defaultRTPPort
-
-	RTCPRecvPort = defaultRTCPRecvPort
-
-	RTCPSendPort = defaultRTCPSendPort
+	RTPPort      = uint(5000)
+	RTCPSendPort = uint(5001)
+	RTCPRecvPort = uint(5002)
 
 	// Flow IDs for RoQ and datachannels
-	RTPFlowID = defaultRTPFlowID
-
-	RTCPRecvFlowID = defaultRTCPRecvFlowID
-
-	RTCPSendFlowID = defaultRTCPSendFlowID
-
-	DataChannelFlowID = defaultDataChannelFlowID
-
-	NadaFeedbackFlowID = defaultNadaFeedbackFlowID
+	RTPFlowID          = uint(0)
+	RTCPRecvFlowID     = uint(1)
+	RTCPSendFlowID     = uint(2)
+	DataChannelFlowID  = uint(3)
+	NadaFeedbackFlowID = uint(4)
 
 	RoQServer = false
-
 	RoQClient = false
 
 	DataChannel = false
 
 	GstCCFB = false
 
-	SinkType = defaultSinkType
-
+	SinkType       = uint(0) // Corresponds to autovideosink
+	SinkLocation   = ""
 	SourceLocation = "videotestsrc"
 
-	SinkLocation = ""
-
 	TraceRTPRecv = false
-
 	TraceRTPSend = false
 
 	CCnada = false
-
-	CCgcc = false
+	CCgcc  = false
 
 	NadaFeedback = false
 
 	// MaxTargetRate is the max target rate in bits per second
-	MaxTargetRate = defaultMaxTargetRate
+	MaxTargetRate = uint(3_000_000) // 3 Mbps
 
-	QuicCC = defaultQuicCC
+	QuicCC = uint(0)
 
 	LogQuic = false
 )
@@ -242,8 +204,6 @@ func RegisterInto(fs *flag.FlagSet, names ...FlagName) {
 // SwapRTCPDefaults swaps the default values for RTCP ports and flow IDs.
 // This needs to be done for one side, as these ports and flow IDs are asymmetric.
 func SwapRTCPDefaults() {
-	RTCPSendPort = defaultRTCPRecvPort
-	RTCPRecvPort = defaultRTCPSendPort
-	RTCPRecvFlowID = defaultRTCPSendFlowID
-	RTCPSendFlowID = defaultRTCPRecvFlowID
+	RTCPSendPort, RTCPRecvPort = RTCPRecvPort, RTCPSendPort
+	RTCPRecvFlowID, RTCPSendFlowID = RTCPSendFlowID, RTCPRecvFlowID
 }
