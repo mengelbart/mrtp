@@ -16,6 +16,7 @@ import (
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v2"
+	"github.com/pion/transport/v3/vnet"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -45,6 +46,7 @@ type Transport struct {
 	pendingICECandidates     []*webrtc.ICECandidate
 
 	onRemoteTrack func(*RTPReceiver)
+	onDataChannel func(*webrtc.DataChannel)
 	onConnected   func()
 
 	bwe           *gcc.SendSideController
@@ -57,6 +59,13 @@ type Option func(*Transport) error
 func OnTrack(handler func(*RTPReceiver)) Option {
 	return func(t *Transport) error {
 		t.onRemoteTrack = handler
+		return nil
+	}
+}
+
+func OnDataChannel(handler func(*webrtc.DataChannel)) Option {
+	return func(t *Transport) error {
+		t.onDataChannel = handler
 		return nil
 	}
 }
@@ -200,6 +209,13 @@ func RegisterDefaultCodecs() Option {
 	}
 }
 
+func SetVNet(vnet *vnet.Net) Option {
+	return func(t *Transport) error {
+		t.settingEngine.SetNet(vnet)
+		return nil
+	}
+}
+
 func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, error) {
 	t := &Transport{
 		logger:              slog.Default(),
@@ -207,6 +223,7 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 		signaler:            signaler,
 		offerer:             offerer,
 		onRemoteTrack:       nil,
+		onDataChannel:       nil,
 		settingEngine:       &webrtc.SettingEngine{},
 		mediaEngine:         &webrtc.MediaEngine{},
 		interceptorRegistry: &interceptor.Registry{},
@@ -234,11 +251,12 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 	pc.OnNegotiationNeeded(t.onNegotiationNeeded)
 	pc.OnICECandidate(t.onICECandidate)
 	pc.OnTrack(t.onTrack)
+	pc.OnDataChannel(t.onDataChannel)
 	pc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
 		t.logger.Info("connection state changed", "new_state", pcs)
 	})
 	pc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
-		if pcs == webrtc.PeerConnectionStateConnected {
+		if pcs == webrtc.PeerConnectionStateConnected && t.onConnected != nil {
 			t.onConnected()
 		}
 	})
@@ -334,6 +352,17 @@ func (t *Transport) HandleSessionDescription(description *webrtc.SessionDescript
 
 func (t *Transport) HandleICECandidate(candidate webrtc.ICECandidateInit) error {
 	return t.pc.AddICECandidate(candidate)
+}
+
+func (t *Transport) CreateDataChannel(label string) (*webrtc.DataChannel, error) {
+	ordered := true
+	dc, err := t.pc.CreateDataChannel(label, &webrtc.DataChannelInit{
+		Ordered: &ordered,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return dc, nil
 }
 
 func (t *Transport) AddRemoteVideoTrack() error {

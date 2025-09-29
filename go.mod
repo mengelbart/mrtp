@@ -1,6 +1,6 @@
 module github.com/mengelbart/mrtp
 
-go 1.24.1
+go 1.25
 
 require (
 	github.com/Willi-42/go-nada v0.0.0-20250918135705-6a600030be0b
