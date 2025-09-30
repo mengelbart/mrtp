@@ -90,12 +90,13 @@ Usage:
 
 	signaler := webrtc.NewHTTPClientSignaler(fmt.Sprintf("http://%v:%v", flags.RemoteAddr, remotePort))
 
-	stdnet, err := webrtc.NewNet()
+	stdnet, err := webrtc.NewNet(webrtc.SetRecvBufferSize(10_000_000)) // 10MB
 	if err != nil {
 		return err
 	}
 	webrtcOptions := []webrtc.Option{
 		webrtc.SetNet(stdnet),
+		webrtc.SetSRTPBufferLimit(10_000_000), // 10MB
 		webrtc.RegisterDefaultCodecs(),
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
 			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()))

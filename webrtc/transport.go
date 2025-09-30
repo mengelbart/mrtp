@@ -2,6 +2,7 @@ package webrtc
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v2"
 	"github.com/pion/transport/v3"
+	"github.com/pion/transport/v3/packetio"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -208,6 +210,18 @@ func SetNet(net transport.Net) Option {
 	}
 }
 
+func SetSRTPBufferLimit(size int) Option {
+	return func(t *Transport) error {
+		t.settingEngine.BufferFactory = func(packetType packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser {
+			buffer := packetio.NewBuffer()
+			buffer.SetLimitSize(size)
+			buffer.SetLimitCount(0)
+			return buffer
+		}
+		return nil
+	}
+}
+
 func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, error) {
 	t := &Transport{
 		logger:              slog.Default(),
@@ -225,6 +239,7 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 			return nil, err
 		}
 	}
+
 	pc, err := webrtc.NewAPI(
 		webrtc.WithSettingEngine(*t.settingEngine),
 		webrtc.WithMediaEngine(t.mediaEngine),
@@ -239,6 +254,7 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 	if err != nil {
 		return nil, err
 	}
+
 	pc.OnNegotiationNeeded(t.onNegotiationNeeded)
 	pc.OnICECandidate(t.onICECandidate)
 	pc.OnTrack(t.onTrack)
