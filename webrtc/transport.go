@@ -16,6 +16,7 @@ import (
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v2"
+	"github.com/pion/transport/v3"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -197,6 +198,13 @@ func AddExtraCodecs(name string, clockRate uint32, payloadType uint8) Option {
 func RegisterDefaultCodecs() Option {
 	return func(t *Transport) error {
 		return t.mediaEngine.RegisterDefaultCodecs()
+	}
+}
+
+func SetNet(net transport.Net) Option {
+	return func(t *Transport) error {
+		t.settingEngine.SetNet(net)
+		return nil
 	}
 }
 
