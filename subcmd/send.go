@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
@@ -49,6 +50,8 @@ func (f *gstreamerVideoStreamSourceFactory) ConfigureFlags(fs *flag.FlagSet) {
 
 func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstreamer.RTPSourceBin, error) {
 	streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
+	streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceCodec(mrtp.VP8))
+
 	if flags.SourceLocation != "videotestsrc" {
 		// check if file exists
 		if _, err := os.Stat(flags.SourceLocation); errors.Is(err, os.ErrNotExist) {

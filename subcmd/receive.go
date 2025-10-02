@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
@@ -46,6 +47,7 @@ func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
 func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (gstreamer.RTPSinkBin, error) {
 	return gstreamer.NewStreamSink(
 		name,
+		gstreamer.StreamSinkCodec(mrtp.VP8),
 		gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
 		gstreamer.StreamSinkLocation(flags.SinkLocation),
 		gstreamer.StreamSinkPayloadType(pt),

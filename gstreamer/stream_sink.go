@@ -32,6 +32,13 @@ func StreamSinkType(sinkType SinkType) StreamSinkOption {
 	}
 }
 
+func StreamSinkCodec(codec mrtp.Codec) StreamSinkOption {
+	return func(s *StreamSink) error {
+		s.codec = codec
+		return nil
+	}
+}
+
 func StreamSinkLocation(location string) StreamSinkOption {
 	return func(s *StreamSink) error {
 		s.location = location
@@ -75,6 +82,20 @@ func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 			return nil, err
 		}
 		dec, err := gst.NewElement("avdec_h264")
+		if err != nil {
+			return nil, err
+		}
+		convert, err := gst.NewElement("videoconvert")
+		if err != nil {
+			return nil, err
+		}
+		s.elements = append(s.elements, depay, dec, convert)
+	case mrtp.VP8:
+		depay, err = gst.NewElement("rtpvp8depay")
+		if err != nil {
+			return nil, err
+		}
+		dec, err := gst.NewElement("vp8dec")
 		if err != nil {
 			return nil, err
 		}
