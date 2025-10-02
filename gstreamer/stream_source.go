@@ -83,7 +83,8 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 	followUpElms = append(followUpElms, cs)
 
 	var pay *gst.Element
-	if s.codec == mrtp.H264 {
+	switch s.codec {
+	case mrtp.H264:
 		settings := map[string]any{"pass": 5, "speed-preset": 1, "tune": 6, "key-int-max": 10_000}
 		s.encoder, err = gst.NewElementWithProperties("x264enc", settings)
 		if err != nil {
@@ -101,7 +102,25 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 			return nil, err
 		}
 		followUpElms = append(followUpElms, s.encoder, pay)
-	} else {
+	case mrtp.VP8:
+		settings := map[string]any{"deadline": 1}
+		s.encoder, err = gst.NewElementWithProperties("vp8enc", settings)
+		if err != nil {
+			return nil, err
+		}
+		pay, err = gst.NewElement("rtpvp8pay")
+		if err != nil {
+			return nil, err
+		}
+		if err = SetProperties(pay, map[string]any{
+			"pt":            s.payloadType,
+			"mtu":           uint(1200),
+			"seqnum-offset": 1,
+		}); err != nil {
+			return nil, err
+		}
+		followUpElms = append(followUpElms, s.encoder, pay)
+	default:
 		return nil, fmt.Errorf("unknown codec: %v", s.codec)
 	}
 
@@ -212,11 +231,18 @@ func (s *StreamSource) SrcPad() (*gst.Pad, error) {
 
 // SetBitrate sets the target bit rate of the encoder
 func (s *StreamSource) SetBitrate(ratebps uint) error {
-	rateKbps := ratebps / 1000
-
 	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", ratebps)
 
-	return s.encoder.Set("bitrate", rateKbps)
+	switch s.codec {
+	case mrtp.H264:
+		rateKbps := ratebps / 1000
+		return s.encoder.Set("bitrate", rateKbps)
+	case mrtp.VP8:
+		fmt.Println("Set VP8 bitrate to", ratebps)
+		return s.encoder.Set("target-bitrate", int(ratebps))
+	default:
+		return fmt.Errorf("unknown codec: %v", s.codec)
+	}
 }
 
 func (s *StreamSource) EncodingName() string {
