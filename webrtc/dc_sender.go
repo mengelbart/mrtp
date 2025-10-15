@@ -8,7 +8,7 @@ type DCsender struct {
 	dc       *webrtc.DataChannel
 	dataChan chan []byte // to buffer data until BufferedAmountLow is called by pion
 
-	firstBatchAdded bool // have to send one batch outside of BufferedAmountLow callback -> otherwise it is never called
+	firstDataUnitsSent bool // have to send one batch outside of BufferedAmountLow callback -> otherwise it is never called
 }
 
 // newDCsender blocks until the datachannel is open
@@ -23,7 +23,7 @@ func newDCsender(dc *webrtc.DataChannel) *DCsender {
 	dc.SetBufferedAmountLowThreshold(20_000)
 
 	dc.OnBufferedAmountLow(func() {
-		if !s.firstBatchAdded {
+		if !s.firstDataUnitsSent {
 			return
 		}
 		s.addPacketsToDc()
@@ -58,12 +58,9 @@ func (s *DCsender) addPacketsToDc() error {
 // Necessary because dc.Send does not block and creates huge buffers
 func (s *DCsender) Write(data []byte) (int, error) {
 	s.dataChan <- data
-	if s.firstBatchAdded {
-		return len(data), nil
-	}
 
-	if len(s.dataChan) == cap(s.dataChan) {
-		s.firstBatchAdded = true
+	if !s.firstDataUnitsSent && len(s.dataChan) == cap(s.dataChan) {
+		s.firstDataUnitsSent = true
 		s.addPacketsToDc() // add first batch
 	}
 
