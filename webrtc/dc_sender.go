@@ -5,11 +5,30 @@ import (
 )
 
 type DCsender struct {
-	dc *webrtc.DataChannel
+	dc       *webrtc.DataChannel
+	dataChan chan []byte // to buffer data until BufferedAmountLow is called by pion
+
+	firstBatchAdded bool // have to send one batch outside of BufferedAmountLow callback -> otherwise it is never called
 }
 
 // newDCsender blocks until the datachannel is open
 func newDCsender(dc *webrtc.DataChannel) *DCsender {
+	s := &DCsender{
+		dc:       dc,
+		dataChan: nil,
+	}
+
+	// chan size and threshold determine burtsyness
+	s.dataChan = make(chan []byte, 50)
+	dc.SetBufferedAmountLowThreshold(20_000)
+
+	dc.OnBufferedAmountLow(func() {
+		if !s.firstBatchAdded {
+			return
+		}
+		s.addPacketsToDc()
+	})
+
 	opendChan := make(chan struct{})
 	dc.OnOpen(func() {
 		opendChan <- struct{}{}
@@ -18,14 +37,34 @@ func newDCsender(dc *webrtc.DataChannel) *DCsender {
 	// wait for open
 	<-opendChan
 
-	return &DCsender{
-		dc: dc,
-	}
+	return s
 }
 
+// addPacketsToDc adds all packets to the webrtc datachannel which were added unit now
+func (s *DCsender) addPacketsToDc() error {
+	// get length, so we only pick packets that were already in the channel
+	len := len(s.dataChan)
+
+	for range len {
+		data := <-s.dataChan
+		if err := s.dc.Send(data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Write blocks if datachannel is full.
+// Necessary because dc.Send does not block and creates huge buffers
 func (s *DCsender) Write(data []byte) (int, error) {
-	if err := s.dc.Send(data); err != nil {
-		return 0, err
+	s.dataChan <- data
+	if s.firstBatchAdded {
+		return len(data), nil
+	}
+
+	if len(s.dataChan) == cap(s.dataChan) {
+		s.firstBatchAdded = true
+		s.addPacketsToDc() // add first batch
 	}
 
 	return len(data), nil
