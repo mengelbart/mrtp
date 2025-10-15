@@ -2,7 +2,6 @@ package webrtc
 
 import (
 	"io"
-	"runtime"
 
 	"github.com/pion/webrtc/v4"
 )
@@ -31,13 +30,9 @@ func (r *DCreceiver) Read(buf []byte) (int, error) {
 		return 0, io.ErrShortBuffer
 	}
 
-	println("num routines", runtime.NumGoroutine())
-
 	copy(buf, msg.Data)
 
 	return len(msg.Data), nil
-
-	// return len(buf), nil
 }
 
 func (r *DCreceiver) Close() error {
