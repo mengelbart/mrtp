@@ -270,6 +270,25 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 	return t, nil
 }
 
+func (t *Transport) NewDataChannelSender(label string) *DCsender {
+	dc, err := t.pc.CreateDataChannel(label, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	return newDCsender(dc)
+}
+
+func (t *Transport) NewDataChannelReceiver() *DCreceiver {
+	dcChan := make(chan *webrtc.DataChannel)
+	t.pc.OnDataChannel(func(dataChannel *webrtc.DataChannel) {
+		dcChan <- dataChannel
+	})
+
+	dc := <-dcChan
+	return newReceiver(dc)
+}
+
 func (t *Transport) onNegotiationNeeded() {
 	t.logger.Info("peer connection needs negotiation")
 	if t.offerer {

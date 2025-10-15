@@ -9,6 +9,7 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/mengelbart/mrtp/cmdmain"
+	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/internal/http"
@@ -57,6 +58,7 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 		flags.CCgccFlag,
 		flags.CCnadaFlag,
 		flags.MaxTragetRateFlag,
+		flags.DataChannelFlag,
 	}...)
 	fs.StringVar(&localPort, "local-port", "8080", "Local port of HTTP signaling server to listen on")
 	fs.StringVar(&remotePort, "remote-port", "8080", "Remote Port of HTTP signaling server to connect to")
@@ -179,6 +181,22 @@ Usage:
 		return err
 	}
 	go s.ListenAndServe()
+
+	if offer && flags.DataChannel {
+		dcSender := transport.NewDataChannelSender("data")
+		dataSource, err := data.NewDataBin(dcSender)
+		if err != nil {
+			return err
+		}
+		go dataSource.Run()
+	} else if flags.DataChannel {
+		dcReceiver := transport.NewDataChannelReceiver()
+		dataSink, err := data.NewSink(dcReceiver)
+		if err != nil {
+			return err
+		}
+		go dataSink.Run()
+	}
 
 	if sendVideoTrack {
 		var source gstreamer.RTPSourceBin

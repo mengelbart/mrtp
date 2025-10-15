@@ -19,8 +19,8 @@ func NewSink(rc io.ReadCloser) (*DataSink, error) {
 }
 
 func (d *DataSink) Run() error {
+	buf := make([]byte, 1024)
 	for {
-		buf := make([]byte, 1024)
 		n, err := d.rc.Read(buf)
 		if err != nil {
 			if err == io.EOF {
