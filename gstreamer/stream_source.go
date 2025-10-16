@@ -238,7 +238,6 @@ func (s *StreamSource) SetBitrate(ratebps uint) error {
 		rateKbps := ratebps / 1000
 		return s.encoder.Set("bitrate", rateKbps)
 	case mrtp.VP8:
-		fmt.Println("Set VP8 bitrate to", ratebps)
 		return s.encoder.Set("target-bitrate", int(ratebps))
 	default:
 		return fmt.Errorf("unknown codec: %v", s.codec)
