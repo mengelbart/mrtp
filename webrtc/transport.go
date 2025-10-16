@@ -50,6 +50,7 @@ type Transport struct {
 	onRemoteTrack func(*RTPReceiver)
 	onConnected   func()
 
+	pacer         *PacingInterceptorFactory
 	bwe           *gcc.SendSideController
 	nada          *nada.SenderOnly
 	SetTargetRate func(ratebps uint) error
@@ -218,6 +219,14 @@ func SetSRTPBufferLimit(size int) Option {
 			buffer.SetLimitCount(0)
 			return buffer
 		}
+		return nil
+	}
+}
+
+func EnablePacing() Option {
+	return func(t *Transport) error {
+		t.pacer = newPacingInterceptorFactory()
+		t.interceptorRegistry.Add(t.pacer)
 		return nil
 	}
 }
@@ -467,6 +476,9 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 			if err != nil {
 				return err
 			}
+		}
+		if t.pacer != nil {
+			t.pacer.SetRate("", int(tr))
 		}
 	}
 
