@@ -43,14 +43,22 @@ type gstreamerVideoStreamSourceFactory struct {
 }
 
 func (f *gstreamerVideoStreamSourceFactory) ConfigureFlags(fs *flag.FlagSet) {
-	flags.RegisterInto(fs, []flags.FlagName{
-		flags.SourceLocationFlag,
-	}...)
+	newFlags := []flags.FlagName{flags.SourceLocationFlag}
+
+	// check if codec flag is already registered - relevant for webrtc subcmd
+	if fs.Lookup(string(flags.CodecFlag)) == nil {
+		newFlags = append(newFlags, flags.CodecFlag)
+	}
+	flags.RegisterInto(fs, newFlags...)
 }
 
 func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstreamer.RTPSourceBin, error) {
-	streamSourceOpts := make([]gstreamer.StreamSourceOption, 0)
-	streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceCodec(mrtp.VP8))
+	codec, error := mrtp.NewCodec(flags.Codec)
+	if error != nil {
+		return nil, error
+	}
+
+	streamSourceOpts := []gstreamer.StreamSourceOption{gstreamer.StreamSourceCodec(codec)}
 
 	if flags.SourceLocation != "videotestsrc" {
 		// check if file exists

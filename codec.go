@@ -1,5 +1,7 @@
 package mrtp
 
+import "fmt"
+
 type Codec int
 
 const (
@@ -12,6 +14,16 @@ func (c Codec) ClockRate() int {
 	default:
 		return 90_000
 	}
+}
+
+func NewCodec(s string) (Codec, error) {
+	switch s {
+	case "H264":
+		return H264, nil
+	case "VP8":
+		return VP8, nil
+	}
+	return H264, fmt.Errorf("unknown codec: %s", s)
 }
 
 func (c Codec) String() string {

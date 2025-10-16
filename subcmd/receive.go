@@ -37,17 +37,28 @@ type gstreamerVideoStreamSinkFactory struct {
 }
 
 func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
-	flags.RegisterInto(fs, []flags.FlagName{
+	newFlags := []flags.FlagName{
 		flags.SinkTypeFlag,
 		flags.SinkLocationFlag,
 		flags.LogQuicFlag,
-	}...)
+	}
+
+	// check if codec flag is already registered - relevant for webrtc subcmd
+	if fs.Lookup(string(flags.CodecFlag)) == nil {
+		newFlags = append(newFlags, flags.CodecFlag)
+	}
+	flags.RegisterInto(fs, newFlags...)
 }
 
 func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (gstreamer.RTPSinkBin, error) {
+	codec, error := mrtp.NewCodec(flags.Codec)
+	if error != nil {
+		return nil, error
+	}
+
 	return gstreamer.NewStreamSink(
 		name,
-		gstreamer.StreamSinkCodec(mrtp.VP8),
+		gstreamer.StreamSinkCodec(codec),
 		gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
 		gstreamer.StreamSinkLocation(flags.SinkLocation),
 		gstreamer.StreamSinkPayloadType(pt),
