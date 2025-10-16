@@ -8,7 +8,7 @@ import (
 type RTPSender struct {
 	track  *webrtc.TrackLocalStaticRTP
 	sender *webrtc.RTPSender
-	onCCFB func([]rtpfb.Report) error
+	onCCFB func(rtpfb.Report) error
 }
 
 func (s *RTPSender) Write(pkt []byte) (int, error) {

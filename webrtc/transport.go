@@ -9,7 +9,7 @@ import (
 
 	"github.com/Willi-42/go-nada/nada"
 	"github.com/mengelbart/mrtp/logging"
-	"github.com/pion/bwe-test/gcc"
+	"github.com/pion/bwe/gcc"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/packetdump"
 	"github.com/pion/interceptor/pkg/rfc8888"
@@ -428,69 +428,44 @@ func (t *Transport) Close() error {
 	return t.pc.Close()
 }
 
-func (t *Transport) onCCFB(reports []rtpfb.Report) error {
-	t.logger.Info("received ccfb packet reports", "length", len(reports))
+func (t *Transport) onCCFB(report rtpfb.Report) error {
+	t.logger.Info("received ccfb packet report", "arrival", report.Arrival, "RTT", report.RTT)
 
 	var tr uint
-	for _, report := range reports {
-		// GCC as CC
-		if t.bwe != nil {
-			acks := []gcc.Acknowledgment{}
-			latestAckedArrival := time.Time{}
-			latestAckedDeparture := time.Time{}
-			for _, prs := range report.SSRCToPacketReports {
-				for _, pr := range prs {
-					acks = append(acks, gcc.Acknowledgment{
-						SeqNr:     pr.SeqNr,
-						Size:      uint16(pr.Size),
-						Departure: pr.Departure,
-						Arrived:   pr.Arrived,
-						Arrival:   pr.Arrival,
-						ECN:       gcc.ECN(pr.ECN),
-					})
-					if pr.Arrival.After(latestAckedArrival) {
-						latestAckedArrival = pr.Arrival
-						latestAckedDeparture = pr.Departure
-					}
-				}
+	// GCC as CC
+	if t.bwe != nil {
+		for _, p := range report.PacketReports {
+			if p.Arrived {
+				t.bwe.OnAck(p.SequenceNumber, p.Size, p.Arrival, p.Departure)
+			} else {
+				t.bwe.OnLoss()
 			}
-			rtt := gcc.MeasureRTT(report.Departure, report.Arrival, latestAckedDeparture, latestAckedArrival)
-			tr = uint(t.bwe.OnAcks(report.Arrival, rtt, acks))
 		}
+		tr = uint(t.bwe.OnFeedback(report.Arrival, report.RTT))
+	}
 
-		// NADA as CC
-		if t.nada != nil {
-			acks := []nada.Acknowledgment{}
-			latestAckedArrival := time.Time{}
-			latestAckedDeparture := time.Time{}
-			for _, prs := range report.SSRCToPacketReports {
-				for _, pr := range prs {
-					acks = append(acks, nada.Acknowledgment{
-						SeqNr:     pr.SeqNr,
-						SizeBit:   uint64(pr.Size * 8),
-						Departure: pr.Departure,
-						Arrival:   pr.Arrival,
-						Arrived:   pr.Arrived,
-						Marked:    pr.ECN == rtcp.ECNCE,
-					})
-					if pr.Arrival.After(latestAckedArrival) {
-						latestAckedArrival = pr.Arrival
-						latestAckedDeparture = pr.Departure
-					}
-				}
-			}
-
-			rtt := gcc.MeasureRTT(report.Departure, report.Arrival, latestAckedDeparture, latestAckedArrival)
-			tr = uint(t.nada.OnAcks(rtt, acks))
+	// NADA as CC
+	if t.nada != nil {
+		acks := []nada.Acknowledgment{}
+		for _, p := range report.PacketReports {
+			acks = append(acks, nada.Acknowledgment{
+				SeqNr:     p.SequenceNumber,
+				Departure: p.Departure,
+				Arrival:   p.Arrival,
+				SizeBit:   uint64(p.Size) * 8,
+				Marked:    p.ECN == rtcp.ECNCE,
+				Arrived:   p.Arrived,
+			})
 		}
+		tr = uint(t.nada.OnAcks(report.RTT, acks))
+	}
 
-		if tr != 0 {
-			if t.SetTargetRate != nil {
-				// set target rate of encoder
-				err := t.SetTargetRate(tr)
-				if err != nil {
-					return err
-				}
+	if tr != 0 {
+		if t.SetTargetRate != nil {
+			// set target rate of encoder
+			err := t.SetTargetRate(tr)
+			if err != nil {
+				return err
 			}
 		}
 	}

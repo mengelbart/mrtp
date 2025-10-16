@@ -11,7 +11,7 @@ import (
 	"github.com/Willi-42/go-nada/nada"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/quicutils"
-	"github.com/pion/bwe-test/gcc"
+	"github.com/pion/bwe/gcc"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/logging"
 	"github.com/quic-go/quic-go/quicvarint"
@@ -381,8 +381,14 @@ func (t *Transport) feedbackReceiver() {
 			targetRate = uint(t.nada.OnAcks(t.lastRTT.lastRtt, acks.PacketEvents))
 		}
 		if t.bwe != nil {
-			gccAcks := acks.getGCCacks()
-			targetRate = uint(t.bwe.OnAcks(time.Now(), t.lastRTT.lastRtt, gccAcks))
+			for _, pe := range acks.PacketEvents {
+				if pe.Arrived {
+					t.bwe.OnAck(pe.SeqNr, int(pe.SizeBit/8), pe.Departure, pe.Arrival)
+				} else {
+					t.bwe.OnLoss()
+				}
+			}
+			targetRate = uint(t.bwe.OnFeedback(time.Now(), t.lastRTT.lastRtt))
 		}
 
 		if t.SetSourceTargetRate != nil {
