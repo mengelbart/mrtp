@@ -30,7 +30,7 @@ func (f *PacingInterceptorFactory) NewInterceptor(id string) (interceptor.Interc
 
 	i := &PacingInterceptor{
 		NoOp:   interceptor.NoOp{},
-		limit:  rate.NewLimiter(rate.Limit(750_000), 1200*8*2),
+		limit:  rate.NewLimiter(rate.Limit(750_000), 1500*8),
 		closed: make(chan struct{}),
 		wg:     sync.WaitGroup{},
 		queue:  make(chan packet, 1_000_000),
@@ -51,6 +51,8 @@ func (f *PacingInterceptorFactory) SetRate(id string, r int) {
 		return
 	}
 	i.limit.SetLimit(rate.Limit(r))
+	burst := 8 * (float64(r) / 200)
+	i.limit.SetBurst(int(burst))
 }
 
 type packet struct {
@@ -109,7 +111,7 @@ func (p *PacingInterceptor) loop() {
 		case now := <-ticker.C:
 			sent := 0
 			for len(queue) > 0 && p.limit.TokensAt(now) > 8*float64(queue[0].len()) {
-				p.limit.AllowN(now, queue[0].len())
+				p.limit.AllowN(now, 8*queue[0].len())
 				var next packet
 				next, queue = queue[0], queue[1:]
 				n, err := next.writer.Write(next.header, next.payload, next.attributes)
