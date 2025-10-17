@@ -120,6 +120,12 @@ Usage:
 		}),
 	}
 
+	if flags.TraceRTPRecv {
+		webrtcOptions = append(webrtcOptions, webrtc.EnableRTPRecvTraceLogging())
+	}
+	if flags.TraceRTPSend {
+		webrtcOptions = append(webrtcOptions, webrtc.EnableRTPSendTraceLogging())
+	}
 	if pionCCFB {
 		webrtcOptions = append(webrtcOptions, webrtc.EnableCCFB())
 	}
@@ -143,12 +149,6 @@ Usage:
 	}
 	if flags.CCnada {
 		webrtcOptions = append(webrtcOptions, webrtc.EnableNADA(750_000, 150_000, flags.MaxTargetRate))
-	}
-	if flags.TraceRTPRecv {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableRTPRecvTraceLogging())
-	}
-	if flags.TraceRTPSend {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableRTPSendTraceLogging())
 	}
 
 	connectedCtx, cancelConnectedCtx := context.WithCancel(context.Background())
