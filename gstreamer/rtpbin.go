@@ -91,6 +91,10 @@ func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
 	return r, nil
 }
 
+func (r *RTPBin) Pipeline() *gst.Pipeline {
+	return r.pipeline
+}
+
 func (r *RTPBin) Run() error {
 	return runPipeline(r.pipeline)
 }
