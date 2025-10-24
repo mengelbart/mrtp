@@ -7,29 +7,12 @@ import (
 	"github.com/quic-go/quic-go/quicvarint"
 )
 
-type PacketEvents struct {
-	PacketEvents []nada.Acknowledgment
-}
-
-func NewPacketEvents() *PacketEvents {
-	return &PacketEvents{
-		PacketEvents: make([]nada.Acknowledgment, 0),
-	}
-}
-
-func (ps *PacketEvents) AddEvent(p nada.Acknowledgment) {
-	ps.PacketEvents = append(ps.PacketEvents, p)
-}
-
-func (ps *PacketEvents) Empty() {
-	ps.PacketEvents = make([]nada.Acknowledgment, 0)
-}
-
-func (ps *PacketEvents) Marshal() ([]byte, error) {
+func Marshal(eventChan chan nada.Acknowledgment, readLen int) ([]byte, error) {
 	buf := make([]byte, 0)
-	buf = quicvarint.Append(buf, uint64(len(ps.PacketEvents)))
+	buf = quicvarint.Append(buf, uint64(readLen))
 
-	for _, p := range ps.PacketEvents {
+	for range readLen {
+		p := <-eventChan
 		deparuredTs := uint64(p.Departure.UnixMicro())
 		arrivedTs := uint64(p.Arrival.UnixMicro())
 		owd := arrivedTs - deparuredTs
@@ -50,16 +33,14 @@ func (ps *PacketEvents) Marshal() ([]byte, error) {
 	return buf, nil
 }
 
-func UnmarshalFeedback(buf []byte) (PacketEvents, error) {
-	var ps PacketEvents
+func UnmarshalFeedback(buf []byte) ([]nada.Acknowledgment, error) {
 	var err error
-
-	ps.PacketEvents = make([]nada.Acknowledgment, 0)
+	packetEvents := make([]nada.Acknowledgment, 0)
 
 	// read the number of packets
 	numPackets, n, err := quicvarint.Parse(buf)
 	if n < 0 {
-		return PacketEvents{}, err
+		return nil, err
 	}
 	buf = buf[n:]
 
@@ -70,13 +51,13 @@ func UnmarshalFeedback(buf []byte) (PacketEvents, error) {
 
 		p.SeqNr, n, err = quicvarint.Parse(buf)
 		if n < 0 {
-			return PacketEvents{}, err
+			return nil, err
 		}
 		buf = buf[n:]
 
 		departureMicro, n, err := quicvarint.Parse(buf)
 		if n < 0 {
-			return PacketEvents{}, err
+			return nil, err
 		}
 
 		p.Departure = time.UnixMicro(int64(departureMicro))
@@ -84,26 +65,26 @@ func UnmarshalFeedback(buf []byte) (PacketEvents, error) {
 
 		owd, n, err := quicvarint.Parse(buf)
 		if n < 0 {
-			return PacketEvents{}, err
+			return nil, err
 		}
 		p.Arrival = time.UnixMicro(int64(departureMicro + owd))
 		buf = buf[n:]
 
 		p.SizeBit, n, err = quicvarint.Parse(buf)
 		if n < 0 {
-			return PacketEvents{}, err
+			return nil, err
 		}
 		buf = buf[n:]
 
 		marked, n, err := quicvarint.Parse(buf)
 		if n < 0 {
-			return PacketEvents{}, err
+			return nil, err
 		}
 		buf = buf[n:]
 		p.Marked = marked == 1
 
-		ps.PacketEvents = append(ps.PacketEvents, p)
+		packetEvents = append(packetEvents, p)
 	}
 
-	return ps, nil
+	return packetEvents, nil
 }

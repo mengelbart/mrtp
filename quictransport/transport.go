@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
+	"log/slog"
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
@@ -35,12 +35,12 @@ type Transport struct {
 	bwe           *gcc.SendSideController
 	feedbackDelta uint64 // ms
 
-	lastRTT          *RTT
-	lostPackets      *PacketEvents
-	receivedPackets  *PacketEvents
+	lastRTT         *RTT
+	lostPackets     chan nada.Acknowledgment
+	receivedPackets chan nada.Acknowledgment
+
 	sendNadaFeedback bool
 	quicCC           int
-	mtx              sync.Mutex
 	qlogWriter       io.WriteCloser
 
 	SetSourceTargetRate func(ratebps uint) error
@@ -62,7 +62,7 @@ func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint, feedback
 
 		nadaSo := nada.NewSenderOnly(nadaConfig)
 		t.nada = &nadaSo
-		t.lostPackets = NewPacketEvents()
+		t.lostPackets = make(chan nada.Acknowledgment, 1000)
 		return nil
 	}
 }
@@ -72,7 +72,7 @@ func EnableGCC(initRate, minRate, maxRate int, feedbackChannelFlowID uint64) Opt
 		// TODO: add pion logger
 		var err error
 		t.bwe, err = gcc.NewSendSideController(initRate, minRate, maxRate)
-		t.lostPackets = NewPacketEvents()
+		t.lostPackets = make(chan nada.Acknowledgment, 1000)
 		t.feedbackChannelFlowID = feedbackChannelFlowID
 		return err
 	}
@@ -100,7 +100,7 @@ func EnableNADAfeedback(feedbackDelta, feedbackChannelFlowID uint64) Option {
 	return func(t *Transport) error {
 		t.feedbackChannelFlowID = feedbackChannelFlowID
 		t.sendNadaFeedback = true
-		t.receivedPackets = NewPacketEvents()
+		t.receivedPackets = make(chan nada.Acknowledgment, 1000)
 		t.feedbackDelta = feedbackDelta
 		return nil
 	}
@@ -143,12 +143,22 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 	}
 
 	addLostPacket := func(ack nada.Acknowledgment) {
-		t.lostPackets.AddEvent(ack)
+		select {
+		case t.lostPackets <- ack:
+			// Successfully added
+		default:
+			// quic-go drops the packet if tracer takes too long: "dos_prevention"
+			slog.Info("quictransport packet nack dropped", "reason", "tracer buffered channel full")
+		}
 	}
 	addReceivedPacket := func(ack nada.Acknowledgment) {
-		t.mtx.Lock()
-		defer t.mtx.Unlock()
-		t.receivedPackets.AddEvent(ack)
+		select {
+		case t.receivedPackets <- ack:
+			// Successfully added
+		default:
+			// quic-go drops the packet if tracer takes too long: "dos_prevention"
+			slog.Info("quictransport packet dropped", "reason", "tracer buffered channel full")
+		}
 	}
 
 	if t.role == quicutils.RoleServer {
@@ -307,11 +317,11 @@ func (t *Transport) sendFeedback() {
 
 	for {
 		time.Sleep(time.Duration(t.feedbackDelta) * time.Millisecond)
-		t.mtx.Lock()
+		lenChan := len(t.receivedPackets)
 
 		// If small enough, send as-is
-		if len(t.receivedPackets.PacketEvents) <= maxEventsPerDatagram {
-			data, err := t.receivedPackets.Marshal()
+		if lenChan <= maxEventsPerDatagram {
+			data, err := Marshal(t.receivedPackets, lenChan)
 			if err != nil {
 				panic(err)
 			}
@@ -320,21 +330,14 @@ func (t *Transport) sendFeedback() {
 				panic(err)
 			}
 
-			// Clear the event history
-			t.receivedPackets.Empty()
-			t.mtx.Unlock()
 			continue
 		}
 
 		// Split into batches
-		for i := 0; i < len(t.receivedPackets.PacketEvents); i += maxEventsPerDatagram {
-			end := min(i+maxEventsPerDatagram, len(t.receivedPackets.PacketEvents))
+		for i := 0; i < lenChan; i += maxEventsPerDatagram {
+			segmentSize := min(lenChan-i, maxEventsPerDatagram)
 
-			batch := &PacketEvents{
-				PacketEvents: t.receivedPackets.PacketEvents[i:end],
-			}
-
-			data, err := batch.Marshal()
+			data, err := Marshal(t.receivedPackets, segmentSize)
 			if err != nil {
 				panic(err)
 			}
@@ -343,12 +346,7 @@ func (t *Transport) sendFeedback() {
 			if err != nil {
 				panic(err)
 			}
-
 		}
-
-		// Clear the event history
-		t.receivedPackets.Empty()
-		t.mtx.Unlock()
 	}
 }
 
@@ -371,17 +369,20 @@ func (t *Transport) feedbackReceiver() {
 			panic(err)
 		}
 
-		// append losses
-		acks.PacketEvents = append(acks.PacketEvents, t.lostPackets.PacketEvents...)
-		t.lostPackets.Empty()
+		// append losses/nacks
+		lossCount := len(t.lostPackets)
+		for range lossCount {
+			nack := <-t.lostPackets
+			acks = append(acks, nack)
+		}
 
 		// register feedback with cc
 		var targetRate uint
 		if t.nada != nil {
-			targetRate = uint(t.nada.OnAcks(t.lastRTT.lastRtt, acks.PacketEvents))
+			targetRate = uint(t.nada.OnAcks(t.lastRTT.lastRtt, acks))
 		}
 		if t.bwe != nil {
-			for _, pe := range acks.PacketEvents {
+			for _, pe := range acks {
 				if pe.Arrived {
 					t.bwe.OnAck(pe.SeqNr, int(pe.SizeBit/8), pe.Departure, pe.Arrival)
 				} else {
