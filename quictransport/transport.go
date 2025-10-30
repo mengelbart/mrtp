@@ -58,6 +58,7 @@ func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint, feedback
 			StartRate:                uint64(initRate),
 			FeedbackDelta:            uint64(expectedFeedbackDelta), // ms
 			DeactivateQDelayWrapping: true,
+			RefCongLevel:             15, // ms
 		}
 
 		nadaSo := nada.NewSenderOnly(nadaConfig)
@@ -161,6 +162,11 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 		}
 	}
 
+	pacerType := quic.DefaultPacer
+	if t.nada != nil || t.bwe != nil {
+		pacerType = quic.RatePacer // TODO: make configurable
+	}
+
 	if t.role == quicutils.RoleServer {
 		quicConfig := &quic.Config{
 			EnableDatagrams:                true,
@@ -168,6 +174,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			MaxIncomingUniStreams:          quicvarint.Max,
 			CcType:                         quic.CCType(t.quicCC),
+			PacerType:                      pacerType,
 			SendTimestamps:                 true,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
 				if t.nada != nil || t.bwe != nil {
@@ -192,6 +199,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			MaxIncomingUniStreams:          quicvarint.Max,
 			CcType:                         quic.CCType(t.quicCC),
+			PacerType:                      pacerType,
 			SendTimestamps:                 true,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
 				if t.nada != nil || t.bwe != nil {
@@ -393,7 +401,12 @@ func (t *Transport) feedbackReceiver() {
 		}
 
 		if t.SetSourceTargetRate != nil {
+			// rate for source
 			t.SetSourceTargetRate(targetRate)
+
+			// rate for pacer
+			rateByte := uint(float64(targetRate) / 8 * 1.2) // TODO
+			t.quicConn.SetPacerRate(rateByte)
 		}
 	}
 }
