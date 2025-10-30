@@ -18,7 +18,7 @@ require (
 	github.com/pion/sdp/v2 v2.4.0
 	github.com/pion/transport/v3 v3.0.8
 	github.com/pion/webrtc/v4 v4.1.4
-	github.com/quic-go/quic-go v0.54.0
+	github.com/quic-go/quic-go v0.55.0
 	github.com/stretchr/testify v1.11.1
 	github.com/wlynxg/anet v0.0.5
 	golang.org/x/sync v0.16.0
@@ -55,4 +55,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/quic-go/quic-go v0.54.0 => github.com/Willi-42/quic-go v0.3.0
+replace github.com/quic-go/quic-go v0.55.0 => github.com/Willi-42/quic-go v0.4.0
