@@ -103,7 +103,11 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 		}
 		followUpElms = append(followUpElms, s.encoder, pay)
 	case mrtp.VP8:
-		settings := map[string]any{"deadline": 1}
+		settings := map[string]any{
+			"deadline":        1, // real time
+			"cpu-used":        5, // quality/speed
+			"error-resilient": 1, // better for packet loss
+		}
 		s.encoder, err = gst.NewElementWithProperties("vp8enc", settings)
 		if err != nil {
 			return nil, err
