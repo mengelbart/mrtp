@@ -103,6 +103,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.CCnadaFlag,
 		flags.MaxTragetRateFlag,
 		flags.QuicCCFlag,
+		flags.QuicPacerFlag,
 		flags.LogQuicFlag,
 		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
@@ -132,8 +133,20 @@ Flags:
 		os.Exit(1)
 	}
 
-	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.LogQuic) && !(flags.RoQServer || flags.RoQClient) {
+	if flags.QuicPacer > 1 {
+		fmt.Printf("error: invalid quic-pacer value, must be 0 or 1\n")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || flags.LogQuic) && !(flags.RoQServer || flags.RoQClient) {
 		fmt.Printf("Flags -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, flags.LogQuicFlag)
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	if flags.QuicPacer == 1 && !(flags.CCnada || flags.CCgcc) {
+		fmt.Printf("Flag -%v can only be used with NADA or GCC\n", flags.QuicPacerFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -189,6 +202,7 @@ Flags:
 			quictransport.SetQuicCC(int(flags.QuicCC)),
 			quictransport.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
 			quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
+			quictransport.WithPacer(int(flags.QuicPacer)),
 		}
 
 		initRate := 750_000 * (100 - dcPercatage) / 100

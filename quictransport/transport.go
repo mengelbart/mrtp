@@ -40,7 +40,8 @@ type Transport struct {
 	receivedPackets chan nada.Acknowledgment
 
 	sendNadaFeedback bool
-	quicCC           int
+	quicCC           quic.CCType
+	pacerType        quic.PacerType
 	qlogWriter       io.WriteCloser
 
 	SetSourceTargetRate func(ratebps uint) error
@@ -92,7 +93,7 @@ func SetQuicCC(quicCC int) Option {
 			return errors.New("invalid quic CC value, must be 0, 1 or 2")
 		}
 
-		t.quicCC = quicCC
+		t.quicCC = quic.CCType(quicCC)
 		return nil
 	}
 }
@@ -124,6 +125,17 @@ func SetRemoteAdress(address string, port uint) Option {
 func EnableQLogs(qlogWriter io.WriteCloser) Option {
 	return func(t *Transport) error {
 		t.qlogWriter = qlogWriter
+		return nil
+	}
+}
+
+func WithPacer(pacerType int) Option {
+	return func(t *Transport) error {
+		if pacerType < 0 || pacerType > 1 {
+			return errors.New("invalid quic pacer value, must be 0 or 1")
+		}
+
+		t.pacerType = quic.PacerType(pacerType)
 		return nil
 	}
 }
@@ -162,11 +174,6 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 		}
 	}
 
-	pacerType := quic.DefaultPacer
-	if t.nada != nil || t.bwe != nil {
-		pacerType = quic.RatePacer // TODO: make configurable
-	}
-
 	sendTimestamps := false
 	if t.nada != nil || t.bwe != nil || t.sendNadaFeedback {
 		sendTimestamps = true
@@ -178,8 +185,8 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			MaxIncomingUniStreams:          quicvarint.Max,
-			CcType:                         quic.CCType(t.quicCC),
-			PacerType:                      pacerType,
+			CcType:                         t.quicCC,
+			PacerType:                      t.pacerType,
 			SendTimestamps:                 sendTimestamps,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
 				if t.nada != nil || t.bwe != nil {
@@ -203,8 +210,8 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			MaxIncomingUniStreams:          quicvarint.Max,
-			CcType:                         quic.CCType(t.quicCC),
-			PacerType:                      pacerType,
+			CcType:                         t.quicCC,
+			PacerType:                      t.pacerType,
 			SendTimestamps:                 sendTimestamps,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
 				if t.nada != nil || t.bwe != nil {
