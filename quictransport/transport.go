@@ -167,6 +167,11 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 		pacerType = quic.RatePacer // TODO: make configurable
 	}
 
+	sendTimestamps := false
+	if t.nada != nil || t.bwe != nil || t.sendNadaFeedback {
+		sendTimestamps = true
+	}
+
 	if t.role == quicutils.RoleServer {
 		quicConfig := &quic.Config{
 			EnableDatagrams:                true,
@@ -175,7 +180,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			MaxIncomingUniStreams:          quicvarint.Max,
 			CcType:                         quic.CCType(t.quicCC),
 			PacerType:                      pacerType,
-			SendTimestamps:                 true,
+			SendTimestamps:                 sendTimestamps,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
 				if t.nada != nil || t.bwe != nil {
 					return newSenderTracers(p, id, addLostPacket, t.lastRTT, t.qlogWriter)
@@ -200,7 +205,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			MaxIncomingUniStreams:          quicvarint.Max,
 			CcType:                         quic.CCType(t.quicCC),
 			PacerType:                      pacerType,
-			SendTimestamps:                 true,
+			SendTimestamps:                 sendTimestamps,
 			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
 				if t.nada != nil || t.bwe != nil {
 					return newSenderTracers(p, id, addLostPacket, t.lastRTT, t.qlogWriter)
