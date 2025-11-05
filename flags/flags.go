@@ -57,8 +57,9 @@ const (
 	MaxTragetRateFlag FlagName = "max-target-rate"
 	NadaFeedbackFlag  FlagName = "nada-feedback"
 
-	QuicCCFlag  FlagName = "quic-cc"
-	LogQuicFlag FlagName = "log-quic"
+	QuicCCFlag    FlagName = "quic-cc"
+	QuicPacerFlag FlagName = "quic-pacer"
+	LogQuicFlag   FlagName = "log-quic"
 
 	DataChannelFlag FlagName = "dc"
 )
@@ -116,7 +117,8 @@ var (
 	// MaxTargetRate is the max target rate in bits per second
 	MaxTargetRate = uint(3_000_000) // 3 Mbps
 
-	QuicCC = uint(0)
+	QuicCC    = uint(0)
+	QuicPacer = uint(0)
 
 	LogQuic = false
 )
@@ -189,8 +191,9 @@ var flags = map[FlagName]flagVar{
 	NadaFeedbackFlag:  boolVar(&NadaFeedback, NadaFeedbackFlag, &NadaFeedback, "Send NADA feedback"),
 
 	// QUIC flags
-	QuicCCFlag:  uintVar(&QuicCC, QuicCCFlag, &QuicCC, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer"),
-	LogQuicFlag: boolVar(&LogQuic, LogQuicFlag, &LogQuic, "Log quic internal events"),
+	QuicCCFlag:    uintVar(&QuicCC, QuicCCFlag, &QuicCC, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer"),
+	QuicPacerFlag: uintVar(&QuicPacer, QuicPacerFlag, &QuicPacer, "Which quic pacer to use. 0: default, 1: rate based pacer"),
+	LogQuicFlag:   boolVar(&LogQuic, LogQuicFlag, &LogQuic, "Log quic internal events"),
 }
 
 func RegisterInto(fs *flag.FlagSet, names ...FlagName) {

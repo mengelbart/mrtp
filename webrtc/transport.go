@@ -142,6 +142,7 @@ func EnableNADA(initRate, minRate, maxRate uint) Option {
 			StartRate:                uint64(initRate),
 			FeedbackDelta:            uint64(feedbackInterval / time.Millisecond), // convert to ms
 			DeactivateQDelayWrapping: true,
+			RefCongLevel:             15, // ms
 		}
 
 		nada := nada.NewSenderOnly(nadaConfig)
