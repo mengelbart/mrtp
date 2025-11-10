@@ -106,7 +106,7 @@ Usage:
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
 			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()))
 			if newSinkErr != nil {
-				panic(err)
+				panic(newSinkErr)
 			}
 			if pipelineErr := pipeline.AddRTPSink(0, sink); pipelineErr != nil {
 				panic(pipelineErr)

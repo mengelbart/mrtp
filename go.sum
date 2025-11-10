@@ -87,6 +87,8 @@ github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6 h1:Cyix8k5mbv9tt
 github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6/go.mod h1:M9XURUQ2cyWxdROyS089cs3J02jnkoGECcbCUZT/UJs=
 github.com/mengelbart/roq v0.3.1-0.20250904124336-5b57f8dff945 h1:Z5OpnzP7pQkKg8BcQN8rRvBLKZoec6dXKBsm4OdScDU=
 github.com/mengelbart/roq v0.3.1-0.20250904124336-5b57f8dff945/go.mod h1:N5tnzwgmzLDtxtZJx7HVPazUobLw1G2qChyrtQfCZ/c=
+github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241 h1:Ajaio921fnNza2OjPEBABQ0wf9brLJIy4MRLIkm2ubs=
+github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241/go.mod h1:m69ePnJwKo/gWrDPku9gWRcnw6pRyDiQQPxWsQnO9/o=
 github.com/microcosm-cc/bluemonday v1.0.1/go.mod h1:hsXNsILzKxV+sX77C5b8FSuKF00vh2OMYv+xgHpAMF4=
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
 github.com/modern-go/reflect2 v1.0.1/go.mod h1:bx2lNnkwVCuqBIxFjflWJWanXIb3RllmbCylyMrvgv0=

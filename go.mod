@@ -1,6 +1,6 @@
 module github.com/mengelbart/mrtp
 
-go 1.25
+go 1.25.2
 
 require (
 	github.com/Willi-42/go-nada v0.0.0-20250918135705-6a600030be0b
@@ -11,6 +11,7 @@ require (
 	github.com/mengelbart/qlog v0.1.0
 	github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6
 	github.com/mengelbart/roq v0.3.1-0.20250904124336-5b57f8dff945
+	github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241
 	github.com/pion/bwe v0.0.0-20251016094233-195285a437f6
 	github.com/pion/interceptor v0.1.42-0.20251016092317-ce5124bd6cdf
 	github.com/pion/rtcp v1.2.16-0.20251011202153-8aedb55aecbf
