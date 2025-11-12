@@ -128,6 +128,18 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 		return nil, fmt.Errorf("unknown codec: %v", s.codec)
 	}
 
+	// probe to log pts before ecnoder
+	encSinkPad := s.encoder.GetStaticPad("sink")
+	encSinkPad.AddProbe(gst.PadProbeTypeBuffer, getFrameProbe("encoder sink"))
+
+	// probe to log pts after encoder
+	encSrcPad := s.encoder.GetStaticPad("src")
+	encSrcPad.AddProbe(gst.PadProbeTypeBuffer, getFrameProbe("encoder src"))
+
+	// probe to log mapping PTS -> RTP timestamp
+	paySrcPad := pay.GetStaticPad("src")
+	paySrcPad.AddProbe(gst.PadProbeTypeBuffer, getRTPtoPTSMappingProbe("rtp to pts mapping"))
+
 	switch s.source {
 	case Videotestsrc:
 		vts, err := gst.NewElement("videotestsrc")

@@ -75,13 +75,14 @@ func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 
 	var err error
 	var depay *gst.Element
+	var dec *gst.Element
 	switch s.codec {
 	case mrtp.H264:
 		depay, err = gst.NewElement("rtph264depay")
 		if err != nil {
 			return nil, err
 		}
-		dec, err := gst.NewElement("avdec_h264")
+		dec, err = gst.NewElement("avdec_h264")
 		if err != nil {
 			return nil, err
 		}
@@ -95,7 +96,7 @@ func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 		if err != nil {
 			return nil, err
 		}
-		dec, err := gst.NewElement("vp8dec")
+		dec, err = gst.NewElement("vp8dec")
 		if err != nil {
 			return nil, err
 		}
@@ -107,6 +108,10 @@ func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 	default:
 		return nil, fmt.Errorf("unknown codec: %v", s.codec)
 	}
+
+	// probe to log mapping RTP timestamp -> PTS
+	depaySinkPad := depay.GetStaticPad("sink")
+	depaySinkPad.AddProbe(gst.PadProbeTypeBuffer, getRTPtoPTSMappingProbe("rtp to pts mapping"))
 
 	switch s.sinkType {
 	case Autovideosink:
@@ -136,6 +141,10 @@ func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 	default:
 		return nil, fmt.Errorf("unknown sink format: %v", s.sinkType)
 	}
+
+	// probe to log pts after decoder
+	decSrcPad := dec.GetStaticPad("src")
+	decSrcPad.AddProbe(gst.PadProbeTypeBuffer, getFrameProbe("decoder src"))
 
 	if err := s.bin.AddMany(s.elements...); err != nil {
 		return nil, err
