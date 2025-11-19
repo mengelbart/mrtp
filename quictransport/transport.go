@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 	"github.com/mengelbart/mrtp/quicutils"
 	"github.com/pion/bwe/gcc"
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/logging"
+	"github.com/quic-go/quic-go/qlogwriter"
 	"github.com/quic-go/quic-go/quicvarint"
 )
 
@@ -42,7 +41,7 @@ type Transport struct {
 	sendNadaFeedback bool
 	quicCC           quic.CCType
 	pacerType        quic.PacerType
-	qlogWriter       io.WriteCloser
+	qlogFile         string
 
 	SetSourceTargetRate func(ratebps uint) error
 	HandleUintStream    func(flowID uint64, rs *quic.ReceiveStream)
@@ -122,9 +121,9 @@ func SetRemoteAdress(address string, port uint) Option {
 	}
 }
 
-func EnableQLogs(qlogWriter io.WriteCloser) Option {
+func EnableQLogs(qlogFile string) Option {
 	return func(t *Transport) error {
-		t.qlogWriter = qlogWriter
+		t.qlogFile = qlogFile
 		return nil
 	}
 }
@@ -146,7 +145,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 		lastRTT:         &RTT{},
 		lostPackets:     nil,
 		receivedPackets: nil,
-		qlogWriter:      nil,
+		qlogFile:        "",
 	}
 
 	for _, opt := range opts {
@@ -188,14 +187,14 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			CcType:                         t.quicCC,
 			PacerType:                      t.pacerType,
 			SendTimestamps:                 sendTimestamps,
-			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
+			Tracer: func(ctx context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
 				if t.nada != nil || t.bwe != nil {
-					return newSenderTracers(p, id, addLostPacket, t.lastRTT, t.qlogWriter)
+					return senderTracers(ctx, isClient, connID, addLostPacket, t.lastRTT, t.qlogFile)
 				}
 				if t.sendNadaFeedback {
-					return receiveTracer(p, id, addReceivedPacket, t.qlogWriter)
+					return receiveTracer(ctx, isClient, connID, addReceivedPacket, t.qlogFile)
 				}
-				return onlyQlogTracer(p, id, t.qlogWriter)
+				return createQlogTracer(ctx, isClient, connID, t.qlogFile)
 			},
 		}
 
@@ -213,14 +212,14 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			CcType:                         t.quicCC,
 			PacerType:                      t.pacerType,
 			SendTimestamps:                 sendTimestamps,
-			Tracer: func(ctx context.Context, p logging.Perspective, id quic.ConnectionID) *logging.ConnectionTracer {
+			Tracer: func(ctx context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
 				if t.nada != nil || t.bwe != nil {
-					return newSenderTracers(p, id, addLostPacket, t.lastRTT, t.qlogWriter)
+					return senderTracers(ctx, isClient, connID, addLostPacket, t.lastRTT, t.qlogFile)
 				}
 				if t.sendNadaFeedback {
-					return receiveTracer(p, id, addReceivedPacket, t.qlogWriter)
+					return receiveTracer(ctx, isClient, connID, addReceivedPacket, t.qlogFile)
 				}
-				return onlyQlogTracer(p, id, t.qlogWriter)
+				return createQlogTracer(ctx, isClient, connID, t.qlogFile)
 			},
 		}
 

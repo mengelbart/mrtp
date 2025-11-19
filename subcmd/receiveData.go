@@ -64,11 +64,7 @@ Flags:
 	}
 
 	if flags.LogQuic {
-		qlogWriter, err := os.Create("./receiver.qlog")
-		if err != nil {
-			return err
-		}
-		quicOptions = append(quicOptions, quictransport.EnableQLogs(qlogWriter))
+		quicOptions = append(quicOptions, quictransport.EnableQLogs("./receiver.qlog"))
 	}
 
 	quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)
