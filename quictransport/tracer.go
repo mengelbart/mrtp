@@ -2,16 +2,15 @@ package quictransport
 
 import (
 	"context"
-	"io"
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/logging"
-	quicgoqlog "github.com/quic-go/quic-go/qlog"
+	"github.com/quic-go/quic-go/qlog"
+	"github.com/quic-go/quic-go/qlogwriter"
 )
 
-type TimestampCallback func(nada.Acknowledgment)
+type ReceivedCallback func(nada.Acknowledgment)
 type OnLossEventFunc func(nada.Acknowledgment)
 
 type RTT struct {
@@ -19,104 +18,78 @@ type RTT struct {
 }
 
 // getTimestamp returns ok=true if found timestmap, ok=false otherwise
-func getTimestamp(frames []logging.Frame) (sentTs uint64, ok bool) {
+func getTimestamp(frames []qlog.Frame) (sentTs uint64, ok bool) {
 	// search for ts frame
-	sentTs = uint64(0)
-	ok = false
-
-	// get Timestamp and check for data
 	for _, f := range frames {
-		switch frame := f.(type) {
-		case *logging.TimestampFrame:
-			sentTs = frame.Timestamp
-			ok = true
+		if tsframe, ok := f.Frame.(*qlog.TimestampFrame); ok {
+			return tsframe.Timestamp, true
 		}
 	}
 
-	return sentTs, ok
+	return 0, false
 }
 
-func newTsTracer(tsCallback TimestampCallback) *logging.ConnectionTracer {
-	return &logging.ConnectionTracer{
-		ReceivedShortHeaderPacket: func(
-			header *logging.ShortHeader,
-			byteCnt logging.ByteCount,
-			ecn logging.ECN,
-			frames []logging.Frame,
-		) {
-			sentTs, ok := getTimestamp(frames)
-			if !ok {
-				return
-			}
+func catchRecvEvent(event qlogwriter.Event, tsCallback ReceivedCallback) {
+	switch e := event.(type) {
+	case qlog.PacketReceived:
+		sentTs, ok := getTimestamp(e.Frames)
+		if !ok {
+			return
+		}
 
-			packet := nada.Acknowledgment{
-				SeqNr:     uint64(header.PacketNumber),
-				Departure: time.UnixMicro(int64(sentTs)),
-				Marked:    false, // TODO
-				SizeBit:   uint64(byteCnt) * 8,
-				Arrival:   time.Now(),
-				Arrived:   true,
-			}
+		packet := nada.Acknowledgment{
+			SeqNr:     uint64(e.Header.PacketNumber),
+			Departure: time.UnixMicro(int64(sentTs)),
+			Marked:    false, // TODO
+			SizeBit:   uint64(e.Raw.Length) * 8,
+			Arrival:   time.Now(),
+			Arrived:   true,
+		}
 
-			// give the information back to the callback for the CC.
-			tsCallback(packet)
-		},
+		// give the information back to the callback for the CC.
+		tsCallback(packet)
 	}
 }
 
-func receiveTracer(p logging.Perspective, id quic.ConnectionID, tsCallback TimestampCallback, qlogWriter io.WriteCloser) *logging.ConnectionTracer {
-	qlogTracer := onlyQlogTracer(p, id, qlogWriter)
-
-	tracers := []*logging.ConnectionTracer{newTsTracer(tsCallback)}
-	if qlogTracer != nil {
-		tracers = append(tracers, qlogTracer)
-	}
-
-	return logging.NewMultiplexedConnectionTracer(tracers...)
-}
-
-func newRttAndLossTracer(rtt *RTT, onLossEventFunc OnLossEventFunc) *logging.ConnectionTracer {
-	return &logging.ConnectionTracer{
-		UpdatedMetrics: func(
-			rttStats *logging.RTTStats,
-			cwnd, bytesInFlight logging.ByteCount,
-			packetsInFlight int,
-		) {
-			rtt.lastRtt = rttStats.LatestRTT()
-		},
-		LostPacket: func(_ logging.EncryptionLevel, pn logging.PacketNumber, _ logging.PacketLossReason) {
-			if onLossEventFunc != nil {
-				onLossEventFunc(nada.Acknowledgment{SeqNr: uint64(pn), Departure: time.Now()})
-			}
-		},
+func catchRTTandLossEvent(event qlogwriter.Event, rtt *RTT, onLossEventFunc OnLossEventFunc) {
+	switch e := event.(type) {
+	case qlog.MetricsUpdated:
+		rtt.lastRtt = e.LatestRTT
+	case qlog.PacketLost:
+		if onLossEventFunc != nil {
+			onLossEventFunc(nada.Acknowledgment{SeqNr: uint64(e.Header.PacketNumber), Departure: time.Now()})
+		}
 	}
 }
 
-func newSenderTracers(
-	p logging.Perspective,
-	id quic.ConnectionID,
+func receiveTracer(ctx context.Context, isClient bool, connID quic.ConnectionID, recvCallback ReceivedCallback, qlogFile string) qlogwriter.Trace {
+	tsTracer := func(event qlogwriter.Event) {
+		catchRecvEvent(event, recvCallback)
+	}
+
+	qlogTracer := createQlogTracer(ctx, isClient, connID, qlogFile)
+
+	return newTracer(qlogTracer, tsTracer)
+}
+
+func senderTracers(
+	ctx context.Context, isClient bool, connID quic.ConnectionID,
 	onLossEvent OnLossEventFunc,
 	lastRtt *RTT,
-	qlogWriter io.WriteCloser,
-) *logging.ConnectionTracer {
-	rttLossTracer := newRttAndLossTracer(lastRtt, onLossEvent)
-	tracers := []*logging.ConnectionTracer{rttLossTracer}
-
-	qlogTracer := onlyQlogTracer(p, id, qlogWriter)
-	if qlogTracer != nil {
-		tracers = append(tracers, qlogTracer)
+	qlogFile string,
+) qlogwriter.Trace {
+	rttLossTracer := func(event qlogwriter.Event) {
+		catchRTTandLossEvent(event, lastRtt, onLossEvent)
 	}
 
-	return logging.NewMultiplexedConnectionTracer(tracers...)
+	qlogTracer := createQlogTracer(ctx, isClient, connID, qlogFile)
+
+	return newTracer(qlogTracer, rttLossTracer)
 }
 
-func onlyQlogTracer(p logging.Perspective, id quic.ConnectionID, qlogWriter io.WriteCloser) *logging.ConnectionTracer {
-	var qlogTracer *logging.ConnectionTracer
-	if qlogWriter != nil {
-		qlogTracer = quicgoqlog.NewConnectionTracer(qlogWriter, p, id)
-	} else {
-		qlogTracer = quicgoqlog.DefaultConnectionTracer(context.TODO(), p, id)
+func createQlogTracer(ctx context.Context, isClient bool, connID quic.ConnectionID, qlogFile string) qlogwriter.Trace {
+	if qlogFile != "" {
+		return qlog.DefaultConnectionTracerWithName(ctx, isClient, connID, qlogFile)
 	}
-
-	return qlogTracer
+	return qlog.DefaultConnectionTracer(ctx, isClient, connID)
 }

@@ -215,11 +215,7 @@ Flags:
 			quicOptions = append(quicOptions, quictransport.EnableGCC(int(initRate), 150_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
 		}
 		if flags.LogQuic {
-			qlogWriter, err := os.Create("./sender.qlog")
-			if err != nil {
-				return err
-			}
-			quicOptions = append(quicOptions, quictransport.EnableQLogs(qlogWriter))
+			quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
 		}
 
 		// open quic connection

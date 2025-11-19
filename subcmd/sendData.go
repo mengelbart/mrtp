@@ -84,11 +84,7 @@ Flags:
 	}
 
 	if flags.LogQuic {
-		qlogWriter, err := os.Create("./sender.qlog")
-		if err != nil {
-			return err
-		}
-		quicTOptions = append(quicTOptions, quictransport.EnableQLogs(qlogWriter))
+		quicTOptions = append(quicTOptions, quictransport.EnableQLogs("./sender.qlog"))
 	}
 
 	// open quic connection
