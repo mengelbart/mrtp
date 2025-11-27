@@ -135,10 +135,7 @@ func (d *DataBin) startRandomSource() error {
 
 func (d *DataBin) Run() error {
 	if d.useFileSrc {
-		err := d.startFileSource()
-		if err != nil {
-			return err
-		}
+		return d.startFileSource()
 	}
 
 	return d.startRandomSource()
