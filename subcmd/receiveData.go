@@ -10,8 +10,7 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/flags"
-	"github.com/mengelbart/mrtp/quictransport"
-	"github.com/mengelbart/mrtp/quicutils"
+	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/quic-go/quic-go"
 )
 
@@ -53,7 +52,7 @@ Flags:
 	fs.Parse(args)
 
 	quicOptions := []quictransport.Option{
-		quictransport.WithRole(quicutils.Role(quicutils.RoleServer)),
+		quictransport.WithRole(quictransport.Role(quictransport.RoleServer)),
 		quictransport.SetLocalAdress(flags.LocalAddr, 8080),
 		quictransport.SetRemoteAdress(flags.RemoteAddr, 8080),
 	}

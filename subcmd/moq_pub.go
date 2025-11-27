@@ -10,8 +10,8 @@ import (
 	"github.com/mengelbart/moqtransport/quicmoq"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
+	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/moq"
-	"github.com/mengelbart/mrtp/quicutils"
 	"github.com/quic-go/quic-go"
 )
 
@@ -58,7 +58,7 @@ Flags:
 		handler := &handler{
 			track: w,
 		}
-		l := quicutils.NewListener(handler)
+		l := quictransport.NewListener(handler)
 		err := l.ListenAndHandle(flags.LocalAddr, &quic.Config{
 			EnableDatagrams: true,
 		}, []string{"moq-00"})

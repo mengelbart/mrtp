@@ -9,7 +9,6 @@ import (
 
 	"github.com/Willi-42/go-nada/nada"
 	"github.com/mengelbart/mrtp/datachannels"
-	"github.com/mengelbart/mrtp/quicutils"
 	"github.com/pion/bwe/gcc"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/qlogwriter"
@@ -23,7 +22,7 @@ type Option func(*Transport) error
 // Only works with application data that use quicdc or roq format.
 type Transport struct {
 	quicConn              *quic.Conn
-	role                  quicutils.Role
+	role                  Role
 	localAddress          string
 	remoteAddress         string
 	feedbackChannelFlowID uint64
@@ -79,7 +78,7 @@ func EnableGCC(initRate, minRate, maxRate int, feedbackChannelFlowID uint64) Opt
 	}
 }
 
-func WithRole(r quicutils.Role) Option {
+func WithRole(r Role) Option {
 	return func(t *Transport) error {
 		t.role = r
 		return nil
@@ -141,7 +140,7 @@ func WithPacer(pacerType int) Option {
 
 func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 	t := &Transport{
-		role:            quicutils.RoleServer,
+		role:            RoleServer,
 		lastRTT:         &RTT{},
 		lostPackets:     nil,
 		receivedPackets: nil,
@@ -178,7 +177,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 		sendTimestamps = true
 	}
 
-	if t.role == quicutils.RoleServer {
+	if t.role == RoleServer {
 		quicConfig := &quic.Config{
 			EnableDatagrams:                true,
 			InitialStreamReceiveWindow:     quicvarint.Max,
@@ -199,7 +198,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 		}
 
 		var err error
-		t.quicConn, err = quicutils.OpenServerConn(t.localAddress, quicConfig, tlsNextProtos)
+		t.quicConn, err = OpenServerConn(t.localAddress, quicConfig, tlsNextProtos)
 		if err != nil {
 			return nil, err
 		}
@@ -224,7 +223,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 		}
 
 		var err error
-		t.quicConn, err = quicutils.OpenClientConn(t.remoteAddress, quicConfig, tlsNextProtos)
+		t.quicConn, err = OpenClientConn(t.remoteAddress, quicConfig, tlsNextProtos)
 		if err != nil {
 			return nil, err
 		}

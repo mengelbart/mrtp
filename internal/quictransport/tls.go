@@ -1,4 +1,4 @@
-package quicutils
+package quictransport
 
 import (
 	"crypto/rand"
@@ -11,7 +11,7 @@ import (
 	"math/big"
 )
 
-func GenerateTLSConfig(certFile, keyFile string, keyLog io.Writer, nextProtos []string) (*tls.Config, error) {
+func generateTLSConfig(certFile, keyFile string, keyLog io.Writer, nextProtos []string) (*tls.Config, error) {
 	tlsConfig, err := generateTLSConfigWithCertAndKey(certFile, keyFile, keyLog, nextProtos)
 	if err != nil {
 		log.Printf("failed to generate TLS config from cert file and key, generating in memory certs: %v", err)

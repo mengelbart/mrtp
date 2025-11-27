@@ -1,8 +1,7 @@
-package quicutils
+package quictransport
 
 import (
 	"context"
-	"crypto/tls"
 	"sync"
 
 	"github.com/quic-go/quic-go"
@@ -30,7 +29,7 @@ func NewListener(h QUICConnHandler) *Listener {
 }
 
 func (l *Listener) ListenAndHandle(localAddress string, quicConfig *quic.Config, tlsNextProtos []string) error {
-	tlsConfig, err := GenerateTLSConfig("", "", nil, tlsNextProtos)
+	tlsConfig, err := generateTLSConfig("", "", nil, tlsNextProtos)
 	if err != nil {
 		return err
 	}
@@ -53,28 +52,4 @@ func (l *Listener) Close() error {
 	l.cancel()
 	l.wg.Wait()
 	return nil
-}
-
-func OpenServerConn(localAddress string, quicConfig *quic.Config, tlsNextProtos []string) (*quic.Conn, error) {
-	tlsConfig, err := GenerateTLSConfig("", "", nil, tlsNextProtos)
-	if err != nil {
-		return nil, err
-	}
-	listener, err := quic.ListenAddr(localAddress, tlsConfig, quicConfig)
-	if err != nil {
-		return nil, err
-	}
-	conn, err := listener.Accept(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
-	return conn, nil
-}
-
-func OpenClientConn(remoteAddress string, quicConfig *quic.Config, tlsNextProtos []string) (*quic.Conn, error) {
-	return quic.DialAddr(context.TODO(), remoteAddress, &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         tlsNextProtos,
-	}, quicConfig)
 }
