@@ -3,7 +3,7 @@ package roq
 import (
 	"time"
 
-	"github.com/mengelbart/mrtp/logging"
+	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/mengelbart/roq"
 )
 

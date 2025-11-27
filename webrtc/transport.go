@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
-	"github.com/mengelbart/mrtp/logging"
+	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/pion/bwe/gcc"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/packetdump"

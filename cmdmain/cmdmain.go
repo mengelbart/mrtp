@@ -17,7 +17,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/mengelbart/mrtp/logging"
+	"github.com/mengelbart/mrtp/internal/logging"
 )
 
 var (
