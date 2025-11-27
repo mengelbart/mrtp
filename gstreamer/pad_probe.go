@@ -4,7 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/go-gst/go-gst/gst"
-	"github.com/mengelbart/mrtp/logging"
+	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/pion/rtp"
 )
 
