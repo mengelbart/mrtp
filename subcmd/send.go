@@ -14,8 +14,7 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
-	"github.com/mengelbart/mrtp/quictransport"
-	"github.com/mengelbart/mrtp/quicutils"
+	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
 	roqProtocol "github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
@@ -139,19 +138,19 @@ Flags:
 		os.Exit(1)
 	}
 
-	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || flags.LogQuic) && !(flags.RoQServer || flags.RoQClient) {
+	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || flags.LogQuic) && (!flags.RoQServer && !flags.RoQClient) {
 		fmt.Printf("Flags -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, flags.LogQuicFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
 
-	if flags.QuicPacer == 1 && !(flags.CCnada || flags.CCgcc) {
+	if flags.QuicPacer == 1 && (!flags.CCnada && !flags.CCgcc) {
 		fmt.Printf("Flag -%v can only be used with NADA or GCC\n", flags.QuicPacerFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
 
-	if flags.DataChannel && !(flags.RoQServer || flags.RoQClient) {
+	if flags.DataChannel && (!flags.RoQServer && !flags.RoQClient) {
 		fmt.Printf("Flag -%v only valid for RoQ\n", flags.DataChannelFlag)
 		fs.Usage()
 		os.Exit(1)
@@ -198,7 +197,7 @@ Flags:
 
 	if flags.RoQServer || flags.RoQClient {
 		quicOptions := []quictransport.Option{
-			quictransport.WithRole(quicutils.Role(flags.RoQServer)),
+			quictransport.WithRole(quictransport.Role(flags.RoQServer)),
 			quictransport.SetQuicCC(int(flags.QuicCC)),
 			quictransport.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
 			quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),

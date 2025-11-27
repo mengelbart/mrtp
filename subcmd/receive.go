@@ -13,8 +13,7 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
-	"github.com/mengelbart/mrtp/quictransport"
-	"github.com/mengelbart/mrtp/quicutils"
+	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
 	roqProtocol "github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
@@ -177,7 +176,7 @@ Flags:
 
 func (r *Receive) setupRoQ() error {
 	quicOptions := []quictransport.Option{
-		quictransport.WithRole(quicutils.Role(flags.RoQServer)),
+		quictransport.WithRole(quictransport.Role(flags.RoQServer)),
 		quictransport.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
 		quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
 	}
