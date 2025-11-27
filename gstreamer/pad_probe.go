@@ -15,14 +15,7 @@ func getRTPLogPadProbe(vantagePointName string) func(p *gst.Pad, ppi *gst.PadPro
 			list := ppi.GetBufferList()
 			if list != nil {
 				list.ForEach(func(buffer *gst.Buffer, idx uint) bool {
-					mapinfo := buffer.Map(gst.MapRead)
-					defer buffer.Unmap()
-					pkt := mapinfo.AsUint8Slice()
-					b := rtp.Packet{}
-					if err := b.Unmarshal(pkt); err != nil {
-						return true
-					}
-					logger.LogRTPPacket(&b.Header, b.Payload, nil)
+					logRTPpacket(buffer, logger)
 					return true
 				})
 			}
@@ -30,14 +23,7 @@ func getRTPLogPadProbe(vantagePointName string) func(p *gst.Pad, ppi *gst.PadPro
 		if (ppi.Type() & gst.PadProbeTypeBuffer) > 0 {
 			buffer := ppi.GetBuffer()
 			if buffer != nil {
-				mapinfo := buffer.Map(gst.MapRead)
-				defer buffer.Unmap()
-				pkt := mapinfo.AsUint8Slice()
-				b := rtp.Packet{}
-				if err := b.Unmarshal(pkt); err != nil {
-					return gst.PadProbeOK
-				}
-				logger.LogRTPPacket(&b.Header, b.Payload, nil)
+				logRTPpacket(buffer, logger)
 			}
 		}
 		return gst.PadProbeOK
@@ -45,31 +31,21 @@ func getRTPLogPadProbe(vantagePointName string) func(p *gst.Pad, ppi *gst.PadPro
 }
 
 func getRTPtoPTSMappingProbe(eventName string) func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
-	return func(pad *gst.Pad, info *gst.PadProbeInfo) gst.PadProbeReturn {
-		buffer := info.GetBuffer()
-		if buffer != nil {
-			// Get PTS from buffer metadata
-			pts := buffer.PresentationTimestamp().AsDuration()
-			offset := buffer.Offset()
-
-			var ptsMs int64
-			if pts != nil {
-				ptsMs = pts.Milliseconds()
+	unwrapper := &logging.Unwrapper{}
+	return func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
+		if (ppi.Type() & gst.PadProbeTypeBufferList) > 0 {
+			list := ppi.GetBufferList()
+			if list != nil {
+				list.ForEach(func(buffer *gst.Buffer, idx uint) bool {
+					logRTPMapping(eventName, buffer, unwrapper)
+					return true
+				})
 			}
-
-			// Parse RTP packet to get RTP timestamp
-			mapinfo := buffer.Map(gst.MapRead)
-			defer buffer.Unmap()
-			pkt := mapinfo.AsUint8Slice()
-
-			if len(pkt) >= 12 {
-				// Extract RTP timestamp
-				rtpTimestamp := uint32(pkt[4])<<24 | uint32(pkt[5])<<16 | uint32(pkt[6])<<8 | uint32(pkt[7])
-
-				slog.Info(eventName,
-					"rtp-timestamp", rtpTimestamp,
-					"pts", ptsMs,
-					"offset", offset)
+		}
+		if (ppi.Type() & gst.PadProbeTypeBuffer) > 0 {
+			buffer := ppi.GetBuffer()
+			if buffer != nil {
+				logRTPMapping(eventName, buffer, unwrapper)
 			}
 		}
 		return gst.PadProbeOK
@@ -85,6 +61,7 @@ func getFrameProbe(eventName string) func(p *gst.Pad, ppi *gst.PadProbeInfo) gst
 			dts := buffer.DecodingTimestamp().AsDuration()
 			duration := buffer.Duration().AsDuration()
 			offset := buffer.Offset()
+			lenght := buffer.GetSize()
 
 			// Convert to milliseconds
 			var ptsMs, dtsMs, durationMs int64
@@ -98,9 +75,45 @@ func getFrameProbe(eventName string) func(p *gst.Pad, ppi *gst.PadProbeInfo) gst
 				durationMs = duration.Milliseconds()
 			}
 
-			slog.Info(eventName, "pts", ptsMs, "dts", dtsMs, "duration", durationMs, "offset", offset, "frame-count", frameCount)
+			slog.Info(eventName, "pts", ptsMs, "dts", dtsMs, "duration", durationMs, "offset", offset, "frame-count", frameCount, "length", lenght)
 			frameCount++
 		}
 		return gst.PadProbeOK
 	}
+}
+
+func logRTPpacket(buffer *gst.Buffer, logger *logging.RTPLogger) {
+	mapinfo := buffer.Map(gst.MapRead)
+	defer buffer.Unmap()
+	pkt := mapinfo.AsUint8Slice()
+	b := rtp.Packet{}
+	if err := b.Unmarshal(pkt); err != nil {
+		return
+	}
+	logger.LogRTPPacket(&b.Header, b.Payload, nil)
+}
+
+func logRTPMapping(eventName string, buffer *gst.Buffer, unwrapper *logging.Unwrapper) {
+	mapinfo := buffer.Map(gst.MapRead)
+	defer buffer.Unmap()
+	pkt := mapinfo.AsUint8Slice()
+	b := rtp.Packet{}
+	if err := b.Unmarshal(pkt); err != nil {
+		return
+	}
+	// Get PTS from buffer metadata
+	pts := buffer.PresentationTimestamp().AsDuration()
+	offset := buffer.Offset()
+
+	var ptsMs int64
+	if pts != nil {
+		ptsMs = pts.Milliseconds()
+	}
+
+	slog.Info(eventName,
+		"rtp-timestamp", b.Header.Timestamp,
+		"sequence-number", b.Header.SequenceNumber,
+		"unwrapped-sequence-number", unwrapper.Unwrap(b.Header.SequenceNumber),
+		"pts", ptsMs,
+		"offset", offset)
 }

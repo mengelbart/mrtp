@@ -39,7 +39,7 @@ func Configure(format Format, level slog.Level, writer io.Writer) {
 
 type RTPLogger struct {
 	logger *slog.Logger
-	seq    *unwrapper
+	seq    *Unwrapper
 }
 
 func NewRTPLogger(vantagePoint string, logger *slog.Logger) *RTPLogger {
@@ -48,7 +48,7 @@ func NewRTPLogger(vantagePoint string, logger *slog.Logger) *RTPLogger {
 	}
 	return &RTPLogger{
 		logger: logger,
-		seq:    &unwrapper{},
+		seq:    &Unwrapper{},
 	}
 }
 

@@ -6,7 +6,7 @@ const (
 )
 
 // Unwrapper stores an unwrapped sequence number.
-type unwrapper struct {
+type Unwrapper struct {
 	init          bool
 	lastUnwrapped int64
 }
@@ -20,7 +20,7 @@ func isNewer(value, previous uint16) bool {
 }
 
 // Unwrap unwraps the next sequencenumber.
-func (u *unwrapper) Unwrap(i uint16) int64 {
+func (u *Unwrapper) Unwrap(i uint16) int64 {
 	if !u.init {
 		u.init = true
 		u.lastUnwrapped = int64(i)
