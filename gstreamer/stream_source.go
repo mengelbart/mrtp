@@ -90,15 +90,14 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 		if err != nil {
 			return nil, err
 		}
-		pay, err = gst.NewElement("rtph264pay")
-		if err != nil {
-			return nil, err
+		paySettings := map[string]any{
+			"pt":             s.payloadType,
+			"mtu":            uint(1200),
+			"aggregate-mode": 1, // zero-latency
+			"seqnum-offset":  1,
 		}
-		if err = SetProperties(pay, map[string]any{
-			"pt":            s.payloadType,
-			"mtu":           uint(1200),
-			"seqnum-offset": 1,
-		}); err != nil {
+		pay, err = gst.NewElementWithProperties("rtph264pay", paySettings)
+		if err != nil {
 			return nil, err
 		}
 		followUpElms = append(followUpElms, s.encoder, pay)
