@@ -9,6 +9,8 @@ import (
 
 type Receiver struct {
 	dc *quicdc.DataChannel
+
+	rm *quicdc.DataChannelReadMessage
 }
 
 func newReceiver(dc *quicdc.DataChannel) *Receiver {
@@ -19,13 +21,22 @@ func newReceiver(dc *quicdc.DataChannel) *Receiver {
 
 func (r *Receiver) Read(buf []byte) (int, error) {
 	// open receiver stream
-	rm, err := r.dc.ReceiveMessage(context.Background())
-	if err != nil {
-		return 0, err
+	if r.rm == nil {
+		var err error
+		r.rm, err = r.dc.ReceiveMessage(context.Background())
+		if err != nil {
+			return 0, err
+		}
 	}
 
-	n, err := rm.Read(buf)
-	if err != nil && err != io.EOF {
+	n, err := r.rm.Read(buf)
+	if err != nil {
+		if err == io.EOF {
+			// finished reading this message
+			r.rm = nil
+			return n, nil
+		}
+
 		return n, err
 	}
 
