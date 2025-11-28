@@ -208,14 +208,17 @@ func (r *Receive) setupRoQ() error {
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(flags.RTPPort) || flowID == uint64(flags.RTCPSendPort) {
+		if flowID == uint64(flags.RTPFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
 		}
 
 		if flags.DataChannel {
 			dcTransport.ReadStream(context.Background(), rs, flowID)
+			return
 		}
+
+		panic(fmt.Sprint("unknown stream flowID ", flowID))
 	}
 
 	// start handler
