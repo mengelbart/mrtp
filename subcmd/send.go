@@ -156,6 +156,12 @@ Flags:
 		os.Exit(1)
 	}
 
+	if flags.DataChannel && (flags.QuicCC == 1 || (flags.QuicCC == 2 && flags.QuicPacer != 1)) {
+		fmt.Printf("Flag -%v only allowed if Reno as CC or rate based pacer. NoCC option allways invalid\n", flags.DataChannelFlag)
+		fs.Usage()
+		os.Exit(1)
+	}
+
 	if len(fs.Args()) > 1 {
 		fmt.Printf("error: unknown extra arguments: %v\n", flag.Args()[1:])
 		fs.Usage()
@@ -257,12 +263,7 @@ Flags:
 				return err
 			}
 
-			initDataRate := 750_000 * (dcPercatage) / 100
-			sourceOptions := []data.DataBinOption{
-				data.DataBinUseRateLimiter(initDataRate, 10000), // burst not relevant, as data source sends small chunks anyways
-			}
-
-			dataSource, err = data.NewDataBin(dcSender, sourceOptions...)
+			dataSource, err = data.NewDataBin(dcSender)
 			if err != nil {
 				return err
 			}
@@ -281,11 +282,6 @@ Flags:
 			err := mediaBa.SetBitrate(mediaTargetRate)
 			if err != nil {
 				panic(err)
-			}
-
-			if flags.DataChannel && dataSource != nil {
-				dataRate := ratebps * dcPercatage / 100
-				dataSource.SetRateLimit(dataRate)
 			}
 
 			return nil
