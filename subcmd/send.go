@@ -127,43 +127,43 @@ Flags:
 	fs.Parse(args)
 
 	if flags.QuicCC > 2 {
-		fmt.Printf("error: invalid quic-cc value, must be 0, 1 or 2\n")
+		fmt.Fprintf(os.Stderr, "error: invalid quic-cc value, must be 0, 1 or 2\n")
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if flags.QuicPacer > 1 {
-		fmt.Printf("error: invalid quic-pacer value, must be 0 or 1\n")
+		fmt.Fprintf(os.Stderr, "error: invalid quic-pacer value, must be 0 or 1\n")
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || flags.LogQuic) && (!flags.RoQServer && !flags.RoQClient) {
-		fmt.Printf("Flags -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, flags.LogQuicFlag)
+		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, flags.LogQuicFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if flags.QuicPacer == 1 && (!flags.CCnada && !flags.CCgcc) {
-		fmt.Printf("Flag -%v can only be used with NADA or GCC\n", flags.QuicPacerFlag)
+		fmt.Fprintf(os.Stderr, "Flag -%v can only be used with NADA or GCC\n", flags.QuicPacerFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if flags.DataChannel && (!flags.RoQServer && !flags.RoQClient) {
-		fmt.Printf("Flag -%v only valid for RoQ\n", flags.DataChannelFlag)
+		fmt.Fprintf(os.Stderr, "Flag -%v only valid for RoQ\n", flags.DataChannelFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if flags.DataChannel && (flags.QuicCC == 1 || (flags.QuicCC == 2 && flags.QuicPacer != 1)) {
-		fmt.Printf("Flag -%v only allowed if Reno as CC or rate based pacer. NoCC option allways invalid\n", flags.DataChannelFlag)
+		fmt.Fprintf(os.Stderr, "Flag -%v only allowed if Reno as CC or rate based pacer. NoCC option allways invalid\n", flags.DataChannelFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if len(fs.Args()) > 1 {
-		fmt.Printf("error: unknown extra arguments: %v\n", flag.Args()[1:])
+		fmt.Fprintf(os.Stderr, "error: unknown extra arguments: %v\n", flag.Args()[1:])
 		fs.Usage()
 		os.Exit(1)
 	}

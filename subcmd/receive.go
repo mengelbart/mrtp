@@ -118,19 +118,19 @@ Flags:
 	fs.Parse(args)
 
 	if len(fs.Args()) > 1 {
-		fmt.Printf("error: unknown extra arguments: %v\n", flag.Args()[1:])
+		fmt.Fprintf(os.Stderr, "error: unknown extra arguments: %v\n", flag.Args()[1:])
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if flags.NadaFeedback && !(flags.RoQServer || flags.RoQClient) {
-		fmt.Printf("Nada Feedback only possible with RoQ\n")
+		fmt.Fprintf(os.Stderr, "Nada Feedback only possible with RoQ\n")
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if (flags.DataChannel || flags.LogQuic) && !(flags.RoQServer || flags.RoQClient) {
-		fmt.Printf("Flag -%v and -%v only valid for RoQ\n", flags.DataChannelFlag, flags.LogQuicFlag)
+		fmt.Fprintf(os.Stderr, "Flag -%v and -%v only valid for RoQ\n", flags.DataChannelFlag, flags.LogQuicFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
