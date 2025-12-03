@@ -97,6 +97,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RTCPSendFlowIDFlag,
 		flags.RoQServerFlag,
 		flags.RoQClientFlag,
+		flags.RoQMappingFlag,
 		flags.TraceRTPSendFlag,
 		flags.CCgccFlag,
 		flags.CCnadaFlag,
@@ -127,19 +128,25 @@ Flags:
 	fs.Parse(args)
 
 	if flags.QuicCC > 2 {
-		fmt.Fprintf(os.Stderr, "error: invalid quic-cc value, must be 0, 1 or 2\n")
+		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2.\n", flags.QuicCCFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if flags.QuicPacer > 1 {
-		fmt.Fprintf(os.Stderr, "error: invalid quic-pacer value, must be 0 or 1\n")
+		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0 or 1.\n", flags.QuicPacerFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
 
-	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || flags.LogQuic) && (!flags.RoQServer && !flags.RoQClient) {
-		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, flags.LogQuicFlag)
+	if flags.RoQMapping > 2 {
+		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2.\n", flags.RoQMappingFlag)
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || flags.LogQuic || flags.RoQMapping != 0) && (!flags.RoQServer && !flags.RoQClient) {
+		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, flags.LogQuicFlag, flags.RoQMappingFlag)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -287,7 +294,7 @@ Flags:
 			return nil
 		}
 
-		rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), flags.TraceRTPSend)
+		rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendMode(flags.RoQMapping), flags.TraceRTPSend)
 		if err != nil {
 			return err
 		}
@@ -298,7 +305,7 @@ Flags:
 			return err
 		}
 
-		rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendFlowID), false)
+		rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendFlowID), roq.SendMode(flags.RoQMapping), false)
 		if err != nil {
 			return err
 		}

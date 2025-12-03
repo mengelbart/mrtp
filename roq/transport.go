@@ -43,12 +43,12 @@ func (t *Transport) HandleUniStreamWithFlowID(flowID uint64, rs roq.ReceiveStrea
 	t.session.HandleUniStreamWithFlowID(flowID, rs)
 }
 
-func (t *Transport) NewSendFlow(id uint64, logRTPpackets bool) (*Sender, error) {
+func (t *Transport) NewSendFlow(id uint64, sendMode SendMode, logRTPpackets bool) (*Sender, error) {
 	flow, err := t.session.NewSendFlow(id)
 	if err != nil {
 		return nil, err
 	}
-	return newSender(flow, SendModeDatagram, logRTPpackets)
+	return newSender(flow, sendMode, logRTPpackets)
 }
 
 func (t *Transport) NewReceiveFlow(id uint64, logRTPpackets bool) (*Receiver, error) {
