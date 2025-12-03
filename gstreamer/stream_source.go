@@ -82,6 +82,14 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 	}
 	followUpElms = append(followUpElms, cs)
 
+	queueSettings := map[string]any{
+		"leaky": 2, // leaky on downstream (old buffers)
+	}
+	queue, err := gst.NewElementWithProperties("queue", queueSettings)
+	if err != nil {
+		panic(err)
+	}
+
 	var pay *gst.Element
 	switch s.codec {
 	case mrtp.H264:
@@ -126,6 +134,8 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 	default:
 		return nil, fmt.Errorf("unknown codec: %v", s.codec)
 	}
+
+	followUpElms = append(followUpElms, queue)
 
 	// probe to log pts before ecnoder
 	encSinkPad := s.encoder.GetStaticPad("sink")
@@ -220,7 +230,7 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 			}
 
 			// Set ghost pad target now that pipeline exists
-			srcpad := pay.GetStaticPad("src")
+			srcpad := queue.GetStaticPad("src")
 			if !ghostpad.SetTarget(srcpad) {
 				panic("Failed to set ghostpad target")
 			}
