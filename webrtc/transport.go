@@ -11,6 +11,7 @@ import (
 	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/pion/bwe/gcc"
 	"github.com/pion/interceptor"
+	"github.com/pion/interceptor/pkg/pacing"
 	"github.com/pion/interceptor/pkg/packetdump"
 	"github.com/pion/interceptor/pkg/rfc8888"
 	"github.com/pion/interceptor/pkg/rtpfb"
@@ -50,7 +51,7 @@ type Transport struct {
 	onRemoteTrack func(*RTPReceiver)
 	onConnected   func()
 
-	pacer         *PacingInterceptorFactory
+	pacer         *pacing.InterceptorFactory
 	bwe           *gcc.SendSideController
 	nada          *nada.SenderOnly
 	SetTargetRate func(ratebps uint) error
@@ -226,7 +227,7 @@ func SetSRTPBufferLimit(size int) Option {
 
 func EnablePacing() Option {
 	return func(t *Transport) error {
-		t.pacer = newPacingInterceptorFactory()
+		t.pacer = pacing.NewInterceptor()
 		t.interceptorRegistry.Add(t.pacer)
 		return nil
 	}
@@ -479,7 +480,7 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 			}
 		}
 		if t.pacer != nil {
-			t.pacer.SetRate("", int(tr))
+			t.pacer.SetRate(t.pc.ID(), int(1.5*float64(tr)))
 		}
 	}
 
