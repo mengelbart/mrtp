@@ -256,6 +256,8 @@ func (s *StreamSource) SrcPad() (*gst.Pad, error) {
 
 // SetBitrate sets the target bit rate of the encoder
 func (s *StreamSource) SetBitrate(ratebps uint) error {
+	// reduce target rate
+	ratebps = uint(0.9 * float64(ratebps))
 	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", ratebps)
 
 	switch s.codec {

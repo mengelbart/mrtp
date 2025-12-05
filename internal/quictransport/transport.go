@@ -417,7 +417,7 @@ func (t *Transport) feedbackReceiver() {
 			t.SetSourceTargetRate(targetRate)
 
 			// rate for pacer
-			rateByte := uint(float64(targetRate) / 8 * 1.2) // TODO
+			rateByte := uint(float64(targetRate) / 8)
 			t.quicConn.SetPacerRate(rateByte)
 		}
 	}
