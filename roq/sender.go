@@ -27,7 +27,7 @@ func newSender(flow *roq.SendFlow, mode SendMode, logRTPpackets bool) (*Sender, 
 	var err error
 	var stream *roq.RTPSendStream
 	if mode == SendModeSingleStream {
-		stream, err = flow.NewSendStream(context.TODO())
+		stream, err = flow.NewSendStream(context.TODO(), 1, true)
 		if err != nil {
 			return nil, err
 		}
@@ -54,7 +54,7 @@ func (s *Sender) Write(data []byte) (int, error) {
 	case SendModeDatagram:
 		return len(data), s.flow.WriteRTPBytes(data)
 	case SendModeStreamPerPacket:
-		stream, err := s.flow.NewSendStream(context.TODO())
+		stream, err := s.flow.NewSendStream(context.TODO(), 1, true)
 		if err != nil {
 			return 0, err
 		}
