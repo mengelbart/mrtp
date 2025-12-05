@@ -10,7 +10,7 @@ require (
 	github.com/mengelbart/moqtransport v0.5.0
 	github.com/mengelbart/qlog v0.1.0
 	github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6
-	github.com/mengelbart/roq v0.3.1-0.20250904124336-5b57f8dff945
+	github.com/mengelbart/roq v0.3.1-0.20251205133702-f3b225bfd599
 	github.com/pion/bwe v0.0.0-20251016094233-195285a437f6
 	github.com/pion/interceptor v0.1.42-0.20251016092317-ce5124bd6cdf
 	github.com/pion/rtcp v1.2.16-0.20251011202153-8aedb55aecbf
@@ -43,7 +43,7 @@ require (
 	github.com/pion/stun/v3 v3.0.0 // indirect
 	github.com/pion/turn/v4 v4.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/quic-go/qpack v0.5.1 // indirect
+	github.com/quic-go/qpack v0.6.0 // indirect
 	golang.org/x/crypto v0.41.0 // indirect
 	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c // indirect
 	golang.org/x/net v0.43.0 // indirect
@@ -52,4 +52,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/quic-go/quic-go v0.56.0 => github.com/Willi-42/quic-go v0.5.0
+replace github.com/quic-go/quic-go v0.56.0 => github.com/Willi-42/quic-go v0.7.0

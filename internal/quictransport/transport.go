@@ -186,6 +186,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			CcType:                         t.quicCC,
 			PacerType:                      t.pacerType,
 			SendTimestamps:                 sendTimestamps,
+			UsePriorityQueue:               true,
 			Tracer: func(ctx context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
 				if t.nada != nil || t.bwe != nil {
 					return senderTracers(ctx, isClient, connID, addLostPacket, t.lastRTT, t.qlogFile)
@@ -211,6 +212,7 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			CcType:                         t.quicCC,
 			PacerType:                      t.pacerType,
 			SendTimestamps:                 sendTimestamps,
+			UsePriorityQueue:               true,
 			Tracer: func(ctx context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
 				if t.nada != nil || t.bwe != nil {
 					return senderTracers(ctx, isClient, connID, addLostPacket, t.lastRTT, t.qlogFile)
