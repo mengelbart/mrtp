@@ -82,14 +82,6 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 	}
 	followUpElms = append(followUpElms, cs)
 
-	queueSettings := map[string]any{
-		"leaky": 2, // leaky on downstream (old buffers)
-	}
-	queue, err := gst.NewElementWithProperties("queue", queueSettings)
-	if err != nil {
-		panic(err)
-	}
-
 	var pay *gst.Element
 	switch s.codec {
 	case mrtp.H264:
@@ -135,8 +127,6 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 		return nil, fmt.Errorf("unknown codec: %v", s.codec)
 	}
 
-	followUpElms = append(followUpElms, queue)
-
 	// probe to log pts before ecnoder
 	encSinkPad := s.encoder.GetStaticPad("sink")
 	encSinkPad.AddProbe(gst.PadProbeTypeBuffer, getFrameProbe("encoder sink"))
@@ -148,6 +138,16 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 	// probe to log mapping PTS -> RTP timestamp
 	paySrcPad := pay.GetStaticPad("src")
 	paySrcPad.AddProbe(gst.PadProbeTypeBuffer, getRTPtoPTSMappingProbe("rtp to pts mapping"))
+
+	// queue to ensure pipeline acts as a real-time source
+	queueSettings := map[string]any{
+		"leaky": 2, // leaky on downstream (old buffers)
+	}
+	queue, err := gst.NewElementWithProperties("queue", queueSettings)
+	if err != nil {
+		return nil, err
+	}
+	followUpElms = append(followUpElms, queue)
 
 	switch s.source {
 	case Videotestsrc:
@@ -164,7 +164,7 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 			return nil, err
 		}
 
-		srcpad := pay.GetStaticPad("src")
+		srcpad := queue.GetStaticPad("src")
 		ghostpad := gst.NewGhostPad("src", srcpad)
 		if !s.bin.AddPad(ghostpad.Pad) {
 			return nil, errors.New("failed to add ghostpad to RTPStreamSource")
