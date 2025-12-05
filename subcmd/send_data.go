@@ -5,20 +5,19 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
-	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/quic-go/quic-go"
 )
 
 var (
-	sourceFile string
-	rateLimit  uint
+	rateLimit uint
 )
 
 func init() {
@@ -46,7 +45,7 @@ func (s *SendData) Exec(cmd string, args []string) error {
 		flags.DataChannelFlowIDFlag,
 	}...)
 
-	fs.StringVar(&sourceFile, "source-file", "", "File to be sent. If empty, random data will be sent.")
+	sourceFile := fs.String("source-file", "", "File to be sent. If empty, random data will be sent.")
 	fs.UintVar(&rateLimit, "fixed-rate-limit", 0, "Rate limit in bits per second. 0 means no limit.")
 
 	fs.Usage = func() {
@@ -111,7 +110,7 @@ Flags:
 		return err
 	}
 
-	source, err := createDataSource(sender)
+	source, err := createDataSource(sender, *sourceFile)
 	if err != nil {
 		return err
 	}
@@ -135,7 +134,7 @@ Flags:
 	select {}
 }
 
-func createDataSource(sender *datachannels.Sender) (*data.DataBin, error) {
+func createDataSource(sender io.WriteCloser, sourceFile string) (*data.DataBin, error) {
 	sourceOptions := []data.DataBinOption{
 		data.DataBinUseRateLimiter(750_000, 10000), // burst not relevant, as data source sends small chunks anyways
 	}
