@@ -21,8 +21,12 @@ func newTracer(qlogger qlogwriter.Trace, quicCallback QuicEventCallback) *Multip
 }
 
 func (t *MultiplexTracer) AddProducer() qlogwriter.Recorder {
-	qlogProducer := t.qlogger.AddProducer()
-	t.recorder = newRecorder(qlogProducer, t.quicCallback)
+	if t.qlogger != nil {
+		qlogProducer := t.qlogger.AddProducer()
+		t.recorder = newRecorder(qlogProducer, t.quicCallback)
+	} else {
+		t.recorder = newRecorder(nil, t.quicCallback)
+	}
 
 	return t.recorder
 }
@@ -47,10 +51,14 @@ func (r *Recoder) RecordEvent(event qlogwriter.Event) {
 	if r.quicCallback != nil {
 		r.quicCallback(event)
 	}
-
-	r.qlogRecorder.RecordEvent(event)
+	if r.qlogRecorder != nil {
+		r.qlogRecorder.RecordEvent(event)
+	}
 }
 
 func (r *Recoder) Close() error {
+	if r.qlogRecorder == nil {
+		return nil
+	}
 	return r.qlogRecorder.Close()
 }
