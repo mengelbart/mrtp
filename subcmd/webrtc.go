@@ -73,6 +73,7 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 	fs.BoolVar(&sendVideoTrack, "send-track", false, "Send a media track to the peer")
 
 	fs.BoolVar(&pacing, "pacing", false, "Enable packet pacing")
+	sourceFile := fs.String("source-file", "", "File to be sent. If empty, random data will be sent.")
 
 	DefaultStreamSinkFactory.ConfigureFlags(fs)
 	DefaultStreamSourceFactory.ConfigureFlags(fs)
@@ -190,14 +191,16 @@ Usage:
 
 	if offer && flags.DataChannel {
 		dcSender := transport.NewDataChannelSender("data")
-		dataSource, err := data.NewDataBin(dcSender)
+		var dataSource *data.DataBin
+		dataSource, err = createDataSource(dcSender, *sourceFile)
 		if err != nil {
 			return err
 		}
 		go dataSource.Run()
 	} else if flags.DataChannel {
 		dcReceiver := transport.NewDataChannelReceiver()
-		dataSink, err := data.NewSink(dcReceiver)
+		var dataSink *data.DataSink
+		dataSink, err = data.NewSink(dcReceiver)
 		if err != nil {
 			return err
 		}
