@@ -54,6 +54,7 @@ type Transport struct {
 	pacer         *pacing.InterceptorFactory
 	bwe           *gcc.SendSideController
 	nada          *nada.SenderOnly
+	scream        *ScreamInterceptorFactory
 	SetTargetRate func(ratebps uint) error
 }
 
@@ -148,6 +149,14 @@ func EnableNADA(initRate, minRate, maxRate uint) Option {
 
 		nada := nada.NewSenderOnly(nadaConfig)
 		t.nada = &nada
+		return nil
+	}
+}
+
+func EnableSCReAM(initRate, minRate, maxRate uint) Option {
+	return func(t *Transport) error {
+		t.scream = NewScreamInterceptor(int(initRate), int(minRate), int(maxRate))
+		t.interceptorRegistry.Add(t.scream)
 		return nil
 	}
 }
@@ -469,6 +478,15 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 			})
 		}
 		tr = uint(t.nada.OnAcks(report.RTT, acks))
+	}
+
+	if t.scream != nil {
+		ssrc := report.PacketReports[0].SSRC
+		r, ok := t.scream.getRate(t.pc.ID(), ssrc)
+		if !ok {
+			panic("failed to get target rate for unknown stream")
+		}
+		tr = uint(r)
 	}
 
 	if tr != 0 {

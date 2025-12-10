@@ -29,6 +29,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
+	github.com/mengelbart/scream-go v0.5.0
 	github.com/onsi/ginkgo/v2 v2.22.1 // indirect
 	github.com/onsi/gomega v1.36.2 // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
