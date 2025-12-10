@@ -17,33 +17,18 @@ type RTT struct {
 	lastRtt time.Duration
 }
 
-// getTimestamp returns ok=true if found timestmap, ok=false otherwise
-func getTimestamp(frames []qlog.Frame) (sentTs uint64, ok bool) {
-	// search for ts frame
-	for _, f := range frames {
-		if tsframe, ok := f.Frame.(*qlog.TimestampFrame); ok {
-			return tsframe.Timestamp, true
-		}
-	}
-
-	return 0, false
-}
-
 func catchRecvEvent(event qlogwriter.Event, tsCallback ReceivedCallback) {
 	switch e := event.(type) {
 	case qlog.PacketReceived:
-		sentTs, ok := getTimestamp(e.Frames)
-		if !ok {
+		if e.Header.PacketType != qlog.PacketType1RTT {
 			return
 		}
 
 		packet := nada.Acknowledgment{
-			SeqNr:     uint64(e.Header.PacketNumber),
-			Departure: time.UnixMicro(int64(sentTs)),
-			Marked:    false, // TODO
-			SizeBit:   uint64(e.Raw.Length) * 8,
-			Arrival:   time.Now(),
-			Arrived:   true,
+			SeqNr:   uint64(e.Header.PacketNumber),
+			Marked:  false, // TODO
+			Arrival: time.Now(),
+			Arrived: true,
 		}
 
 		// give the information back to the callback for the CC.
@@ -51,13 +36,21 @@ func catchRecvEvent(event qlogwriter.Event, tsCallback ReceivedCallback) {
 	}
 }
 
-func catchRTTandLossEvent(event qlogwriter.Event, rtt *RTT, onLossEventFunc OnLossEventFunc) {
+func catchRTTandLossEvent(event qlogwriter.Event, rtt *RTT, onLossEventFunc OnLossEventFunc, onPacketSentFunc OnLossEventFunc) {
 	switch e := event.(type) {
 	case qlog.MetricsUpdated:
 		rtt.lastRtt = e.LatestRTT
 	case qlog.PacketLost:
 		if onLossEventFunc != nil {
 			onLossEventFunc(nada.Acknowledgment{SeqNr: uint64(e.Header.PacketNumber), Departure: time.Now()})
+		}
+	case qlog.PacketSent:
+		if onPacketSentFunc != nil {
+			onPacketSentFunc(nada.Acknowledgment{
+				SeqNr:     uint64(e.Header.PacketNumber),
+				Departure: time.Now(),
+				SizeBit:   uint64(e.Raw.Length) * 8,
+			})
 		}
 	}
 }
@@ -75,11 +68,12 @@ func receiveTracer(ctx context.Context, isClient bool, connID quic.ConnectionID,
 func senderTracers(
 	ctx context.Context, isClient bool, connID quic.ConnectionID,
 	onLossEvent OnLossEventFunc,
+	onPacketSentFunc OnLossEventFunc,
 	lastRtt *RTT,
 	qlogFile string,
 ) qlogwriter.Trace {
 	rttLossTracer := func(event qlogwriter.Event) {
-		catchRTTandLossEvent(event, lastRtt, onLossEvent)
+		catchRTTandLossEvent(event, lastRtt, onLossEvent, onPacketSentFunc)
 	}
 
 	qlogTracer := createQlogTracer(ctx, isClient, connID, qlogFile)
