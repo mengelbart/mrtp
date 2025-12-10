@@ -12,18 +12,14 @@ func TestPacketEvent(t *testing.T) {
 
 	acks := []nada.Acknowledgment{
 		{
-			SeqNr:     42,
-			Departure: time.UnixMilli(100),
-			Arrival:   time.UnixMilli(110),
-			SizeBit:   1000,
-			Marked:    true,
+			SeqNr:   42,
+			Arrival: time.UnixMilli(110),
+			Marked:  true,
 		},
 		{
-			SeqNr:     45,
-			Departure: time.UnixMilli(105),
-			Arrival:   time.UnixMilli(115),
-			SizeBit:   1000,
-			Marked:    true,
+			SeqNr:   45,
+			Arrival: time.UnixMilli(115),
+			Marked:  true,
 		},
 	}
 

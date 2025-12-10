@@ -13,16 +13,12 @@ func Marshal(eventChan chan nada.Acknowledgment, readLen int) ([]byte, error) {
 
 	for range readLen {
 		p := <-eventChan
-		deparuredTs := uint64(p.Departure.UnixMicro())
 		arrivedTs := uint64(p.Arrival.UnixMicro())
-		owd := arrivedTs - deparuredTs
 
 		seqNr := p.SeqNr
 
 		buf = quicvarint.Append(buf, seqNr)
-		buf = quicvarint.Append(buf, deparuredTs)
-		buf = quicvarint.Append(buf, owd)
-		buf = quicvarint.Append(buf, p.SizeBit)
+		buf = quicvarint.Append(buf, arrivedTs)
 		if p.Marked {
 			buf = quicvarint.Append(buf, 1)
 		} else {
@@ -55,25 +51,12 @@ func UnmarshalFeedback(buf []byte) ([]nada.Acknowledgment, error) {
 		}
 		buf = buf[n:]
 
-		departureMicro, n, err := quicvarint.Parse(buf)
+		arivalMicro, n, err := quicvarint.Parse(buf)
 		if n < 0 {
 			return nil, err
 		}
 
-		p.Departure = time.UnixMicro(int64(departureMicro))
-		buf = buf[n:]
-
-		owd, n, err := quicvarint.Parse(buf)
-		if n < 0 {
-			return nil, err
-		}
-		p.Arrival = time.UnixMicro(int64(departureMicro + owd))
-		buf = buf[n:]
-
-		p.SizeBit, n, err = quicvarint.Parse(buf)
-		if n < 0 {
-			return nil, err
-		}
+		p.Arrival = time.UnixMicro(int64(arivalMicro))
 		buf = buf[n:]
 
 		marked, n, err := quicvarint.Parse(buf)

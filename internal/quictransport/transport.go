@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
@@ -35,6 +36,7 @@ type Transport struct {
 
 	lastRTT         *RTT
 	lostPackets     chan nada.Acknowledgment
+	sentPackets     sync.Map
 	receivedPackets chan nada.Acknowledgment
 
 	sendNadaFeedback bool
@@ -162,6 +164,9 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			slog.Info("quictransport packet nack dropped", "reason", "tracer buffered channel full")
 		}
 	}
+	addSentPacket := func(ack nada.Acknowledgment) {
+		t.sentPackets.Store(ack.SeqNr, ack)
+	}
 	addReceivedPacket := func(ack nada.Acknowledgment) {
 		select {
 		case t.receivedPackets <- ack:
@@ -172,11 +177,6 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 		}
 	}
 
-	sendTimestamps := false
-	if t.nada != nil || t.bwe != nil || t.sendNadaFeedback {
-		sendTimestamps = true
-	}
-
 	if t.role == RoleServer {
 		quicConfig := &quic.Config{
 			EnableDatagrams:                true,
@@ -185,11 +185,10 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			MaxIncomingUniStreams:          quicvarint.Max,
 			CcType:                         t.quicCC,
 			PacerType:                      t.pacerType,
-			SendTimestamps:                 sendTimestamps,
 			UsePriorityQueue:               true,
 			Tracer: func(ctx context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
 				if t.nada != nil || t.bwe != nil {
-					return senderTracers(ctx, isClient, connID, addLostPacket, t.lastRTT, t.qlogFile)
+					return senderTracers(ctx, isClient, connID, addLostPacket, addSentPacket, t.lastRTT, t.qlogFile)
 				}
 				if t.sendNadaFeedback {
 					return receiveTracer(ctx, isClient, connID, addReceivedPacket, t.qlogFile)
@@ -211,11 +210,10 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 			MaxIncomingUniStreams:          quicvarint.Max,
 			CcType:                         t.quicCC,
 			PacerType:                      t.pacerType,
-			SendTimestamps:                 sendTimestamps,
 			UsePriorityQueue:               true,
 			Tracer: func(ctx context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
 				if t.nada != nil || t.bwe != nil {
-					return senderTracers(ctx, isClient, connID, addLostPacket, t.lastRTT, t.qlogFile)
+					return senderTracers(ctx, isClient, connID, addLostPacket, addSentPacket, t.lastRTT, t.qlogFile)
 				}
 				if t.sendNadaFeedback {
 					return receiveTracer(ctx, isClient, connID, addReceivedPacket, t.qlogFile)
@@ -378,7 +376,7 @@ func (t *Transport) feedbackReceiver() {
 
 	buf := make([]byte, 4096)
 	for {
-
+		// get feedback from receiver
 		n, err := feedbackFlow.Read(buf)
 		if err != nil {
 			panic(err)
@@ -387,6 +385,18 @@ func (t *Transport) feedbackReceiver() {
 		acks, err := UnmarshalFeedback(buf[:n])
 		if err != nil {
 			panic(err)
+		}
+
+		// add sent timestamps and sizes
+		for i := range acks {
+			if sentPacket, ok := t.sentPackets.Load(acks[i].SeqNr); ok {
+				acks[i].Departure = sentPacket.(nada.Acknowledgment).Departure
+				acks[i].SizeBit = sentPacket.(nada.Acknowledgment).SizeBit
+
+				t.sentPackets.Delete(acks[i].SeqNr)
+			} else {
+				panic("should not happen: sent packet event not found")
+			}
 		}
 
 		// append losses/nacks
