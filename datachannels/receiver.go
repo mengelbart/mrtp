@@ -2,7 +2,6 @@ package datachannels
 
 import (
 	"context"
-	"io"
 
 	"github.com/mengelbart/quicdc"
 )
@@ -29,21 +28,9 @@ func (r *Receiver) Read(buf []byte) (int, error) {
 		}
 	}
 
-	n, err := r.rm.Read(buf)
-	if err != nil {
-		if err == io.EOF {
-			// finished reading this message
-			r.rm = nil
-			return n, nil
-		}
-
-		return n, err
-	}
-
-	return n, nil
+	return r.rm.Read(buf)
 }
 
 func (r *Receiver) Close() error {
-	// TODO: datachannel module currently does not support closing a channel
-	return nil
+	return r.rm.Close()
 }
