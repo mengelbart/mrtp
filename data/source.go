@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"time"
 
 	"golang.org/x/time/rate"
 )
@@ -21,9 +22,12 @@ type DataBin struct {
 
 	wc          io.WriteCloser
 	rateLimiter *rate.Limiter
+
+	running    bool
+	startDelay time.Duration
 }
 
-func DataBinUseFileSource(filepath string) DataBinOption {
+func UseFileSource(filepath string) DataBinOption {
 	return func(d *DataBin) error {
 		d.useFileSrc = true
 		d.filepath = filepath
@@ -31,8 +35,15 @@ func DataBinUseFileSource(filepath string) DataBinOption {
 	}
 }
 
-// DataBinUseRateLimiter: initLimit in bps, burst in bytes
-func DataBinUseRateLimiter(initLimit, burst uint) DataBinOption {
+func SetStartDelay(startDelay time.Duration) DataBinOption {
+	return func(d *DataBin) error {
+		d.startDelay = startDelay
+		return nil
+	}
+}
+
+// UseRateLimiter: initLimit in bps, burst in bytes
+func UseRateLimiter(initLimit, burst uint) DataBinOption {
 	return func(d *DataBin) error {
 		initLimitToBytes := bitRateToBytesPerSec(initLimit)
 
@@ -54,6 +65,10 @@ func NewDataBin(wc io.WriteCloser, options ...DataBinOption) (*DataBin, error) {
 		}
 	}
 	return d, nil
+}
+
+func (d *DataBin) Running() bool {
+	return d.running
 }
 
 func (d *DataBin) SetRateLimit(ratebps uint) {
@@ -94,15 +109,18 @@ func (d *DataBin) startFileSource() error {
 			_, writeErr := d.wc.Write(buf[:n])
 			if writeErr != nil {
 				d.wc.Close()
+				d.running = false
 				return fmt.Errorf("failed to write to sink: %w", writeErr)
 			}
 
 			logDataEvent(n)
 		}
 		if readErr == io.EOF {
+			d.running = false
 			return d.wc.Close()
 		}
 		if readErr != nil {
+			d.running = false
 			return fmt.Errorf("failed to read from file: %w", readErr)
 		}
 	}
@@ -133,6 +151,12 @@ func (d *DataBin) startRandomSource() error {
 }
 
 func (d *DataBin) Run() error {
+	if d.startDelay > 0 {
+		slog.Info("DataBin start delay", "duration", d.startDelay)
+		time.Sleep(d.startDelay)
+	}
+	d.running = true
+
 	if d.useFileSrc {
 		return d.startFileSource()
 	}
