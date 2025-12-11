@@ -108,6 +108,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
+		flags.DataChannelFileFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 	fs.UintVar(&dcPercatage, "dc-tr-share", 30, "Percentage of target rate to be used for data channel (RoQ only)")
@@ -270,7 +271,7 @@ Flags:
 				return err
 			}
 
-			dataSource, err = data.NewDataBin(dcSender)
+			dataSource, err = createDataSource(dcSender, flags.DcSourceFile, false)
 			if err != nil {
 				return err
 			}

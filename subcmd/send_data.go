@@ -110,7 +110,7 @@ Flags:
 		return err
 	}
 
-	source, err := createDataSource(sender, *sourceFile)
+	source, err := createDataSource(sender, *sourceFile, true)
 	if err != nil {
 		return err
 	}
@@ -134,10 +134,13 @@ Flags:
 	select {}
 }
 
-func createDataSource(sender io.WriteCloser, sourceFile string) (*data.DataBin, error) {
-	sourceOptions := []data.DataBinOption{
-		data.DataBinUseRateLimiter(750_000, 10000), // burst not relevant, as data source sends small chunks anyways
+func createDataSource(sender io.WriteCloser, sourceFile string, rateLimited bool) (*data.DataBin, error) {
+	sourceOptions := []data.DataBinOption{}
+
+	if rateLimited {
+		sourceOptions = append(sourceOptions, data.DataBinUseRateLimiter(750_000, 10000)) // burst not relevant, as data source sends small chunks anyways
 	}
+
 	if sourceFile != "" {
 		// check if file exists
 		if _, err := os.Stat(sourceFile); errors.Is(err, os.ErrNotExist) {
