@@ -19,13 +19,16 @@ func NewSink(rc io.ReadCloser) (*DataSink, error) {
 }
 
 func (d *DataSink) Run() error {
+	slog.Info("DataSink started")
 	buf := make([]byte, 1024)
 	for {
 		n, err := d.rc.Read(buf)
 		if err != nil {
 			if err == io.EOF {
+				slog.Info("DataSink finished")
 				return nil
 			}
+			slog.Info("Datasink error: ", "err", err)
 			return err
 		}
 

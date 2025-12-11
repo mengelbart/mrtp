@@ -93,20 +93,19 @@ func (d *DataBin) startFileSource() error {
 		if n > 0 {
 			_, writeErr := d.wc.Write(buf[:n])
 			if writeErr != nil {
+				d.wc.Close()
 				return fmt.Errorf("failed to write to sink: %w", writeErr)
 			}
 
 			logDataEvent(n)
 		}
 		if readErr == io.EOF {
-			break
+			return d.wc.Close()
 		}
 		if readErr != nil {
 			return fmt.Errorf("failed to read from file: %w", readErr)
 		}
 	}
-
-	return nil
 }
 
 func (d *DataBin) startRandomSource() error {
