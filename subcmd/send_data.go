@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
@@ -110,7 +111,7 @@ Flags:
 		return err
 	}
 
-	source, err := createDataSource(sender, *sourceFile, true)
+	source, err := createDataSource(sender, *sourceFile, 0, true)
 	if err != nil {
 		return err
 	}
@@ -134,11 +135,15 @@ Flags:
 	select {}
 }
 
-func createDataSource(sender io.WriteCloser, sourceFile string, rateLimited bool) (*data.DataBin, error) {
+func createDataSource(sender io.WriteCloser, sourceFile string, startDelaySeconds uint, rateLimited bool) (*data.DataBin, error) {
 	sourceOptions := []data.DataBinOption{}
 
 	if rateLimited {
-		sourceOptions = append(sourceOptions, data.DataBinUseRateLimiter(750_000, 10000)) // burst not relevant, as data source sends small chunks anyways
+		sourceOptions = append(sourceOptions, data.UseRateLimiter(750_000, 10000)) // burst not relevant, as data source sends small chunks anyways
+	}
+
+	if startDelaySeconds > 0 {
+		sourceOptions = append(sourceOptions, data.SetStartDelay(time.Duration(startDelaySeconds)*time.Second))
 	}
 
 	if sourceFile != "" {
@@ -146,7 +151,7 @@ func createDataSource(sender io.WriteCloser, sourceFile string, rateLimited bool
 		if _, err := os.Stat(sourceFile); errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("file does not exist: %v", sourceFile)
 		}
-		sourceOptions = append(sourceOptions, data.DataBinUseFileSource(sourceFile))
+		sourceOptions = append(sourceOptions, data.UseFileSource(sourceFile))
 	}
 
 	return data.NewDataBin(sender, sourceOptions...)

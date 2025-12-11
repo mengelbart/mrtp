@@ -109,6 +109,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
 		flags.DataChannelFileFlag,
+		flags.DataChannelStartDelayFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 	fs.UintVar(&dcPercatage, "dc-tr-share", 30, "Percentage of target rate to be used for data channel (RoQ only)")
@@ -271,7 +272,7 @@ Flags:
 				return err
 			}
 
-			dataSource, err = createDataSource(dcSender, flags.DcSourceFile, false)
+			dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay, false)
 			if err != nil {
 				return err
 			}
@@ -284,7 +285,7 @@ Flags:
 			slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
 			mediaTargetRate := ratebps
-			if flags.DataChannel {
+			if flags.DataChannel && dataSource != nil && dataSource.Running() {
 				mediaTargetRate = ratebps * (100 - dcPercatage) / 100
 			}
 			err := mediaBa.SetBitrate(mediaTargetRate)
