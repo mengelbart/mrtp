@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -23,7 +24,7 @@ type DataBin struct {
 	wc          io.WriteCloser
 	rateLimiter *rate.Limiter
 
-	running    bool
+	running    atomic.Bool
 	startDelay time.Duration
 }
 
@@ -68,7 +69,7 @@ func NewDataBin(wc io.WriteCloser, options ...DataBinOption) (*DataBin, error) {
 }
 
 func (d *DataBin) Running() bool {
-	return d.running
+	return d.running.Load()
 }
 
 func (d *DataBin) SetRateLimit(ratebps uint) {
@@ -109,18 +110,18 @@ func (d *DataBin) startFileSource() error {
 			_, writeErr := d.wc.Write(buf[:n])
 			if writeErr != nil {
 				d.wc.Close()
-				d.running = false
+				d.running.Store(false)
 				return fmt.Errorf("failed to write to sink: %w", writeErr)
 			}
 
 			logDataEvent(n)
 		}
 		if readErr == io.EOF {
-			d.running = false
+			d.running.Store(false)
 			return d.wc.Close()
 		}
 		if readErr != nil {
-			d.running = false
+			d.running.Store(false)
 			return fmt.Errorf("failed to read from file: %w", readErr)
 		}
 	}
@@ -155,7 +156,7 @@ func (d *DataBin) Run() error {
 		slog.Info("DataBin start delay", "duration", d.startDelay)
 		time.Sleep(d.startDelay)
 	}
-	d.running = true
+	d.running.Store(true)
 
 	if d.useFileSrc {
 		return d.startFileSource()
