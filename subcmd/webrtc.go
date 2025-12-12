@@ -106,7 +106,7 @@ Usage:
 		webrtc.SetSRTPBufferLimit(10_000_000), // 10MB
 		webrtc.RegisterDefaultCodecs(),
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
-			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()))
+			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()), "out.y4m", 0)
 			if newSinkErr != nil {
 				panic(err)
 			}
@@ -210,7 +210,7 @@ Usage:
 
 	if sendVideoTrack {
 		var source gstreamer.RTPSourceBin
-		source, err = DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source")
+		source, err = DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source", 0)
 		if err != nil {
 			return err
 		}
