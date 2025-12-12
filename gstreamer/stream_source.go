@@ -28,6 +28,8 @@ type StreamSource struct {
 	bin      *gst.Bin
 	elements []*gst.Element
 	encoder  *gst.Element
+
+	flowID uint
 }
 
 func StreamSourcePayloadType(pt int) StreamSinkOption {
@@ -54,6 +56,13 @@ func StreamSourceCodec(codec mrtp.Codec) StreamSourceOption {
 func StreamSourceFileSourceLocation(location string) StreamSourceOption {
 	return func(rs *StreamSource) error {
 		rs.fileSourceLocation = location
+		return nil
+	}
+}
+
+func StreamSourceFlowID(flowID uint) StreamSourceOption {
+	return func(rs *StreamSource) error {
+		rs.flowID = flowID
 		return nil
 	}
 }
@@ -135,15 +144,15 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 
 	// probe to log pts before ecnoder
 	encSinkPad := s.encoder.GetStaticPad("sink")
-	encSinkPad.AddProbe(gst.PadProbeTypeBuffer, getFrameProbe("encoder sink"))
+	encSinkPad.AddProbe(gst.PadProbeTypeBuffer, getFrameProbe("encoder sink", s.flowID))
 
 	// probe to log pts after encoder
 	encSrcPad := s.encoder.GetStaticPad("src")
-	encSrcPad.AddProbe(gst.PadProbeTypeBuffer, getFrameProbe("encoder src"))
+	encSrcPad.AddProbe(gst.PadProbeTypeBuffer, getFrameProbe("encoder src", s.flowID))
 
 	// probe to log mapping PTS -> RTP timestamp
 	paySrcPad := pay.GetStaticPad("src")
-	paySrcPad.AddProbe(gst.PadProbeTypeBuffer, getRTPtoPTSMappingProbe("rtp to pts mapping"))
+	paySrcPad.AddProbe(gst.PadProbeTypeBuffer, getRTPtoPTSMappingProbe("rtp to pts mapping", s.flowID))
 
 	// queue to ensure pipeline acts as a real-time source
 	queueSettings := map[string]any{

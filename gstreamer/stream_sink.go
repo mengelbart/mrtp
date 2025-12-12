@@ -46,6 +46,13 @@ func StreamSinkLocation(location string) StreamSinkOption {
 	}
 }
 
+func StreamSinkFlowID(flowID uint) StreamSinkOption {
+	return func(rs *StreamSink) error {
+		rs.flowID = flowID
+		return nil
+	}
+}
+
 type StreamSink struct {
 	sinkType         SinkType
 	codec            mrtp.Codec
@@ -55,6 +62,8 @@ type StreamSink struct {
 
 	bin      *gst.Bin
 	elements []*gst.Element
+
+	flowID uint
 }
 
 func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
@@ -111,7 +120,7 @@ func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 
 	// probe to log mapping RTP timestamp -> PTS
 	depaySinkPad := depay.GetStaticPad("sink")
-	depaySinkPad.AddProbe(gst.PadProbeTypeBuffer, getRTPtoPTSMappingProbe("rtp to pts mapping"))
+	depaySinkPad.AddProbe(gst.PadProbeTypeBuffer, getRTPtoPTSMappingProbe("rtp to pts mapping", s.flowID))
 
 	switch s.sinkType {
 	case Autovideosink:
@@ -144,7 +153,7 @@ func NewStreamSink(name string, opts ...StreamSinkOption) (*StreamSink, error) {
 
 	// probe to log pts after decoder
 	decSrcPad := dec.GetStaticPad("src")
-	decSrcPad.AddProbe(gst.PadProbeTypeBuffer, getFrameProbe("decoder src"))
+	decSrcPad.AddProbe(gst.PadProbeTypeBuffer, getFrameProbe("decoder src", s.flowID))
 
 	if err := s.bin.AddMany(s.elements...); err != nil {
 		return nil, err

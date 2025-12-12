@@ -35,7 +35,7 @@ type BitrateAdapter interface {
 
 type StreamSourceFactory interface {
 	ConfigureFlags(*flag.FlagSet)
-	MakeStreamSource(name string) (gstreamer.RTPSourceBin, error)
+	MakeStreamSource(name string, flowID uint) (gstreamer.RTPSourceBin, error)
 }
 
 type gstreamerVideoStreamSourceFactory struct {
@@ -51,7 +51,7 @@ func (f *gstreamerVideoStreamSourceFactory) ConfigureFlags(fs *flag.FlagSet) {
 	flags.RegisterInto(fs, newFlags...)
 }
 
-func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstreamer.RTPSourceBin, error) {
+func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string, flowID uint) (gstreamer.RTPSourceBin, error) {
 	codec, error := mrtp.NewCodec(flags.Codec)
 	if error != nil {
 		return nil, error
@@ -67,6 +67,7 @@ func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstre
 
 		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.SourceLocation))
 		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
+		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFlowID(flowID))
 	}
 	return gstreamer.NewStreamSource(name, streamSourceOpts...)
 }
@@ -110,6 +111,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.DataChannelFlowIDFlag,
 		flags.DataChannelFileFlag,
 		flags.DataChannelStartDelayFlag,
+		flags.RTPFlowsFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 	fs.UintVar(&dcPercatage, "dc-tr-share", 30, "Percentage of target rate to be used for data channel (RoQ only)")
@@ -190,9 +192,26 @@ Flags:
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
-	source, err := DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source")
+	if flags.RoQServer || flags.RoQClient {
+		return runRoqPipe()
+	} else {
+		return runUdpPipe()
+	}
+}
+
+type SenderPipe struct {
+	mediaBa BitrateAdapter
+	source  gstreamer.RTPSourceBin
+	sender  *gstreamer.RTPBin
+}
+
+func newSendPipe(flowID uint) (*SenderPipe, error) {
+	r := &SenderPipe{}
+
+	var err error
+	r.source, err = DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source", flowID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	rtpBinOpts := []gstreamer.RTPBinOption{}
@@ -200,156 +219,196 @@ Flags:
 		rtpBinOpts = append(rtpBinOpts, gstreamer.EnableSCReAM(750, 150, flags.MaxTargetRate/1000))
 	}
 
-	sender, err := gstreamer.NewRTPBin(rtpBinOpts...)
+	r.sender, err = gstreamer.NewRTPBin(rtpBinOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	var ok bool
+	r.mediaBa, ok = r.source.(BitrateAdapter)
+	if ok {
+		r.sender.SetTargetRateEncoder = r.mediaBa.SetBitrate
+	}
+
+	return r, nil
+}
+
+func runRoqPipe() error {
+	quicOptions := []quictransport.Option{
+		quictransport.WithRole(quictransport.Role(flags.RoQServer)),
+		quictransport.SetQuicCC(int(flags.QuicCC)),
+		quictransport.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
+		quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
+		quictransport.WithPacer(int(flags.QuicPacer)),
+	}
+
+	if flags.CCnada {
+		feedbackDelta := uint64(20)
+		quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
+	}
+
+	if flags.CCgcc {
+		quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
+	}
+	if flags.LogQuic {
+		quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
+	}
+
+	// open quic connection
+	quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)
+	if err != nil {
+		return err
+	}
+	dcTransport := quicConn.GetQuicDataChannel()
+
+	// open roq connection
+	roqTransport, err := roq.New(quicConn.GetQuicConnection())
 	if err != nil {
 		return err
 	}
 
-	mediaBa, ok := source.(BitrateAdapter)
-	if ok {
-		sender.SetTargetRateEncoder = mediaBa.SetBitrate
+	// set handlers for datagrams and streams
+	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
+		// all datagrams belong to RoQ for now
+		roqTransport.HandleDatagram(dgram)
+	}
+	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
+		if flowID%10 == uint64(flags.RTPFlowID) || flowID%10 == uint64(flags.RTCPRecvFlowID) || flowID%10 == uint64(flags.RTCPSendFlowID) {
+			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+			return
+		}
+		if flags.DataChannel && dcTransport != nil {
+			dcTransport.ReadStream(context.Background(), rs, flowID)
+			return
+		}
+
+		panic(fmt.Sprint("unknown stream flowID ", flowID))
+	}
+	quicConn.StartHandlers()
+
+	// open dc connection
+	var dataSource *data.DataBin
+	if flags.DataChannel {
+		dcSender, err := dcTransport.NewDataChannelSender(uint64(flags.DataChannelFlowID), 0, true)
+		if err != nil {
+			return err
+		}
+
+		dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay, false)
+		if err != nil {
+			return err
+		}
+
+		go dataSource.Run()
 	}
 
-	if flags.RoQServer || flags.RoQClient {
-		quicOptions := []quictransport.Option{
-			quictransport.WithRole(quictransport.Role(flags.RoQServer)),
-			quictransport.SetQuicCC(int(flags.QuicCC)),
-			quictransport.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-			quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
-			quictransport.WithPacer(int(flags.QuicPacer)),
-		}
-
-		if flags.CCnada {
-			feedbackDelta := uint64(20)
-			quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
-		}
-
-		if flags.CCgcc {
-			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
-		}
-		if flags.LogQuic {
-			quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
-		}
-
-		// open quic connection
-		quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)
+	// create send pipes
+	pipes := make([]*SenderPipe, flags.RTPFlows)
+	for i := range flags.RTPFlows {
+		RTPFlowID := flags.RTPFlowID + uint(i*10)
+		pipe, err := newSendPipe(RTPFlowID)
 		if err != nil {
 			return err
 		}
-		dcTransport := quicConn.GetQuicDataChannel()
+		pipes[i] = pipe
+	}
 
-		// open roq connection
-		roqTransport, err := roq.New(quicConn.GetQuicConnection())
-		if err != nil {
-			return err
+	// set rate callbacks
+	quicConn.SetSourceTargetRate = func(ratebps uint) error {
+		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
+
+		mediaTargetRate := ratebps
+		if flags.DataChannel && dataSource != nil && dataSource.Running() {
+			mediaTargetRate = ratebps * (100 - dcPercatage) / 100
 		}
 
-		// set handlers for datagrams and streams
-		quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
-			// all datagrams belong to RoQ for now
-			roqTransport.HandleDatagram(dgram)
-		}
-		quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-			if flowID == uint64(flags.RTPFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
-				roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
-				return
-			}
-			if flags.DataChannel && dcTransport != nil {
-				dcTransport.ReadStream(context.Background(), rs, flowID)
-				return
-			}
+		bwShare := mediaTargetRate / flags.RTPFlows
+		for i := range flags.RTPFlows {
+			slog.Info("MEDIA_TARGET_RATE_SHARE", "rate", bwShare, "flow", i)
 
-			panic(fmt.Sprint("unknown stream flowID ", flowID))
-		}
-		quicConn.StartHandlers()
-
-		// open dc connection
-		var dataSource *data.DataBin
-		if flags.DataChannel {
-			dcSender, err := dcTransport.NewDataChannelSender(uint64(flags.DataChannelFlowID), 0, true)
-			if err != nil {
-				return err
-			}
-
-			dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay, false)
-			if err != nil {
-				return err
-			}
-
-			go dataSource.Run()
-		}
-
-		// set rate callbacks
-		quicConn.SetSourceTargetRate = func(ratebps uint) error {
-			slog.Info("NEW_TARGET_RATE", "rate", ratebps)
-
-			mediaTargetRate := ratebps
-			if flags.DataChannel && dataSource != nil && dataSource.Running() {
-				mediaTargetRate = ratebps * (100 - dcPercatage) / 100
-			}
-			err := mediaBa.SetBitrate(mediaTargetRate)
+			err := pipes[i].mediaBa.SetBitrate(bwShare)
 			if err != nil {
 				panic(err)
 			}
-
-			return nil
 		}
 
-		rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendMode(flags.RoQMapping), flags.TraceRTPSend)
+		return nil
+	}
+
+	// setup pipes
+	for i := range flags.RTPFlows {
+		RTCPSendFlowID := flags.RTCPSendFlowID + uint(i*10)
+		RTCPRecvFlowID := flags.RTCPRecvFlowID + uint(i*10)
+		RTPFlowID := flags.RTPFlowID + uint(i*10)
+
+		rtpSink, err := roqTransport.NewSendFlow(uint64(RTPFlowID), roq.SendMode(flags.RoQMapping), flags.TraceRTPSend)
 		if err != nil {
 			return err
 		}
-		if err = sender.AddRTPTransportSink(0, rtpSink); err != nil {
+		if err = pipes[i].sender.AddRTPTransportSink(0, rtpSink); err != nil {
 			return err
 		}
-		if err = sender.AddRTPSourceStreamGst(0, source); err != nil {
-			return err
-		}
-
-		rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendFlowID), roq.SendMode(flags.RoQMapping), false)
-		if err != nil {
-			return err
-		}
-		if err = sender.SendRTCPForStream(0, rtcpSink); err != nil {
+		if err = pipes[i].sender.AddRTPSourceStreamGst(0, pipes[i].source); err != nil {
 			return err
 		}
 
-		rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTCPRecvFlowID), false)
+		rtcpSink, err := roqTransport.NewSendFlow(uint64(RTCPSendFlowID), roq.SendMode(flags.RoQMapping), false)
 		if err != nil {
 			return err
 		}
-		if err = sender.ReceiveRTCPFrom(rtcpSrc); err != nil {
+		if err = pipes[i].sender.SendRTCPForStream(0, rtcpSink); err != nil {
 			return err
 		}
 
-	} else {
-		rtpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSinkPadProbe(flags.TraceRTPSend))
+		rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(RTCPRecvFlowID), false)
 		if err != nil {
 			return err
 		}
-		if err = sender.AddRTPTransportSinkGst(0, rtpSink.GetGstElement()); err != nil {
-			return err
-		}
-		if err = sender.AddRTPSourceStreamGst(0, source); err != nil {
-			return err
-		}
-
-		rtcpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTCPSendPort))
-		if err != nil {
-			return err
-		}
-		if err = sender.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
-			return err
-		}
-
-		rtcpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTCPRecvPort))
-		if err != nil {
-			return err
-		}
-		if err = sender.ReceiveRTCPFromGst(rtcpSrc.GetGstElement()); err != nil {
+		if err = pipes[i].sender.ReceiveRTCPFrom(rtcpSrc); err != nil {
 			return err
 		}
 	}
 
-	return sender.Run()
+	// start all pipes
+	for i := range flags.RTPFlows {
+		go pipes[i].sender.Run()
+	}
+
+	select {}
+}
+
+func runUdpPipe() error {
+	pipe, err := newSendPipe(0)
+	if err != nil {
+		return err
+	}
+
+	rtpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSinkPadProbe(flags.TraceRTPSend))
+	if err != nil {
+		return err
+	}
+	if err = pipe.sender.AddRTPTransportSinkGst(0, rtpSink.GetGstElement()); err != nil {
+		return err
+	}
+	if err = pipe.sender.AddRTPSourceStreamGst(0, pipe.source); err != nil {
+		return err
+	}
+
+	rtcpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTCPSendPort))
+	if err != nil {
+		return err
+	}
+	if err = pipe.sender.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
+		return err
+	}
+
+	rtcpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTCPRecvPort))
+	if err != nil {
+		return err
+	}
+	if err = pipe.sender.ReceiveRTCPFromGst(rtcpSrc.GetGstElement()); err != nil {
+		return err
+	}
+
+	return pipe.sender.Run()
 }
