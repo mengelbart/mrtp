@@ -30,14 +30,14 @@ func getRTPLogPadProbe(vantagePointName string) func(p *gst.Pad, ppi *gst.PadPro
 	}
 }
 
-func getRTPtoPTSMappingProbe(eventName string) func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
+func getRTPtoPTSMappingProbe(eventName string, flowID uint) func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
 	unwrapper := &logging.Unwrapper{}
 	return func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
 		if (ppi.Type() & gst.PadProbeTypeBufferList) > 0 {
 			list := ppi.GetBufferList()
 			if list != nil {
 				list.ForEach(func(buffer *gst.Buffer, idx uint) bool {
-					logRTPMapping(eventName, buffer, unwrapper)
+					logRTPMapping(eventName, buffer, unwrapper, flowID)
 					return true
 				})
 			}
@@ -45,14 +45,14 @@ func getRTPtoPTSMappingProbe(eventName string) func(p *gst.Pad, ppi *gst.PadProb
 		if (ppi.Type() & gst.PadProbeTypeBuffer) > 0 {
 			buffer := ppi.GetBuffer()
 			if buffer != nil {
-				logRTPMapping(eventName, buffer, unwrapper)
+				logRTPMapping(eventName, buffer, unwrapper, flowID)
 			}
 		}
 		return gst.PadProbeOK
 	}
 }
 
-func getFrameProbe(eventName string) func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
+func getFrameProbe(eventName string, flowID uint) func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
 	frameCount := uint64(0)
 	return func(p *gst.Pad, ppi *gst.PadProbeInfo) gst.PadProbeReturn {
 		buffer := ppi.GetBuffer()
@@ -75,7 +75,7 @@ func getFrameProbe(eventName string) func(p *gst.Pad, ppi *gst.PadProbeInfo) gst
 				durationMs = duration.Milliseconds()
 			}
 
-			slog.Info(eventName, "pts", ptsMs, "dts", dtsMs, "duration", durationMs, "offset", offset, "frame-count", frameCount, "length", lenght)
+			slog.Info(eventName, "pts", ptsMs, "dts", dtsMs, "duration", durationMs, "offset", offset, "frame-count", frameCount, "length", lenght, "flow-id", flowID)
 			frameCount++
 		}
 		return gst.PadProbeOK
@@ -93,7 +93,7 @@ func logRTPpacket(buffer *gst.Buffer, logger *logging.RTPLogger) {
 	logger.LogRTPPacket(&b.Header, b.Payload, nil)
 }
 
-func logRTPMapping(eventName string, buffer *gst.Buffer, unwrapper *logging.Unwrapper) {
+func logRTPMapping(eventName string, buffer *gst.Buffer, unwrapper *logging.Unwrapper, flowID uint) {
 	mapinfo := buffer.Map(gst.MapRead)
 	defer buffer.Unmap()
 	pkt := mapinfo.AsUint8Slice()
@@ -115,5 +115,7 @@ func logRTPMapping(eventName string, buffer *gst.Buffer, unwrapper *logging.Unwr
 		"sequence-number", b.Header.SequenceNumber,
 		"unwrapped-sequence-number", unwrapper.Unwrap(b.Header.SequenceNumber),
 		"pts", ptsMs,
-		"offset", offset)
+		"offset", offset,
+		"flow-id", flowID,
+	)
 }
