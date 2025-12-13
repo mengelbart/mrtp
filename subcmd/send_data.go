@@ -53,7 +53,7 @@ func (s *SendData) Exec(cmd string, args []string) error {
 		fmt.Fprintf(os.Stderr, `%v
 
 Usage:
-	%s send [flags]
+	%s send-data [flags]
 
 Flags:
 `, s.Help(), cmd)
