@@ -13,7 +13,7 @@ import (
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
-	"github.com/mengelbart/mrtp/internal/quictransport"
+	"github.com/mengelbart/mrtp/quictransport"
 	"github.com/quic-go/quic-go"
 )
 

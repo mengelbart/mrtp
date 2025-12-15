@@ -9,7 +9,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
-	"github.com/mengelbart/mrtp/internal/http"
+	"github.com/mengelbart/mrtp/http"
 	"github.com/mengelbart/mrtp/internal/web"
 )
 

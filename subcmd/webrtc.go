@@ -12,7 +12,7 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
-	"github.com/mengelbart/mrtp/internal/http"
+	"github.com/mengelbart/mrtp/http"
 	"github.com/mengelbart/mrtp/webrtc"
 )
 

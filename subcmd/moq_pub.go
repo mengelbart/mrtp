@@ -10,8 +10,8 @@ import (
 	"github.com/mengelbart/moqtransport/quicmoq"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/flags"
-	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/moq"
+	"github.com/mengelbart/mrtp/quictransport"
 	"github.com/quic-go/quic-go"
 )
 
