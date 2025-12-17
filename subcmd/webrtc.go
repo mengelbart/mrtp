@@ -106,7 +106,7 @@ Usage:
 		webrtc.SetSRTPBufferLimit(10_000_000), // 10MB
 		webrtc.RegisterDefaultCodecs(),
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
-			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()), "out.y4m", 0)
+			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()), flags.SinkLocation, 0)
 			if newSinkErr != nil {
 				panic(err)
 			}
@@ -193,7 +193,7 @@ Usage:
 	if offer && flags.DataChannel {
 		dcSender := transport.NewDataChannelSender("data")
 		var dataSource *data.DataBin
-		dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay, false)
+		dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay)
 		if err != nil {
 			return err
 		}

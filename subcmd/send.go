@@ -300,7 +300,7 @@ func runRoqPipe() error {
 			return err
 		}
 
-		dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay, false)
+		dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay)
 		if err != nil {
 			return err
 		}

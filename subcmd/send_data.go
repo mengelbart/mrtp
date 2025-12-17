@@ -17,10 +17,6 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
-var (
-	rateLimit uint
-)
-
 func init() {
 	cmdmain.RegisterSubCmd("send-data", func() cmdmain.SubCmd { return new(SendData) })
 }
@@ -47,7 +43,6 @@ func (s *SendData) Exec(cmd string, args []string) error {
 	}...)
 
 	sourceFile := fs.String("source-file", "", "File to be sent. If empty, random data will be sent.")
-	fs.UintVar(&rateLimit, "fixed-rate-limit", 0, "Rate limit in bits per second. 0 means no limit.")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `%v
@@ -62,15 +57,13 @@ Flags:
 	}
 	fs.Parse(args)
 
-	if (flags.CCnada || flags.CCgcc) && rateLimit > 0 {
-		return fmt.Errorf("cannot use fixed rate limit with NADA or GCC")
-	}
-
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
 		quictransport.SetQuicCC(int(flags.QuicCC)),
 		quictransport.SetLocalAdress(flags.LocalAddr, 8080),
 		quictransport.SetRemoteAdress(flags.RemoteAddr, 8080),
+		quictransport.WithPacer(1),
+		quictransport.SetQuicCC(2),
 	}
 
 	if flags.CCnada {
@@ -111,7 +104,7 @@ Flags:
 		return err
 	}
 
-	source, err := createDataSource(sender, *sourceFile, 0, true)
+	source, err := createDataSource(sender, *sourceFile, 0)
 	if err != nil {
 		return err
 	}
@@ -123,24 +116,15 @@ Flags:
 		quicConn.SetSourceTargetRate = func(ratebps uint) error {
 			// log "combined" target rate even if we do not split it. Makes plotting easier
 			slog.Info("NEW_TARGET_RATE", "rate", ratebps)
-
-			source.SetRateLimit(ratebps)
 			return nil
 		}
-	} else if rateLimit > 0 {
-		// fixed rate limit
-		source.SetRateLimit(rateLimit)
 	}
 
 	select {}
 }
 
-func createDataSource(sender io.WriteCloser, sourceFile string, startDelaySeconds uint, rateLimited bool) (*data.DataBin, error) {
+func createDataSource(sender io.WriteCloser, sourceFile string, startDelaySeconds uint) (*data.DataBin, error) {
 	sourceOptions := []data.DataBinOption{}
-
-	if rateLimited {
-		sourceOptions = append(sourceOptions, data.UseRateLimiter(750_000, 10000)) // burst not relevant, as data source sends small chunks anyways
-	}
 
 	if startDelaySeconds > 0 {
 		sourceOptions = append(sourceOptions, data.SetStartDelay(time.Duration(startDelaySeconds)*time.Second))
