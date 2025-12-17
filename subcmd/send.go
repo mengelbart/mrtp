@@ -149,6 +149,12 @@ Flags:
 		os.Exit(1)
 	}
 
+	if flags.DataChannelFlowID > 9 || flags.RTCPSendFlowID > 9 || flags.RTCPRecvFlowID > 9 || flags.RTPFlowID > 9 {
+		fmt.Fprintf(os.Stderr, "Flow IDs must be between 0 and 9 to allowd for multiple flows.\n")
+		fs.Usage()
+		os.Exit(1)
+	}
+
 	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || flags.LogQuic || flags.RoQMapping != 0) && (!flags.RoQServer && !flags.RoQClient) {
 		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, flags.LogQuicFlag, flags.RoQMappingFlag)
 		fs.Usage()

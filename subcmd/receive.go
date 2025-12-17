@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
@@ -137,6 +139,12 @@ Flags:
 		os.Exit(1)
 	}
 
+	if flags.DataChannelFlowID > 9 || flags.RTCPSendFlowID > 9 || flags.RTCPRecvFlowID > 9 || flags.RTPFlowID > 9 {
+		fmt.Fprintf(os.Stderr, "Flow IDs must be between 0 and 9 to allowd for multiple flows.\n")
+		fs.Usage()
+		os.Exit(1)
+	}
+
 	if flags.SinkType == uint(gstreamer.Filesink) && len(flags.SinkLocation) == 0 {
 		return errors.New("file-sink requires a location to be set via the -sink-location flag")
 	}
@@ -254,10 +262,7 @@ func (r *Receive) setupRoQ() error {
 	pipes := make([]*receivePipe, flags.RTPFlows)
 	for i := range flags.RTPFlows {
 		RTPFlowID := flags.RTPFlowID + uint(i*10)
-		filename := "out.y4m"
-		if i > 0 {
-			filename = fmt.Sprintf("out%v.y4m", i)
-		}
+		filename := withIterSuffix(flags.SinkLocation, i)
 		pipe, err := newRecieverPipe(filename, RTPFlowID)
 		if err != nil {
 			return err
@@ -346,4 +351,14 @@ func (r *Receive) setupUDP() error {
 	}
 
 	return pipe.receiver.Run()
+}
+
+func withIterSuffix(path string, iter uint) string {
+	if iter == 0 {
+		return path
+	}
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(filepath.Base(path), ext)
+	dir := filepath.Dir(path)
+	return filepath.Join(dir, fmt.Sprintf("%s-%d%s", base, iter, ext))
 }
