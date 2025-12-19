@@ -79,7 +79,9 @@ var (
 	dcPercatage uint
 )
 
-type Send struct{}
+type Send struct {
+	sender *gstreamer.RTPBin
+}
 
 func (s *Send) Help() string {
 	return "Run sender pipeline"
@@ -198,48 +200,53 @@ Flags:
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
-	if flags.RoQServer || flags.RoQClient {
-		return runRoqPipe()
-	} else {
-		return runUdpPipe()
-	}
-}
-
-type SenderPipe struct {
-	mediaBa BitrateAdapter
-	source  gstreamer.RTPSourceBin
-	sender  *gstreamer.RTPBin
-}
-
-func newSendPipe(flowID uint) (*SenderPipe, error) {
-	r := &SenderPipe{}
-
-	var err error
-	r.source, err = DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source", flowID)
-	if err != nil {
-		return nil, err
-	}
-
 	rtpBinOpts := []gstreamer.RTPBinOption{}
 	if gstSCReAM {
 		rtpBinOpts = append(rtpBinOpts, gstreamer.EnableSCReAM(750, 150, flags.MaxTargetRate/1000))
 	}
 
-	r.sender, err = gstreamer.NewRTPBin(rtpBinOpts...)
+	var err error
+	s.sender, err = gstreamer.NewRTPBin(rtpBinOpts...)
+	if err != nil {
+		return err
+	}
+
+	if flags.RoQServer || flags.RoQClient {
+		err = s.runRoqPipe()
+	} else {
+		err = s.runUdpPipe()
+	}
+	if err != nil {
+		return err
+	}
+
+	return s.sender.Run()
+}
+
+type SenderPipe struct {
+	mediaBa BitrateAdapter
+	source  gstreamer.RTPSourceBin
+}
+
+func newSendPipe(flowID uint) (*SenderPipe, error) {
+	r := &SenderPipe{}
+	srcName := fmt.Sprintf("rtp-stream-source-%v", flowID)
+	var err error
+	r.source, err = DefaultStreamSourceFactory.MakeStreamSource(srcName, flowID)
 	if err != nil {
 		return nil, err
 	}
 
 	var ok bool
 	r.mediaBa, ok = r.source.(BitrateAdapter)
-	if ok {
-		r.sender.SetTargetRateEncoder = r.mediaBa.SetBitrate
+	if !ok {
+		return nil, fmt.Errorf("no bitrate interface")
 	}
 
 	return r, nil
 }
 
-func runRoqPipe() error {
+func (s *Send) runRoqPipe() error {
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(flags.RoQServer)),
 		quictransport.SetQuicCC(int(flags.QuicCC)),
@@ -250,11 +257,11 @@ func runRoqPipe() error {
 
 	if flags.CCnada {
 		feedbackDelta := uint64(20)
-		quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
+		quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 250_000, flags.MaxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
 	}
 
 	if flags.CCgcc {
-		quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
+		quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
 	}
 	if flags.LogQuic {
 		quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
@@ -351,10 +358,10 @@ func runRoqPipe() error {
 		if err != nil {
 			return err
 		}
-		if err = pipes[i].sender.AddRTPTransportSink(0, rtpSink); err != nil {
+		if err = s.sender.AddRTPTransportSink(int(RTPFlowID), rtpSink); err != nil {
 			return err
 		}
-		if err = pipes[i].sender.AddRTPSourceStreamGst(0, pipes[i].source); err != nil {
+		if err = s.sender.AddRTPSourceStreamGst(int(RTPFlowID), pipes[i].source); err != nil {
 			return err
 		}
 
@@ -362,7 +369,7 @@ func runRoqPipe() error {
 		if err != nil {
 			return err
 		}
-		if err = pipes[i].sender.SendRTCPForStream(0, rtcpSink); err != nil {
+		if err = s.sender.SendRTCPForStream(int(RTPFlowID), rtcpSink); err != nil {
 			return err
 		}
 
@@ -370,33 +377,30 @@ func runRoqPipe() error {
 		if err != nil {
 			return err
 		}
-		if err = pipes[i].sender.ReceiveRTCPFrom(rtcpSrc); err != nil {
+		if err = s.sender.ReceiveRTCPFrom(rtcpSrc); err != nil {
 			return err
 		}
 	}
 
-	// start all pipes
-	for i := range flags.RTPFlows {
-		go pipes[i].sender.Run()
-	}
-
-	select {}
+	return nil
 }
 
-func runUdpPipe() error {
+func (s *Send) runUdpPipe() error {
 	pipe, err := newSendPipe(0)
 	if err != nil {
 		return err
 	}
 
+	s.sender.SetTargetRateEncoder = pipe.mediaBa.SetBitrate
+
 	rtpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSinkPadProbe(flags.TraceRTPSend))
 	if err != nil {
 		return err
 	}
-	if err = pipe.sender.AddRTPTransportSinkGst(0, rtpSink.GetGstElement()); err != nil {
+	if err = s.sender.AddRTPTransportSinkGst(0, rtpSink.GetGstElement()); err != nil {
 		return err
 	}
-	if err = pipe.sender.AddRTPSourceStreamGst(0, pipe.source); err != nil {
+	if err = s.sender.AddRTPSourceStreamGst(0, pipe.source); err != nil {
 		return err
 	}
 
@@ -404,7 +408,7 @@ func runUdpPipe() error {
 	if err != nil {
 		return err
 	}
-	if err = pipe.sender.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
+	if err = s.sender.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
 		return err
 	}
 
@@ -412,9 +416,9 @@ func runUdpPipe() error {
 	if err != nil {
 		return err
 	}
-	if err = pipe.sender.ReceiveRTCPFromGst(rtcpSrc.GetGstElement()); err != nil {
+	if err = s.sender.ReceiveRTCPFromGst(rtcpSrc.GetGstElement()); err != nil {
 		return err
 	}
 
-	return pipe.sender.Run()
+	return nil
 }

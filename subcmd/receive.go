@@ -71,6 +71,7 @@ func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int, vi
 var DefaultStreamSinkFactory StreamSinkFactory = &gstreamerVideoStreamSinkFactory{}
 
 type Receive struct {
+	receiver *gstreamer.RTPBin
 }
 
 func (r *Receive) Help() string {
@@ -162,27 +163,33 @@ Flags:
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
-	if flags.RoQServer || flags.RoQClient {
-		return r.setupRoQ()
-	} else {
-		return r.setupUDP()
+	var err error
+	r.receiver, err = gstreamer.NewRTPBin()
+	if err != nil {
+		return err
 	}
+
+	if flags.RoQServer || flags.RoQClient {
+		err = r.setupRoQ()
+	} else {
+		err = r.setupUDP()
+	}
+	if err != nil {
+		return err
+	}
+
+	return r.receiver.Run()
 }
 
 type receivePipe struct {
-	receiver *gstreamer.RTPBin
-	sink     gstreamer.RTPSinkBin
+	sink gstreamer.RTPSinkBin
 }
 
 func newRecieverPipe(videoFilename string, flowID uint) (*receivePipe, error) {
 	rp := &receivePipe{}
+	sinkName := fmt.Sprintf("rtp-stream-source-%v", flowID)
 	var err error
-	rp.receiver, err = gstreamer.NewRTPBin()
-	if err != nil {
-		return nil, err
-	}
-
-	rp.sink, err = DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", 96, videoFilename, flowID)
+	rp.sink, err = DefaultStreamSinkFactory.MakeStreamSink(sinkName, 96, videoFilename, flowID)
 	if err != nil {
 		return nil, err
 	}
@@ -279,10 +286,10 @@ func (r *Receive) setupRoQ() error {
 		if err != nil {
 			return err
 		}
-		if err = pipes[i].receiver.AddRTPSink(0, pipes[i].sink); err != nil {
+		if err = r.receiver.AddRTPSink(int(RTPFlowID), pipes[i].sink); err != nil {
 			return err
 		}
-		if err = pipes[i].receiver.ReceiveRTPStreamFrom(0, rtpSrc, flags.GstCCFB); err != nil {
+		if err = r.receiver.ReceiveRTPStreamFrom(int(RTPFlowID), rtpSrc, flags.GstCCFB); err != nil {
 			return err
 		}
 
@@ -290,7 +297,7 @@ func (r *Receive) setupRoQ() error {
 		if err != nil {
 			return err
 		}
-		if err = pipes[i].receiver.SendRTCPForStream(0, rtcpSink); err != nil {
+		if err = r.receiver.SendRTCPForStream(int(RTPFlowID), rtcpSink); err != nil {
 			return err
 		}
 
@@ -298,18 +305,13 @@ func (r *Receive) setupRoQ() error {
 		if err != nil {
 			return err
 		}
-		if err = pipes[i].receiver.ReceiveRTCPFrom(rtcpSrc); err != nil {
+		if err = r.receiver.ReceiveRTCPFrom(rtcpSrc); err != nil {
 			return err
 		}
 
 	}
 
-	// start all pipes
-	for i := range flags.RTPFlows {
-		go pipes[i].receiver.Run()
-	}
-
-	select {}
+	return nil
 }
 
 func (r *Receive) setupUDP() error {
@@ -327,10 +329,10 @@ func (r *Receive) setupUDP() error {
 	if err != nil {
 		return err
 	}
-	if err = pipe.receiver.AddRTPSink(0, pipe.sink); err != nil {
+	if err = r.receiver.AddRTPSink(0, pipe.sink); err != nil {
 		return err
 	}
-	if err = pipe.receiver.ReceiveRTPStreamFromGst(0, rtpSrc.GetGstElement(), flags.GstCCFB); err != nil {
+	if err = r.receiver.ReceiveRTPStreamFromGst(0, rtpSrc.GetGstElement(), flags.GstCCFB); err != nil {
 		return err
 	}
 
@@ -338,7 +340,7 @@ func (r *Receive) setupUDP() error {
 	if err != nil {
 		return err
 	}
-	if err = pipe.receiver.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
+	if err = r.receiver.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
 		return err
 	}
 
@@ -346,11 +348,11 @@ func (r *Receive) setupUDP() error {
 	if err != nil {
 		return err
 	}
-	if err = pipe.receiver.ReceiveRTCPFromGst(rtcpSrc.GetGstElement()); err != nil {
+	if err = r.receiver.ReceiveRTCPFromGst(rtcpSrc.GetGstElement()); err != nil {
 		return err
 	}
 
-	return pipe.receiver.Run()
+	return nil
 }
 
 func withIterSuffix(path string, iter uint) string {

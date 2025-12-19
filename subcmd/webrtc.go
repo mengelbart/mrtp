@@ -147,10 +147,10 @@ Usage:
 		webrtcOptions = append(webrtcOptions, webrtc.EnablePacing())
 	}
 	if flags.CCgcc {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate)))
+		webrtcOptions = append(webrtcOptions, webrtc.EnableGCC(750_000, 250_000, int(flags.MaxTargetRate)))
 	}
 	if flags.CCnada {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableNADA(750_000, 150_000, flags.MaxTargetRate))
+		webrtcOptions = append(webrtcOptions, webrtc.EnableNADA(750_000, 250_000, flags.MaxTargetRate))
 	}
 
 	connectedCtx, cancelConnectedCtx := context.WithCancel(context.Background())
