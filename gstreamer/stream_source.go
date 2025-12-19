@@ -85,8 +85,14 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 	var pay *gst.Element
 	switch s.codec {
 	case mrtp.H264:
-		settings := map[string]any{"pass": 5, "speed-preset": 1, "tune": 6, "key-int-max": 10_000}
-		s.encoder, err = gst.NewElementWithProperties("x264enc", settings)
+		encSettings := map[string]any{
+			"pass":         5,   // const quality
+			"speed-preset": 1,   // ultrafast
+			"tune":         4,   // zerolatency
+			"bitrate":      750, // init bitrate in kbps
+			"key-int-max":  0,   // auto
+		}
+		s.encoder, err = gst.NewElementWithProperties("x264enc", encSettings)
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +147,10 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 
 	// queue to ensure pipeline acts as a real-time source
 	queueSettings := map[string]any{
-		"leaky": 2, // leaky on downstream (old buffers)
+		"leaky":            2,              // leaky on downstream (old buffers)
+		"max-size-buffers": 200 * 2,        // default is 200
+		"max-size-bytes":   10485760 * 2,   // default is 10MB
+		"max-size-time":    1000000000 * 2, // in nanoseconds, default is 1 second
 	}
 	queue, err := gst.NewElementWithProperties("queue", queueSettings)
 	if err != nil {
