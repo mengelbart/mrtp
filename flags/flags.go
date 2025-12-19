@@ -28,6 +28,7 @@ const (
 	RTPPortFlag      FlagName = "rtp-port"
 	RTCPRecvPortFlag FlagName = "rtcp-recv-porto"
 	RTCPSendPortFlag FlagName = "rtcp-send-porto"
+	RTPFlowsFlag     FlagName = "rtp-flows"
 
 	RTPFlowIDFlag          FlagName = "rtp-flow-id"
 	RTCPRecvFlowIDFlag     FlagName = "rtcp-recv-flow-id"
@@ -88,6 +89,7 @@ var (
 	RTPPort      = uint(5000)
 	RTCPSendPort = uint(5001)
 	RTCPRecvPort = uint(5002)
+	RTPFlows     = uint(1)
 
 	// Flow IDs for RoQ and datachannels
 	RTPFlowID          = uint(0)
@@ -159,13 +161,14 @@ var flags = map[FlagName]flagVar{
 	RTPPortFlag:      uintVar(&RTPPort, RTPPortFlag, &RTPPort, "UDP Port number for outgoing RTP stream"),
 	RTCPRecvPortFlag: uintVar(&RTCPRecvPort, RTCPRecvPortFlag, &RTCPRecvPort, "UDP port for incoming RTCP stream"),
 	RTCPSendPortFlag: uintVar(&RTCPSendPort, RTCPSendPortFlag, &RTCPSendPort, "UDP port for outgoing RTCP stream"),
+	RTPFlowsFlag:     uintVar(&RTPFlows, RTPFlowsFlag, &RTPFlows, "Number of RTP flows to be sent/received. FlowIDs := baseID + i*10"),
 
 	// flow ID flags
-	RTPFlowIDFlag:          uintVar(&RTPFlowID, RTPFlowIDFlag, &RTPFlowID, "RTP Flow ID when using RTP over QUIC"),
-	RTCPRecvFlowIDFlag:     uintVar(&RTCPRecvFlowID, RTCPRecvFlowIDFlag, &RTCPRecvFlowID, "RTP Flow ID when using RTP over QUIC"),
-	RTCPSendFlowIDFlag:     uintVar(&RTCPSendFlowID, RTCPSendFlowIDFlag, &RTCPSendFlowID, "RTP Flow ID when using RTP over QUIC"),
-	DataChannelFlowIDFlag:  uintVar(&DataChannelFlowID, DataChannelFlowIDFlag, &DataChannelFlowID, "Data Channel Flow ID when using quic data channels"),
-	NadaFeedbackFlowIDFlag: uintVar(&NadaFeedbackFlowID, NadaFeedbackFlowIDFlag, &NadaFeedbackFlowID, "NADA Feedback Flow ID when using NADA or GCC with QUIC"),
+	RTPFlowIDFlag:          uintVar(&RTPFlowID, RTPFlowIDFlag, &RTPFlowID, "RTP Flow ID when using RTP over QUIC. Single Digit!"),
+	RTCPRecvFlowIDFlag:     uintVar(&RTCPRecvFlowID, RTCPRecvFlowIDFlag, &RTCPRecvFlowID, "RTP Flow ID when using RTP over QUIC. Single Digit!"),
+	RTCPSendFlowIDFlag:     uintVar(&RTCPSendFlowID, RTCPSendFlowIDFlag, &RTCPSendFlowID, "RTP Flow ID when using RTP over QUIC. Single Digit!"),
+	DataChannelFlowIDFlag:  uintVar(&DataChannelFlowID, DataChannelFlowIDFlag, &DataChannelFlowID, "Data Channel Flow ID when using quic data channels. Single Digit!"),
+	NadaFeedbackFlowIDFlag: uintVar(&NadaFeedbackFlowID, NadaFeedbackFlowIDFlag, &NadaFeedbackFlowID, "NADA Feedback Flow ID when using NADA or GCC with QUIC. Single Digit!"),
 
 	// TLS Certificate
 	CertFlag: stringVar(&Cert, CertFlag, &Cert, "TLS Certificate"),

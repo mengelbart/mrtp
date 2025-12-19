@@ -106,7 +106,7 @@ Usage:
 		webrtc.SetSRTPBufferLimit(10_000_000), // 10MB
 		webrtc.RegisterDefaultCodecs(),
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
-			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()))
+			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()), flags.SinkLocation, 0)
 			if newSinkErr != nil {
 				panic(err)
 			}
@@ -147,10 +147,10 @@ Usage:
 		webrtcOptions = append(webrtcOptions, webrtc.EnablePacing())
 	}
 	if flags.CCgcc {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate)))
+		webrtcOptions = append(webrtcOptions, webrtc.EnableGCC(750_000, 250_000, int(flags.MaxTargetRate)))
 	}
 	if flags.CCnada {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableNADA(750_000, 150_000, flags.MaxTargetRate))
+		webrtcOptions = append(webrtcOptions, webrtc.EnableNADA(750_000, 250_000, flags.MaxTargetRate))
 	}
 
 	connectedCtx, cancelConnectedCtx := context.WithCancel(context.Background())
@@ -193,7 +193,7 @@ Usage:
 	if offer && flags.DataChannel {
 		dcSender := transport.NewDataChannelSender("data")
 		var dataSource *data.DataBin
-		dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay, false)
+		dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay)
 		if err != nil {
 			return err
 		}
@@ -210,7 +210,7 @@ Usage:
 
 	if sendVideoTrack {
 		var source gstreamer.RTPSourceBin
-		source, err = DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source")
+		source, err = DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source", 0)
 		if err != nil {
 			return err
 		}
