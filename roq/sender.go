@@ -3,6 +3,7 @@ package roq
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/mengelbart/roq"
@@ -44,6 +45,15 @@ func newSender(flow *roq.SendFlow, mode SendMode, logRTPpackets bool) (*Sender, 
 	return sender, nil
 }
 
+func cancleClose(stream *roq.RTPSendStream) {
+	stream.Close()
+
+	go func() {
+		time.Sleep(500 * time.Millisecond) // 500 * time.Millisecond
+		stream.CancelStream(0)
+	}()
+}
+
 func (s *Sender) Write(data []byte) (int, error) {
 	// log rtp packet
 	if s.logger != nil {
@@ -58,7 +68,7 @@ func (s *Sender) Write(data []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		defer stream.Close()
+		defer cancleClose(stream)
 		return stream.WriteRTPBytes(data)
 	case SendModeSingleStream:
 		return s.stream.WriteRTPBytes(data)

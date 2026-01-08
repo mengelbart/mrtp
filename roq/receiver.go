@@ -1,10 +1,12 @@
 package roq
 
 import (
+	"errors"
 	"time"
 
 	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/mengelbart/roq"
+	"github.com/quic-go/quic-go"
 )
 
 // Receiver is a wrapper for roq.ReceiveFlow that supports logging RTP packets.
@@ -27,6 +29,11 @@ func newReciever(flow *roq.ReceiveFlow, logRTPpackets bool) *Receiver {
 func (r *Receiver) Read(buf []byte) (int, error) {
 	n, err := r.flow.Read(buf)
 	if err != nil {
+		var streamErr *quic.StreamError
+		if errors.As(err, &streamErr) {
+			// Stream was canceled
+			return 0, nil
+		}
 		return n, err
 	}
 
