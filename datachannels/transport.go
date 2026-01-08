@@ -2,6 +2,7 @@ package datachannels
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
 	"github.com/mengelbart/quicdc"
@@ -53,6 +54,8 @@ func (t *Transport) NewDataChannelSender(channelID uint64, priority uint64, orde
 
 // ReadStream registers a QUIC stream to the quicdc session
 func (t *Transport) ReadStream(ctx context.Context, stream *quic.ReceiveStream, channelID uint64) error {
+	slog.Info("new dc stream", "streamID", stream.StreamID(), "flowID", channelID)
+
 	return t.session.ReadStream(ctx, stream, channelID)
 }
 
