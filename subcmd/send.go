@@ -239,7 +239,8 @@ Flags:
 		dcTransport := quicConn.GetQuicDataChannel()
 
 		// open roq connection
-		roqTransport, err := roq.New(quicConn.GetQuicConnection())
+		roqOpt := []roq.Option{roq.EnableRoqLogs("sender.roq.qlog")}
+		roqTransport, err := roq.New(quicConn.GetQuicConnection(), roqOpt...)
 		if err != nil {
 			return err
 		}
