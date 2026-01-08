@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 
@@ -210,8 +209,6 @@ func (r *Receive) setupRoQ() error {
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		slog.Info("new uni stream", "streamID", rs.StreamID(), "flowID", flowID)
-
 		if flowID == uint64(flags.RTPFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return

@@ -1,6 +1,8 @@
 package roq
 
 import (
+	"os"
+
 	"github.com/mengelbart/qlog"
 	"github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
@@ -8,8 +10,16 @@ import (
 
 type Option func(*Transport) error
 
+func EnableRoqLogs(filepath string) Option {
+	return func(d *Transport) error {
+		d.logFile = filepath
+		return nil
+	}
+}
+
 type Transport struct {
 	session *roq.Session
+	logFile string
 }
 
 func New(quicConn *quic.Conn, opts ...Option) (*Transport, error) {
@@ -26,6 +36,16 @@ func New(quicConn *quic.Conn, opts ...Option) (*Transport, error) {
 	conn := roq.NewQUICGoConnection(quicConn)
 
 	ql := (*qlog.Logger)(nil)
+
+	if t.logFile != "" {
+		f, err := os.OpenFile(t.logFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			return nil, err
+		}
+
+		ql = qlog.NewQLOGHandler(f, "roq logs", "", "")
+	}
+
 	s, err := roq.NewSessionWithAppHandeledConn(conn, true, ql)
 	if err != nil {
 		return nil, err
