@@ -273,6 +273,11 @@ func (t *Transport) receiveUniStreams() {
 		reader := quicvarint.NewReader(rs)
 		flowID, err := quicvarint.Read(reader)
 		if err != nil {
+			var streamErr *quic.StreamError
+			if errors.As(err, &streamErr) {
+				// Stream was canceled; nothing to do
+				continue
+			}
 			panic(err)
 		}
 
