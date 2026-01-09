@@ -110,6 +110,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.DataChannelFlowIDFlag,
 		flags.DataChannelFileFlag,
 		flags.DataChannelStartDelayFlag,
+		flags.DataChannelChunkFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 	fs.UintVar(&dcPercatage, "dc-tr-share", 30, "Percentage of target rate to be used for data channel (RoQ only)")
@@ -244,6 +245,7 @@ Flags:
 		if err != nil {
 			return err
 		}
+		defer roqTransport.CloseLogFile()
 
 		// set handlers for datagrams and streams
 		quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
@@ -272,7 +274,7 @@ Flags:
 				return err
 			}
 
-			dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay, false)
+			dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay, false, flags.DcChunks)
 			if err != nil {
 				return err
 			}
