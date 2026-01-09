@@ -111,7 +111,7 @@ Flags:
 		return err
 	}
 
-	source, err := createDataSource(sender, *sourceFile, 0, true)
+	source, err := createDataSource(sender, *sourceFile, 0, true, false)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ Flags:
 	select {}
 }
 
-func createDataSource(sender io.WriteCloser, sourceFile string, startDelaySeconds uint, rateLimited bool) (*data.DataBin, error) {
+func createDataSource(sender io.WriteCloser, sourceFile string, startDelaySeconds uint, rateLimited bool, chunkSource bool) (*data.DataBin, error) {
 	sourceOptions := []data.DataBinOption{}
 
 	if rateLimited {
@@ -152,6 +152,10 @@ func createDataSource(sender io.WriteCloser, sourceFile string, startDelaySecond
 			return nil, fmt.Errorf("file does not exist: %v", sourceFile)
 		}
 		sourceOptions = append(sourceOptions, data.UseFileSource(sourceFile))
+	}
+
+	if chunkSource {
+		sourceOptions = append(sourceOptions, data.UseChunkSource())
 	}
 
 	return data.NewDataBin(sender, sourceOptions...)

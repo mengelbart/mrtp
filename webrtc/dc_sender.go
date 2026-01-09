@@ -45,6 +45,11 @@ func (s *DCsender) addPacketsToDc() error {
 	// get length, so we only pick packets that were already in the channel
 	len := len(s.dataChan)
 
+	if len == 0 {
+		s.firstDataUnitsSent = false
+		return nil
+	}
+
 	for range len {
 		data := <-s.dataChan
 		if err := s.dc.Send(data); err != nil {

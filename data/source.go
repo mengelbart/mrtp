@@ -18,8 +18,9 @@ import (
 type DataBinOption func(*DataBin) error
 
 type DataBin struct {
-	useFileSrc bool
-	filepath   string
+	useFileSrc  bool
+	useChunkSrc bool
+	filepath    string
 
 	wc          io.WriteCloser
 	rateLimiter *rate.Limiter
@@ -32,6 +33,13 @@ func UseFileSource(filepath string) DataBinOption {
 	return func(d *DataBin) error {
 		d.useFileSrc = true
 		d.filepath = filepath
+		return nil
+	}
+}
+
+func UseChunkSource() DataBinOption {
+	return func(d *DataBin) error {
+		d.useChunkSrc = true
 		return nil
 	}
 }
@@ -127,6 +135,44 @@ func (d *DataBin) startFileSource() error {
 	}
 }
 
+func (d *DataBin) startChunkSource() error {
+	if d.wc == nil {
+		return fmt.Errorf("data sink not set")
+	}
+
+	buf := make([]byte, 1000)
+
+	for i := 1; i <= 5; i++ {
+		d.running.Store(false)
+		time.Sleep(10 * time.Second)
+		d.running.Store(true)
+
+		if d.rateLimiter != nil {
+			err := d.rateLimiter.WaitN(context.TODO(), 1000)
+			if err != nil {
+				println("DataSource error")
+				log.Fatal(err)
+			}
+		}
+
+		// webrtc dc breaks if we push everything at once
+		for range 1000 {
+			n, writeErr := d.wc.Write(buf)
+			if writeErr != nil {
+				fmt.Println("DataSource error")
+				d.wc.Close()
+				d.running.Store(false)
+				return fmt.Errorf("failed to write to sink: %w", writeErr)
+			}
+
+			logDataEvent(n)
+		}
+
+	}
+	d.running.Store(false)
+	return nil
+}
+
 func (d *DataBin) startRandomSource() error {
 	if d.wc == nil {
 		return fmt.Errorf("data sink not set")
@@ -152,6 +198,10 @@ func (d *DataBin) startRandomSource() error {
 }
 
 func (d *DataBin) Run() error {
+	if d.useChunkSrc {
+		return d.startChunkSource()
+	}
+
 	if d.startDelay > 0 {
 		slog.Info("DataBin start delay", "duration", d.startDelay)
 		time.Sleep(d.startDelay)

@@ -12,14 +12,16 @@ type Option func(*Transport) error
 
 func EnableRoqLogs(filepath string) Option {
 	return func(d *Transport) error {
-		d.logFile = filepath
+		d.logFilepath = filepath
 		return nil
 	}
 }
 
 type Transport struct {
-	session *roq.Session
-	logFile string
+	session     *roq.Session
+	logFilepath string
+
+	logFile *os.File
 }
 
 func New(quicConn *quic.Conn, opts ...Option) (*Transport, error) {
@@ -37,13 +39,14 @@ func New(quicConn *quic.Conn, opts ...Option) (*Transport, error) {
 
 	ql := (*qlog.Logger)(nil)
 
-	if t.logFile != "" {
-		f, err := os.OpenFile(t.logFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if t.logFilepath != "" {
+		var err error
+		t.logFile, err = os.OpenFile(t.logFilepath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
 			return nil, err
 		}
 
-		ql = qlog.NewQLOGHandler(f, "roq logs", "", "")
+		ql = qlog.NewQLOGHandler(t.logFile, "roq logs", "", "")
 	}
 
 	s, err := roq.NewSessionWithAppHandeledConn(conn, true, ql)
@@ -77,4 +80,11 @@ func (t *Transport) NewReceiveFlow(id uint64, logRTPpackets bool) (*Receiver, er
 		return nil, err
 	}
 	return newReciever(flow, logRTPpackets), nil
+}
+
+func (t *Transport) CloseLogFile() error {
+	if t.logFile != nil {
+		return t.logFile.Close()
+	}
+	return nil
 }
