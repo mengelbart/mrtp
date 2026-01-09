@@ -197,7 +197,7 @@ Flags:
 
 	rtpBinOpts := []gstreamer.RTPBinOption{}
 	if gstSCReAM {
-		rtpBinOpts = append(rtpBinOpts, gstreamer.EnableSCReAM(750, 150, flags.MaxTargetRate/1000))
+		rtpBinOpts = append(rtpBinOpts, gstreamer.EnableSCReAM(750, 250, flags.MaxTargetRate/1000))
 	}
 
 	sender, err := gstreamer.NewRTPBin(rtpBinOpts...)
@@ -221,11 +221,11 @@ Flags:
 
 		if flags.CCnada {
 			feedbackDelta := uint64(20)
-			quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
+			quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 250_000, flags.MaxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
 		}
 
 		if flags.CCgcc {
-			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
+			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
 		}
 		if flags.LogQuic {
 			quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
