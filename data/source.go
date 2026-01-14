@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/quic-go/quic-go/quicvarint"
 	"golang.org/x/time/rate"
 )
 
@@ -104,6 +105,22 @@ func (d *DataBin) startFileSource() error {
 	}
 	defer file.Close()
 
+	// Get file size
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to get file info: %w", err)
+	}
+	fileSize := fileInfo.Size()
+
+	// write size on channel
+	sizeBuf := make([]byte, 0)
+	sizeBuf = quicvarint.Append(sizeBuf, uint64(fileSize))
+	_, err = d.wc.Write(sizeBuf)
+	if err != nil {
+		return err
+	}
+	slog.Info("DataSrc Chunk started", "chunk-number", 0)
+
 	buf := make([]byte, 1024)
 	for {
 		if d.rateLimiter != nil {
@@ -142,24 +159,31 @@ func (d *DataBin) startChunkSource() error {
 
 	buf := make([]byte, 1000)
 
-	for i := 1; i <= 5; i++ {
+	for i := range 5 {
 		d.running.Store(false)
 		time.Sleep(10 * time.Second)
 		d.running.Store(true)
 
+		sizeBuf := make([]byte, 0)
+		sizeBuf = quicvarint.Append(sizeBuf, uint64(1000*1000))
+		_, err := d.wc.Write(sizeBuf)
+		if err != nil {
+			return err
+		}
+
 		if d.rateLimiter != nil {
 			err := d.rateLimiter.WaitN(context.TODO(), 1000)
 			if err != nil {
-				println("DataSource error")
 				log.Fatal(err)
 			}
 		}
+
+		slog.Info("DataSrc Chunk started", "chunk-number", i)
 
 		// webrtc dc breaks if we push everything at once
 		for range 1000 {
 			n, writeErr := d.wc.Write(buf)
 			if writeErr != nil {
-				fmt.Println("DataSource error")
 				d.wc.Close()
 				d.running.Store(false)
 				return fmt.Errorf("failed to write to sink: %w", writeErr)
@@ -167,15 +191,23 @@ func (d *DataBin) startChunkSource() error {
 
 			logDataEvent(n)
 		}
-
+		slog.Info("DataSrc Chunk finised", "chunk-number", i)
 	}
 	d.running.Store(false)
-	return nil
+	return d.wc.Close()
 }
 
 func (d *DataBin) startRandomSource() error {
 	if d.wc == nil {
 		return fmt.Errorf("data sink not set")
+	}
+
+	// write size on channel. size = 0 only one chunk
+	sizeBuf := make([]byte, 0)
+	sizeBuf = quicvarint.Append(sizeBuf, uint64(0))
+	_, err := d.wc.Write(sizeBuf)
+	if err != nil {
+		return err
 	}
 
 	buf := make([]byte, 1024)
