@@ -432,3 +432,7 @@ func (t *Transport) feedbackReceiver() {
 		}
 	}
 }
+
+func (t *Transport) HandshakeComplete() <-chan struct{} {
+	return t.quicConn.HandshakeComplete()
+}

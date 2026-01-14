@@ -210,6 +210,7 @@ Flags:
 		sender.SetTargetRateEncoder = mediaBa.SetBitrate
 	}
 
+	connected := make(chan struct{})
 	if flags.RoQServer || flags.RoQClient {
 		quicOptions := []quictransport.Option{
 			quictransport.WithRole(quictransport.Role(flags.RoQServer)),
@@ -236,6 +237,10 @@ Flags:
 		if err != nil {
 			return err
 		}
+		go func() {
+			<-quicConn.HandshakeComplete()
+			close(connected)
+		}()
 		dcTransport := quicConn.GetQuicDataChannel()
 
 		// open roq connection
@@ -349,7 +354,9 @@ Flags:
 		if err = sender.ReceiveRTCPFromGst(rtcpSrc.GetGstElement()); err != nil {
 			return err
 		}
+		close(connected)
 	}
 
+	<-connected
 	return sender.Run()
 }
