@@ -86,7 +86,7 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 	switch s.codec {
 	case mrtp.H264:
 		encSettings := map[string]any{
-			"pass":         5,   // const quality
+			"pass":         0,   // const rate
 			"speed-preset": 1,   // ultrafast
 			"tune":         4,   // zerolatency
 			"bitrate":      750, // init bitrate in kbps
