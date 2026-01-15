@@ -1,10 +1,9 @@
 package data
 
 import (
+	"encoding/binary"
 	"io"
 	"log/slog"
-
-	"github.com/quic-go/quic-go/quicvarint"
 )
 
 // DataSink currently only a noop sink
@@ -39,17 +38,18 @@ func (d *DataSink) Run() error {
 
 	currentChunk := 0
 	for {
-		// Read chunk size header first
-		headerBuf := make([]byte, 10)
+		// Read chunk size header first (8 bytes for uint64)
+		headerBuf := make([]byte, 8)
 		n, err := d.read(headerBuf, 0)
 		if err != nil {
 			return err
 		}
-
-		chunkSize, varintLen, err := quicvarint.Parse(headerBuf[:n])
-		if err != nil {
-			return err
+		if n < 8 {
+			slog.Error("DataSink failed to read full header", "bytes-read", n)
+			return io.ErrUnexpectedEOF
 		}
+
+		chunkSize := binary.BigEndian.Uint64(headerBuf)
 
 		slog.Info("DataSink Chunk started", "chunk-number", currentChunk, "chunk-size", chunkSize)
 
@@ -63,8 +63,7 @@ func (d *DataSink) Run() error {
 				}
 			}
 		} else {
-			remainingFromHeader := n - varintLen
-			read := remainingFromHeader
+			read := 0
 
 			buf := make([]byte, 2048)
 			for read < int(chunkSize) {
