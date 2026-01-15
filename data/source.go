@@ -3,16 +3,17 @@ package data
 import (
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
 	"math"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/quic-go/quic-go/quicvarint"
 	"golang.org/x/time/rate"
 )
 
@@ -93,7 +94,6 @@ func (d *DataBin) SetRateLimit(ratebps uint) {
 func bitRateToBytesPerSec(bitrate uint) float64 {
 	return math.Max(float64(bitrate)/8.0, 1)
 }
-
 func (d *DataBin) startFileSource() error {
 	if d.wc == nil {
 		return fmt.Errorf("data sink not set")
@@ -113,8 +113,8 @@ func (d *DataBin) startFileSource() error {
 	fileSize := fileInfo.Size()
 
 	// write size on channel
-	sizeBuf := make([]byte, 0)
-	sizeBuf = quicvarint.Append(sizeBuf, uint64(fileSize))
+	sizeBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(sizeBuf, uint64(fileSize))
 	_, err = d.wc.Write(sizeBuf)
 	if err != nil {
 		return err
@@ -157,42 +157,52 @@ func (d *DataBin) startChunkSource() error {
 		return fmt.Errorf("data sink not set")
 	}
 
-	buf := make([]byte, 1000)
+	var wg sync.WaitGroup
+	wg.Add(5)
 
 	for i := range 5 {
-		d.running.Store(false)
-		time.Sleep(10 * time.Second)
-		d.running.Store(true)
+		time.Sleep(15 * time.Second)
 
-		sizeBuf := make([]byte, 0)
-		sizeBuf = quicvarint.Append(sizeBuf, uint64(1000*1000))
-		_, err := d.wc.Write(sizeBuf)
-		if err != nil {
-			return err
-		}
+		go func(chunkNum int) {
+			defer wg.Done()
+			d.running.Store(true)
+			defer d.running.Store(false)
 
-		if d.rateLimiter != nil {
-			err := d.rateLimiter.WaitN(context.TODO(), 1000)
+			sizeBuf := make([]byte, 8)
+			binary.BigEndian.PutUint64(sizeBuf, uint64(1000*1000))
+			_, err := d.wc.Write(sizeBuf)
 			if err != nil {
-				log.Fatal(err)
-			}
-		}
-
-		slog.Info("DataSrc Chunk started", "chunk-number", i)
-
-		// webrtc dc breaks if we push everything at once
-		for range 1000 {
-			n, writeErr := d.wc.Write(buf)
-			if writeErr != nil {
-				d.wc.Close()
-				d.running.Store(false)
-				return fmt.Errorf("failed to write to sink: %w", writeErr)
+				slog.Error("DataSrc failed to write size", "error", err, "chunk-number", chunkNum)
+				return
 			}
 
-			logDataEvent(n)
-		}
-		slog.Info("DataSrc Chunk finised", "chunk-number", i)
+			if d.rateLimiter != nil {
+				err := d.rateLimiter.WaitN(context.TODO(), 1000)
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+
+			buf := make([]byte, 1000)
+
+			slog.Info("DataSrc Chunk started", "chunk-number", chunkNum)
+
+			// webrtc dc breaks if we push everything at once
+			for range 1000 {
+				n, writeErr := d.wc.Write(buf)
+				if writeErr != nil {
+					slog.Error("DataSrc failed to write to sink", "error", writeErr, "chunk-number", chunkNum)
+					return
+				}
+
+				logDataEvent(n)
+			}
+			slog.Info("DataSrc Chunk finised", "chunk-number", chunkNum)
+		}(i)
 	}
+
+	// Wait for all goroutines to complete before closing
+	wg.Wait()
 	d.running.Store(false)
 	return d.wc.Close()
 }
@@ -203,8 +213,8 @@ func (d *DataBin) startRandomSource() error {
 	}
 
 	// write size on channel. size = 0 only one chunk
-	sizeBuf := make([]byte, 0)
-	sizeBuf = quicvarint.Append(sizeBuf, uint64(0))
+	sizeBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(sizeBuf, uint64(0))
 	_, err := d.wc.Write(sizeBuf)
 	if err != nil {
 		return err
