@@ -20,21 +20,29 @@ func NewSink(rc io.ReadCloser) (*DataSink, error) {
 	return d, nil
 }
 
+func (d *DataSink) read(buf []byte, currentChunk int) (int, error) {
+	n, err := d.rc.Read(buf)
+	if err != nil {
+		if err == io.EOF {
+			slog.Info("DataSink EOF")
+			return n, nil
+		}
+		slog.Info("Datasink error: ", "err", err)
+		return n, err
+	}
+	slog.Info("DataSink received data", "payload-length", n, "chunk-number", currentChunk)
+	return n, nil
+}
+
 func (d *DataSink) Run() error {
 	slog.Info("DataSink started")
 
 	currentChunk := 0
-
 	for {
 		// Read chunk size header first
 		headerBuf := make([]byte, 10)
-		n, err := d.rc.Read(headerBuf)
+		n, err := d.read(headerBuf, 0)
 		if err != nil {
-			if err == io.EOF {
-				slog.Info("DataSink finished")
-				return nil
-			}
-			slog.Info("Datasink error: ", "err", err)
 			return err
 		}
 
@@ -49,17 +57,10 @@ func (d *DataSink) Run() error {
 			slog.Info("DataSink chunksize 0")
 			buf := make([]byte, 2048)
 			for {
-				n, err := d.rc.Read(buf)
+				_, err = d.read(buf, currentChunk)
 				if err != nil {
-					if err == io.EOF {
-						slog.Info("DataSink Chunk finished", "chunk-number", currentChunk)
-						return nil
-					}
-					slog.Info("Datasink error: ", "err", err)
 					return err
 				}
-
-				slog.Info("DataSink received data", "payload-length", n, "chunk-number", currentChunk)
 			}
 		} else {
 			remainingFromHeader := n - varintLen
@@ -67,18 +68,11 @@ func (d *DataSink) Run() error {
 
 			buf := make([]byte, 2048)
 			for read < int(chunkSize) {
-				n, err := d.rc.Read(buf)
+				n, err := d.read(buf, currentChunk)
 				if err != nil {
-					if err == io.EOF {
-						slog.Info("DataSink Chunk finished", "chunk-number", currentChunk)
-						return nil
-					}
-					slog.Info("Datasink error: ", "err", err)
 					return err
 				}
-
 				read += n
-				slog.Info("DataSink received data", "payload-length", n, "chunk-number", currentChunk)
 			}
 			slog.Info("DataSink Chunk finished", "chunk-number", currentChunk)
 			currentChunk++
