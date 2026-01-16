@@ -158,10 +158,10 @@ func (d *DataBin) startChunkSource() error {
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(15)
 
-	for i := range 5 {
-		time.Sleep(15 * time.Second)
+	for i := range 15 {
+		time.Sleep(5 * time.Second)
 
 		go func(chunkNum int) {
 			defer wg.Done()
@@ -169,7 +169,7 @@ func (d *DataBin) startChunkSource() error {
 			defer d.running.Store(false)
 
 			sizeBuf := make([]byte, 8)
-			binary.BigEndian.PutUint64(sizeBuf, uint64(1000*1000))
+			binary.BigEndian.PutUint64(sizeBuf, uint64(100*1000))
 			_, err := d.wc.Write(sizeBuf)
 			if err != nil {
 				slog.Error("DataSrc failed to write size", "error", err, "chunk-number", chunkNum)
@@ -188,7 +188,7 @@ func (d *DataBin) startChunkSource() error {
 			slog.Info("DataSrc Chunk started", "chunk-number", chunkNum)
 
 			// webrtc dc breaks if we push everything at once
-			for range 1000 {
+			for range 100 {
 				n, writeErr := d.wc.Write(buf)
 				if writeErr != nil {
 					slog.Error("DataSrc failed to write to sink", "error", writeErr, "chunk-number", chunkNum)
