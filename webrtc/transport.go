@@ -32,6 +32,11 @@ type Signaler interface {
 	SendICECandidate(*webrtc.ICECandidate) error
 }
 
+type screamFactory interface {
+	interceptor.Factory
+	GetTargetRate(id string, ssrc uint32) (float64, error)
+}
+
 type Transport struct {
 	logger *slog.Logger
 
@@ -51,8 +56,9 @@ type Transport struct {
 	onRemoteTrack func(*RTPReceiver)
 	onConnected   func()
 
-	pacer         *pacing.InterceptorFactory
 	bwe           mrtp.BWE
+	pacer         *pacing.InterceptorFactory
+	scream        screamFactory
 	SetTargetRate func(ratebps uint) error
 
 	ect0, ect1, ecnce uint64
@@ -430,7 +436,7 @@ func (t *Transport) Close() error {
 }
 
 func (t *Transport) onCCFB(report rtpfb.Report) error {
-	t.logger.Info("received ccfb packet report", "arrival", report.Arrival, "RTT", report.RTT)
+	t.logger.Debug("received ccfb packet report", "arrival", report.Arrival, "RTT", report.RTT)
 
 	if t.bwe != nil {
 		for _, p := range report.PacketReports {
@@ -461,6 +467,35 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 			}
 			if t.pacer != nil {
 				t.pacer.SetRate(t.pc.ID(), int(1.5*float64(tr)))
+			}
+		}
+	}
+
+	// TODO(ME): This is a hacky way to get the target rate for the SSRC, it
+	// will break if we ever use more than one track. Instead, we should get
+	// target rates for each SSRC and set them for each track individually. For
+	// now, we can only set a total target rate.
+	if t.scream != nil {
+		ssrc := uint32(0)
+		if len(report.PacketReports) > 0 {
+			ssrc = report.PacketReports[0].SSRC
+		}
+		if ssrc != 0 {
+			tr, err := t.scream.GetTargetRate(t.pc.ID(), ssrc)
+			if err != nil {
+				return err
+			}
+			if tr > 0 {
+				if t.SetTargetRate != nil {
+					// set target rate of encoder
+					err := t.SetTargetRate(uint(tr))
+					if err != nil {
+						return err
+					}
+				}
+				if t.pacer != nil {
+					t.pacer.SetRate(t.pc.ID(), int(1.5*float64(tr)))
+				}
 			}
 		}
 	}
