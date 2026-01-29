@@ -1,10 +1,11 @@
 package webrtc
 
 import (
+	"context"
 	"fmt"
 	"net"
 
-	"github.com/pion/transport/v3"
+	"github.com/pion/transport/v4"
 	"github.com/wlynxg/anet"
 )
 
@@ -25,6 +26,11 @@ type Net struct {
 
 	setRecvBufferSize bool
 	recvBufferSize    int
+}
+
+// CreateListenConfig implements [transport.Net].
+func (n *Net) CreateListenConfig(c *net.ListenConfig) transport.ListenConfig {
+	return stdListenConfig{c}
 }
 
 func NewNet(opts ...NetOption) (*Net, error) {
@@ -181,4 +187,16 @@ type stdDialer struct {
 
 func (d stdDialer) Dial(network, address string) (net.Conn, error) {
 	return d.Dialer.Dial(network, address)
+}
+
+type stdListenConfig struct {
+	*net.ListenConfig
+}
+
+func (d stdListenConfig) Listen(ctx context.Context, network, address string) (net.Listener, error) {
+	return d.ListenConfig.Listen(ctx, network, address)
+}
+
+func (d stdListenConfig) ListenPacket(ctx context.Context, network, address string) (net.PacketConn, error) {
+	return d.ListenConfig.ListenPacket(ctx, network, address)
 }
