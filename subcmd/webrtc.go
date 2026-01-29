@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 
 	nethttp "net/http"
 
@@ -53,6 +54,7 @@ type WebRTC struct {
 	pionReadCCFB     bool
 	sendVideoTrack   bool
 	pacing           bool
+	pionSCReAM       bool
 }
 
 // Help implements cmdmain.SubCmd.
@@ -86,6 +88,7 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 	fs.UintVar(&w.dcStartDelay, "dc-start-delay", 0, "Start delay in seconds before data channel source starts sending data.")
 	fs.BoolVar(&w.dcChunks, "dc-chunks", false, "Send chunks on datachannel")
 
+	fs.BoolVar(&w.pionSCReAM, "scream", false, "Enable pion SCReAM interceptor")
 	fs.BoolVar(&w.pacing, "pacing", false, "Enable packet pacing")
 
 	DefaultStreamSinkFactory.ConfigureFlags(fs)
@@ -178,6 +181,9 @@ Usage:
 			return err
 		}
 		webrtcOptions = append(webrtcOptions, webrtc.SetBWE(bwe))
+	}
+	if w.pionSCReAM {
+		webrtcOptions = append(webrtcOptions, webrtc.EnableSCReAM(initTargetRate, minTargetRate, int(w.maxTargetRate)))
 	}
 
 	connectedCtx, cancelConnectedCtx := context.WithCancel(context.Background())
@@ -298,6 +304,11 @@ Usage:
 	}
 
 	<-connectedCtx.Done()
+	// TODO(ME): Remove this sleep. Without it, we seem too be sending to early
+	// and scream will build up a queue and consequently drop some packets from
+	// the queue, which is likely to be the key frame. We then have to wait for
+	// the next keyframe.
+	time.Sleep(75 * time.Millisecond)
 	return pipeline.Run()
 }
 
