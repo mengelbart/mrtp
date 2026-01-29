@@ -77,7 +77,7 @@ func getFrameProbe(eventName string) func(p *gst.Pad, ppi *gst.PadProbeInfo) gst
 				durationMs = duration.Milliseconds()
 			}
 
-			slog.Info(eventName, "pts", ptsMs, "dts", dtsMs, "duration", durationMs, "offset", offset, "frame-count", frameCount, "length", lenght)
+			slog.Debug(eventName, "pts", ptsMs, "dts", dtsMs, "duration", durationMs, "offset", offset, "frame-count", frameCount, "length", lenght)
 			frameCount++
 		}
 		return gst.PadProbeOK
@@ -112,7 +112,7 @@ func logRTPMapping(eventName string, buffer *gst.Buffer, unwrapper *logging.Unwr
 		ptsMs = pts.Milliseconds()
 	}
 
-	slog.Info(eventName,
+	slog.Debug(eventName,
 		"rtp-timestamp", b.Timestamp,
 		"sequence-number", b.SequenceNumber,
 		"unwrapped-sequence-number", unwrapper.Unwrap(b.SequenceNumber),
