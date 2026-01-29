@@ -12,6 +12,7 @@ require (
 	github.com/mengelbart/qlog v0.1.0
 	github.com/mengelbart/quicdc v0.0.0-20260505120504-88f23d8ccc74
 	github.com/mengelbart/roq v0.3.1-0.20260505095913-5c463299238d
+	github.com/mengelbart/scream-go v0.5.0
 	github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241
 	github.com/pion/bwe v0.0.0-20260218143828-d4996fd96f96
 	github.com/pion/interceptor v0.1.44
