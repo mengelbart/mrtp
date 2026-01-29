@@ -18,8 +18,8 @@ import (
 	"github.com/pion/interceptor/pkg/twcc"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v2"
-	"github.com/pion/transport/v3"
-	"github.com/pion/transport/v3/packetio"
+	"github.com/pion/transport/v4"
+	"github.com/pion/transport/v4/packetio"
 	"github.com/pion/webrtc/v4"
 )
 
