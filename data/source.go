@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"math"
 	"os"
@@ -94,7 +93,7 @@ func (d *DataBin) SetRateLimit(ratebps uint) {
 func bitRateToBytesPerSec(bitrate uint) float64 {
 	return math.Max(float64(bitrate)/8.0, 1)
 }
-func (d *DataBin) startFileSource() error {
+func (d *DataBin) startFileSource(ctx context.Context) error {
 	if d.wc == nil {
 		return fmt.Errorf("data sink not set")
 	}
@@ -123,10 +122,20 @@ func (d *DataBin) startFileSource() error {
 
 	buf := make([]byte, 1024)
 	for {
+		select {
+		case <-ctx.Done():
+			d.running.Store(false)
+			d.wc.Close()
+			return ctx.Err()
+		default:
+		}
+
 		if d.rateLimiter != nil {
-			err := d.rateLimiter.WaitN(context.TODO(), 1024)
+			err := d.rateLimiter.WaitN(ctx, 1024)
 			if err != nil {
-				log.Fatal(err)
+				d.running.Store(false)
+				d.wc.Close()
+				return err
 			}
 		}
 
@@ -152,7 +161,7 @@ func (d *DataBin) startFileSource() error {
 	}
 }
 
-func (d *DataBin) startChunkSource() error {
+func (d *DataBin) startChunkSource(ctx context.Context) error {
 	if d.wc == nil {
 		return fmt.Errorf("data sink not set")
 	}
@@ -161,12 +170,24 @@ func (d *DataBin) startChunkSource() error {
 	wg.Add(15)
 
 	for i := range 15 {
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			d.running.Store(false)
+			d.wc.Close()
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
 
 		go func(chunkNum int) {
 			defer wg.Done()
 			d.running.Store(true)
 			defer d.running.Store(false)
+
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 
 			sizeBuf := make([]byte, 8)
 			binary.BigEndian.PutUint64(sizeBuf, uint64(100*1000))
@@ -177,9 +198,9 @@ func (d *DataBin) startChunkSource() error {
 			}
 
 			if d.rateLimiter != nil {
-				err := d.rateLimiter.WaitN(context.TODO(), 1000)
+				err := d.rateLimiter.WaitN(ctx, 1000)
 				if err != nil {
-					log.Fatal(err)
+					return
 				}
 			}
 
@@ -189,6 +210,12 @@ func (d *DataBin) startChunkSource() error {
 
 			// webrtc dc breaks if we push everything at once
 			for range 100 {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
 				n, writeErr := d.wc.Write(buf)
 				if writeErr != nil {
 					slog.Error("DataSrc failed to write to sink", "error", writeErr, "chunk-number", chunkNum)
@@ -207,7 +234,7 @@ func (d *DataBin) startChunkSource() error {
 	return d.wc.Close()
 }
 
-func (d *DataBin) startRandomSource() error {
+func (d *DataBin) startRandomSource(ctx context.Context) error {
 	if d.wc == nil {
 		return fmt.Errorf("data sink not set")
 	}
@@ -224,37 +251,52 @@ func (d *DataBin) startRandomSource() error {
 	rand.Read(buf)
 
 	for {
+		select {
+		case <-ctx.Done():
+			d.running.Store(false)
+			d.wc.Close()
+			return ctx.Err()
+		default:
+		}
+
 		if d.rateLimiter != nil {
-			err := d.rateLimiter.WaitN(context.TODO(), 1024)
+			err := d.rateLimiter.WaitN(ctx, 1024)
 			if err != nil {
-				log.Fatal(err)
+				d.running.Store(false)
+				d.wc.Close()
+				return err
 			}
 		}
 
 		n, err := d.wc.Write(buf)
 		if err != nil {
+			d.running.Store(false)
 			return err
 		}
 		logDataEvent(n)
 	}
 }
 
-func (d *DataBin) Run() error {
+func (d *DataBin) Run(ctx context.Context) error {
 	if d.useChunkSrc {
-		return d.startChunkSource()
+		return d.startChunkSource(ctx)
 	}
 
 	if d.startDelay > 0 {
 		slog.Info("DataBin start delay", "duration", d.startDelay)
-		time.Sleep(d.startDelay)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(d.startDelay):
+		}
 	}
 	d.running.Store(true)
 
 	if d.useFileSrc {
-		return d.startFileSource()
+		return d.startFileSource(ctx)
 	}
 
-	return d.startRandomSource()
+	return d.startRandomSource(ctx)
 }
 
 func logDataEvent(len int) {

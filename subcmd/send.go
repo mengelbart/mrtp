@@ -130,6 +130,9 @@ Flags:
 	}
 	fs.Parse(args)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	if flags.QuicCC > 2 {
 		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2.\n", flags.QuicCCFlag)
 		fs.Usage()
@@ -215,8 +218,8 @@ Flags:
 		quicOptions := []quictransport.Option{
 			quictransport.WithRole(quictransport.Role(flags.RoQServer)),
 			quictransport.SetQuicCC(int(flags.QuicCC)),
-			quictransport.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-			quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
+			quictransport.SetLocalAddress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
+			quictransport.SetRemoteAddress(flags.RemoteAddr, flags.RTPPort),
 			quictransport.WithPacer(int(flags.QuicPacer)),
 		}
 
@@ -233,7 +236,7 @@ Flags:
 		}
 
 		// open quic connection
-		quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)
+		quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicOptions...)
 		if err != nil {
 			return err
 		}
@@ -279,7 +282,7 @@ Flags:
 				return err
 			}
 
-			go dataSource.Run()
+			go dataSource.Run(ctx)
 		}
 
 		// set rate callbacks

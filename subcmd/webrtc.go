@@ -96,6 +96,9 @@ Usage:
 		return err
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	signaler := webrtc.NewHTTPClientSignaler(fmt.Sprintf("http://%v:%v", flags.RemoteAddr, remotePort))
 
 	stdnet, err := webrtc.NewNet(webrtc.SetRecvBufferSize(10_000_000)) // 10MB
@@ -198,7 +201,7 @@ Usage:
 		if err != nil {
 			return err
 		}
-		go dataSource.Run()
+		go dataSource.Run(ctx)
 	} else if flags.DataChannel {
 		dcReceiver := transport.NewDataChannelReceiver()
 		var dataSink *data.DataSink
