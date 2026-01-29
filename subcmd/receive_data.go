@@ -51,10 +51,13 @@ Flags:
 	}
 	fs.Parse(args)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleServer)),
-		quictransport.SetLocalAdress(flags.LocalAddr, 8080),
-		quictransport.SetRemoteAdress(flags.RemoteAddr, 8080),
+		quictransport.SetLocalAddress(flags.LocalAddr, 8080),
+		quictransport.SetRemoteAddress(flags.RemoteAddr, 8080),
 	}
 
 	if flags.NadaFeedback {
@@ -66,7 +69,7 @@ Flags:
 		quicOptions = append(quicOptions, quictransport.EnableQLogs("./receiver.qlog"))
 	}
 
-	quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)
+	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicOptions...)
 	if err != nil {
 		return err
 	}

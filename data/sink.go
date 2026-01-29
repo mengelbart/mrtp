@@ -24,7 +24,7 @@ func (d *DataSink) read(buf []byte, currentChunk int) (int, error) {
 	if err != nil {
 		if err == io.EOF {
 			slog.Info("DataSink EOF")
-			return n, nil
+			return n, io.EOF
 		}
 		slog.Info("Datasink error: ", "err", err)
 		return n, err

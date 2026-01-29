@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
@@ -22,11 +24,15 @@ type Option func(*Transport) error
 // Opens a quic datachannel connection over it for the feedback.
 // Only works with application data that use quicdc or roq format.
 type Transport struct {
+	netConn               net.PacketConn
+	quicTransport         *quic.Transport
 	quicConn              *quic.Conn
 	role                  Role
 	localAddress          string
 	remoteAddress         string
 	feedbackChannelFlowID uint64
+
+	running atomic.Bool
 
 	dcTransport *datachannels.Transport
 
@@ -87,6 +93,13 @@ func WithRole(r Role) Option {
 	}
 }
 
+func SetNetConn(net net.PacketConn) Option {
+	return func(t *Transport) error {
+		t.netConn = net
+		return nil
+	}
+}
+
 func SetQuicCC(quicCC int) Option {
 	return func(t *Transport) error {
 		if quicCC < 0 || quicCC > 2 {
@@ -108,14 +121,14 @@ func EnableNADAfeedback(feedbackDelta, feedbackChannelFlowID uint64) Option {
 	}
 }
 
-func SetLocalAdress(address string, port uint) Option {
+func SetLocalAddress(address string, port uint) Option {
 	return func(t *Transport) error {
 		t.localAddress = fmt.Sprintf("%s:%d", address, port)
 		return nil
 	}
 }
 
-func SetRemoteAdress(address string, port uint) Option {
+func SetRemoteAddress(address string, port uint) Option {
 	return func(t *Transport) error {
 		t.remoteAddress = fmt.Sprintf("%s:%d", address, port)
 		return nil
@@ -140,7 +153,7 @@ func WithPacer(pacerType int) Option {
 	}
 }
 
-func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
+func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transport, error) {
 	t := &Transport{
 		role:            RoleServer,
 		lastRTT:         &RTT{},
@@ -198,7 +211,11 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 		}
 
 		var err error
-		t.quicConn, err = OpenServerConn(t.localAddress, quicConfig, tlsNextProtos)
+		if t.netConn != nil {
+			t.quicTransport, t.quicConn, err = OpenServerConnWithNet(ctx, quicConfig, tlsNextProtos, t.netConn)
+		} else {
+			t.quicConn, err = OpenServerConn(ctx, t.localAddress, quicConfig, tlsNextProtos)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -223,11 +240,17 @@ func New(tlsNextProtos []string, opts ...Option) (*Transport, error) {
 		}
 
 		var err error
-		t.quicConn, err = OpenClientConn(t.remoteAddress, quicConfig, tlsNextProtos)
+		if t.netConn != nil {
+			t.quicTransport, t.quicConn, err = OpenClientConnWithNet(ctx, t.remoteAddress, quicConfig, tlsNextProtos, t.netConn)
+		} else {
+			t.quicConn, err = OpenClientConn(ctx, t.remoteAddress, quicConfig, tlsNextProtos)
+		}
 		if err != nil {
 			return nil, err
 		}
 	}
+
+	t.running.Store(true)
 
 	// open datachannel connection for feedback
 	if err := t.openDataChannelConn(); err != nil {
@@ -255,6 +278,17 @@ func (t *Transport) GetQuicConnection() *quic.Conn {
 	return t.quicConn
 }
 
+// Close shuts down the transport and all associated goroutines.
+func (t *Transport) Close() {
+	t.running.Store(false)
+	if t.quicConn != nil {
+		t.quicConn.CloseWithError(0, "bye")
+	}
+	if t.quicTransport != nil {
+		t.quicTransport.Close()
+	}
+}
+
 // GetQuicDataChannel returns the datachannel connection that was opend for the feedback.
 func (t *Transport) GetQuicDataChannel() *datachannels.Transport {
 	return t.dcTransport
@@ -263,10 +297,11 @@ func (t *Transport) GetQuicDataChannel() *datachannels.Transport {
 func (t *Transport) receiveUniStreams() {
 	haveFeedbackChannel := t.nada != nil || t.bwe != nil || t.sendNadaFeedback
 
-	for {
+	for t.running.Load() {
 		rs, err := t.quicConn.AcceptUniStream(context.Background())
 		if err != nil {
-			panic(err)
+			slog.Error("Error in receiveUniStreams:", "error", err)
+			return
 		}
 
 		// read flowID
@@ -300,10 +335,11 @@ func (t *Transport) receiveUniStreams() {
 }
 
 func (t *Transport) receiveDatagrams() {
-	for {
+	for t.running.Load() {
 		dgram, err := t.quicConn.ReceiveDatagram(context.TODO())
 		if err != nil {
-			panic(err)
+			slog.Error("Error in receiveDatagrams:", "error", err)
+			return
 		}
 
 		// read flowID
@@ -335,10 +371,11 @@ func (t *Transport) sendFeedback() {
 
 	sendFlow, err := t.dcTransport.NewDataChannelSender(t.feedbackChannelFlowID, 0, false)
 	if err != nil {
-		panic(err)
+		slog.Error("Error in sendFeedback:", "error", err)
+		return
 	}
 
-	for {
+	for t.running.Load() {
 		time.Sleep(time.Duration(t.feedbackDelta) * time.Millisecond)
 		lenChan := len(t.receivedPackets)
 
@@ -350,7 +387,8 @@ func (t *Transport) sendFeedback() {
 			}
 			_, err = sendFlow.Write(data)
 			if err != nil {
-				panic(err)
+				slog.Error("Error in sendFeedback:", "error", err)
+				return
 			}
 
 			continue
@@ -380,11 +418,12 @@ func (t *Transport) feedbackReceiver() {
 	}
 
 	buf := make([]byte, 4096)
-	for {
+	for t.running.Load() {
 		// get feedback from receiver
 		n, err := feedbackFlow.Read(buf)
 		if err != nil {
-			panic(err)
+			slog.Error("Error in feedbackReceiver:", "error", err)
+			return
 		}
 
 		acks, err := UnmarshalFeedback(buf[:n])

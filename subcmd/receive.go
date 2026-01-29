@@ -140,6 +140,9 @@ Flags:
 		return errors.New("file-sink requires a location to be set via the -sink-location flag")
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	for _, p := range []uint{
 		flags.RTCPRecvPort,
 		flags.RTCPSendPort,
@@ -165,7 +168,7 @@ Flags:
 	}
 
 	if flags.RoQServer || flags.RoQClient {
-		err = r.setupRoQ()
+		err = r.setupRoQ(ctx)
 	} else {
 		err = r.setupUDP()
 	}
@@ -175,11 +178,11 @@ Flags:
 	return r.receiver.Run()
 }
 
-func (r *Receive) setupRoQ() error {
+func (r *Receive) setupRoQ(ctx context.Context) error {
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(flags.RoQServer)),
-		quictransport.SetLocalAdress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-		quictransport.SetRemoteAdress(flags.RemoteAddr, flags.RTPPort),
+		quictransport.SetLocalAddress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
+		quictransport.SetRemoteAddress(flags.RemoteAddr, flags.RTPPort),
 	}
 
 	if flags.NadaFeedback {
@@ -191,7 +194,7 @@ func (r *Receive) setupRoQ() error {
 		quicOptions = append(quicOptions, quictransport.EnableQLogs("./receiver.qlog"))
 	}
 
-	quicConn, err := quictransport.New([]string{roqALPN}, quicOptions...)
+	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicOptions...)
 	if err != nil {
 		return err
 	}

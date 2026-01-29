@@ -66,11 +66,14 @@ Flags:
 		return fmt.Errorf("cannot use fixed rate limit with NADA or GCC")
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
 		quictransport.SetQuicCC(int(flags.QuicCC)),
-		quictransport.SetLocalAdress(flags.LocalAddr, 8080),
-		quictransport.SetRemoteAdress(flags.RemoteAddr, 8080),
+		quictransport.SetLocalAddress(flags.LocalAddr, 8080),
+		quictransport.SetRemoteAddress(flags.RemoteAddr, 8080),
 	}
 
 	if flags.CCnada {
@@ -87,7 +90,7 @@ Flags:
 	}
 
 	// open quic connection
-	quicConn, err := quictransport.New([]string{roqALPN}, quicTOptions...)
+	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicTOptions...)
 	if err != nil {
 		return err
 	}
@@ -116,7 +119,7 @@ Flags:
 		return err
 	}
 
-	go source.Run()
+	go source.Run(ctx)
 
 	if flags.CCgcc || flags.CCnada {
 		// rate is controlled by cc

@@ -44,7 +44,7 @@ Flags:
 	var transport *moq.Transport
 	// TODO: Add flag to select server/client
 	if true {
-		c, err := quictransport.OpenClientConn(flags.RemoteAddr, &quic.Config{
+		c, err := quictransport.OpenClientConn(context.TODO(), flags.RemoteAddr, &quic.Config{
 			EnableDatagrams: true,
 		}, []string{"moq-00"})
 		if err != nil {

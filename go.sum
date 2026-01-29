@@ -29,6 +29,8 @@ github.com/mattn/go-pointer v0.0.1 h1:n+XhsuGeVO6MEAp7xyEukFINEa+Quek5psIR/ylA6o
 github.com/mattn/go-pointer v0.0.1/go.mod h1:2zXcozF6qYGgmsG+SeTZz3oAbFLdD3OWqnUbNvJZAlc=
 github.com/mengelbart/moqtransport v0.5.0 h1:OwFfqNcUtAqO9KtMyMMQfL1N7qhnwTpWPh4XQEMs+ps=
 github.com/mengelbart/moqtransport v0.5.0/go.mod h1:jewuWhaNRQ+MUoZ1ncaX8cxo4V6zF8/1Vgj0+ld0RxM=
+github.com/mengelbart/netsim v0.0.0-20260129121243-5ee92221ce52 h1:garYuCTZR0nn7JBh4zp+pHdAdksEdkkjStpncS7wskI=
+github.com/mengelbart/netsim v0.0.0-20260129121243-5ee92221ce52/go.mod h1:l4544r1z7bzWI8WzbdjrU+aHUFPunLzj2OKyeFVOg/I=
 github.com/mengelbart/qlog v0.1.0 h1:8cDMuCMcKtzkPXUU5FF7OBwqKiy+De0GKvIvNawifoA=
 github.com/mengelbart/qlog v0.1.0/go.mod h1:nIlGcUugkfDu41B8LKdAwjHQ1NxAF54D9hS2EDOlVyk=
 github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6 h1:Cyix8k5mbv9ttLPzUw2ARuTN9koTIhC+Iyve6zXjRC0=
