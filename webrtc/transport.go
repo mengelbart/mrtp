@@ -495,7 +495,9 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 			if err != nil {
 				return err
 			}
-			tr = uint(t)
+			if t > 0 {
+				tr = uint(t)
+			}
 		}
 	}
 
