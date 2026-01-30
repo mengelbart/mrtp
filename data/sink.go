@@ -22,10 +22,6 @@ func NewSink(rc io.ReadCloser) (*DataSink, error) {
 func (d *DataSink) read(buf []byte, currentChunk int) (int, error) {
 	n, err := d.rc.Read(buf)
 	if err != nil {
-		if err == io.EOF {
-			slog.Info("DataSink EOF")
-			return n, io.EOF
-		}
 		slog.Info("Datasink error: ", "err", err)
 		return n, err
 	}
