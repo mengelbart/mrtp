@@ -61,7 +61,7 @@ func (p *pionLogger) Tracef(format string, args ...any) {
 	} else if len(args) == 5 {
 		rtt, delivered, lossTarget, delayTarget, target := args[0], args[1], args[2], args[3], args[4]
 		p.sl.Debug(
-			"pion-trace-log",
+			"pion-gcc-rate-log",
 			"rtt", rtt,
 			"delivered", delivered,
 			"loss-target", lossTarget,
@@ -71,7 +71,7 @@ func (p *pionLogger) Tracef(format string, args ...any) {
 	} else if len(args) == 11 {
 		seq, size, interArrivalTime, interDepartureTime, interGroupDelay, estimate, threshold, usage, state := args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10]
 		p.sl.Debug(
-			"pion-trace-log",
+			"pion-gcc-internals-log",
 			"seq", seq,
 			"size", size,
 			"interArrivalTime", interArrivalTime,
