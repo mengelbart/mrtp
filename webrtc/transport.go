@@ -16,6 +16,7 @@ import (
 	"github.com/pion/interceptor/pkg/rfc8888"
 	"github.com/pion/interceptor/pkg/rtpfb"
 	"github.com/pion/interceptor/pkg/twcc"
+	pion_logging "github.com/pion/logging"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v2"
 	"github.com/pion/transport/v4"
@@ -126,11 +127,9 @@ func EnableCCFB() Option {
 
 func EnableGCC(initRate, minRate, maxRate int) Option {
 	return func(t *Transport) error {
-		log := &pionLogger{
-			sl: slog.Default(),
-		}
 		var err error
-		t.bwe, err = gcc.NewSendSideController(initRate, minRate, maxRate, gcc.Logger(log))
+		plf := pion_logging.NewJSONLoggerFactory()
+		t.bwe, err = gcc.NewSendSideController(initRate, minRate, maxRate, gcc.WithLoggerFactory(plf))
 		return err
 	}
 }
