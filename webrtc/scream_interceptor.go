@@ -2,6 +2,7 @@ package webrtc
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -217,7 +218,7 @@ func (s *ScreamInterceptor) transmit(now time.Time) time.Time {
 
 // BindLocalStream implements interceptor.Interceptor.
 func (s *ScreamInterceptor) BindLocalStream(info *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
-	s.logger.Debug("binding interceptor", "info", info)
+	s.logger.Debug("binding interceptor", "info", fmt.Sprintf("%v", info))
 	ns := &newStream{
 		ssrc:     info.SSRC,
 		priority: 0,
