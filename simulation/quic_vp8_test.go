@@ -26,6 +26,12 @@ import (
 )
 
 func TestQUICvp8(t *testing.T) {
+	// video file must exist
+	if _, err := os.Stat("Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
+		println("Video file not found: Johnny_1280x720_60.y4m - run ./get-video.sh to download it.\n")
+		t.Skip("video not found")
+	}
+
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -136,7 +142,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 		return err
 	})
 
-	file, err := os.Open("../../videos/Johnny_1280x720_60.y4m") // TODO
+	file, err := os.Open("Johnny_1280x720_60.y4m")
 	if err != nil {
 		return err
 	}
