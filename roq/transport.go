@@ -52,7 +52,7 @@ func New(ctx context.Context, quicConn *quic.Conn, opts ...Option) (*Transport, 
 		ql = qlog.NewQLOGHandler(t.logFile, "roq logs", "", "")
 	}
 
-	s, err := roq.NewSessionWithAppHandeledConn(ctx, conn, true, ql)
+	s, err := roq.NewSessionWithAppHandeledConn(conn, true, ql)
 	if err != nil {
 		return nil, err
 	}

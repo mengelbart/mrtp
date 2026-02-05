@@ -76,7 +76,7 @@ func TestQUICvp8(t *testing.T) {
 
 		// all connected, start sender and receiver
 		wg.Go(func() {
-			err = runVp8Receiver(ctx, serverTransport)
+			err = runVp8Receiver(ctx, serverTransport, &wg)
 			assert.NoError(t, err)
 		})
 
@@ -212,7 +212,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	return nil
 }
 
-func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport) error {
+func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
 	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
@@ -265,7 +265,14 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport) erro
 	}
 	defer rtpSrc.Close()
 
-	println("receiver started")
+	wg.Go(func() {
+		// end receiver orderly on context cancellation
+		<-ctx.Done()
+		roqTransport.CloseLogFile()
+		roqTransport.Close()
+		rtpSrc.Close()
+	})
+
 	buf := make([]byte, 150000)
 	for {
 		select {
