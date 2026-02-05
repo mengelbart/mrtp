@@ -24,6 +24,7 @@ type Option func(*Transport) error
 // Opens a quic datachannel connection over it for the feedback.
 // Only works with application data that use quicdc or roq format.
 type Transport struct {
+	ctx                   context.Context
 	netConn               net.PacketConn
 	quicTransport         *quic.Transport
 	quicConn              *quic.Conn
@@ -38,7 +39,7 @@ type Transport struct {
 
 	nada          *nada.SenderOnly
 	bwe           *gcc.SendSideController
-	feedbackDelta uint64 // ms
+	feedbackDelta time.Duration
 
 	lastRTT         *RTT
 	lostPackets     chan nada.Acknowledgment
@@ -111,7 +112,7 @@ func SetQuicCC(quicCC int) Option {
 	}
 }
 
-func EnableNADAfeedback(feedbackDelta, feedbackChannelFlowID uint64) Option {
+func EnableNADAfeedback(feedbackDelta time.Duration, feedbackChannelFlowID uint64) Option {
 	return func(t *Transport) error {
 		t.feedbackChannelFlowID = feedbackChannelFlowID
 		t.sendNadaFeedback = true
@@ -160,6 +161,7 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 		lostPackets:     nil,
 		receivedPackets: nil,
 		qlogFile:        "",
+		ctx:             ctx,
 	}
 
 	for _, opt := range opts {
@@ -298,7 +300,7 @@ func (t *Transport) receiveUniStreams() {
 	haveFeedbackChannel := t.nada != nil || t.bwe != nil || t.sendNadaFeedback
 
 	for t.running.Load() {
-		rs, err := t.quicConn.AcceptUniStream(context.Background())
+		rs, err := t.quicConn.AcceptUniStream(t.ctx)
 		if err != nil {
 			slog.Error("Error in receiveUniStreams:", "error", err)
 			return
@@ -318,7 +320,7 @@ func (t *Transport) receiveUniStreams() {
 
 		if haveFeedbackChannel && flowID == t.feedbackChannelFlowID {
 			// register feedback channel with dc transport
-			err := t.dcTransport.ReadStream(context.Background(), rs, flowID)
+			err := t.dcTransport.ReadStream(t.ctx, rs, flowID)
 			if err != nil {
 				panic(err)
 			}
@@ -336,7 +338,7 @@ func (t *Transport) receiveUniStreams() {
 
 func (t *Transport) receiveDatagrams() {
 	for t.running.Load() {
-		dgram, err := t.quicConn.ReceiveDatagram(context.TODO())
+		dgram, err := t.quicConn.ReceiveDatagram(t.ctx)
 		if err != nil {
 			slog.Error("Error in receiveDatagrams:", "error", err)
 			return
@@ -375,8 +377,15 @@ func (t *Transport) sendFeedback() {
 		return
 	}
 
+	ticker := time.NewTicker(t.feedbackDelta)
+	defer ticker.Stop()
+
 	for t.running.Load() {
-		time.Sleep(time.Duration(t.feedbackDelta) * time.Millisecond)
+		select {
+		case <-t.ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		lenChan := len(t.receivedPackets)
 
 		// If small enough, send as-is
@@ -400,12 +409,14 @@ func (t *Transport) sendFeedback() {
 
 			data, err := Marshal(t.receivedPackets, segmentSize)
 			if err != nil {
-				panic(err)
+				slog.Error("Error in sendFeedback:", "error", err)
+				return
 			}
 
 			_, err = sendFlow.Write(data)
 			if err != nil {
-				panic(err)
+				slog.Error("Error in sendFeedback:", "error", err)
+				return
 			}
 		}
 	}

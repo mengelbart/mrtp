@@ -244,7 +244,7 @@ Flags:
 
 		// open roq connection
 		roqOpt := []roq.Option{roq.EnableRoqLogs("sender.roq.qlog")}
-		roqTransport, err := roq.New(quicConn.GetQuicConnection(), roqOpt...)
+		roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection(), roqOpt...)
 		if err != nil {
 			return err
 		}

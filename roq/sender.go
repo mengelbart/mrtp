@@ -22,13 +22,14 @@ type Sender struct {
 	flow   *roq.SendFlow
 	stream *roq.RTPSendStream
 	logger *logging.RTPLogger
+	ctx    context.Context
 }
 
-func newSender(flow *roq.SendFlow, mode SendMode, logRTPpackets bool) (*Sender, error) {
+func newSender(ctx context.Context, flow *roq.SendFlow, mode SendMode, logRTPpackets bool) (*Sender, error) {
 	var err error
 	var stream *roq.RTPSendStream
 	if mode == SendModeSingleStream {
-		stream, err = flow.NewSendStream(context.TODO(), 1, true)
+		stream, err = flow.NewSendStream(ctx, 1, true)
 		if err != nil {
 			return nil, err
 		}
@@ -37,6 +38,7 @@ func newSender(flow *roq.SendFlow, mode SendMode, logRTPpackets bool) (*Sender, 
 		mode:   mode,
 		flow:   flow,
 		stream: stream,
+		ctx:    ctx,
 	}
 	if logRTPpackets {
 		sender.logger = logging.NewRTPLogger("roq sink", nil)
@@ -64,7 +66,7 @@ func (s *Sender) Write(data []byte) (int, error) {
 	case SendModeDatagram:
 		return len(data), s.flow.WriteRTPBytes(data)
 	case SendModeStreamPerPacket:
-		stream, err := s.flow.NewSendStream(context.TODO(), 1, true)
+		stream, err := s.flow.NewSendStream(s.ctx, 1, true)
 		if err != nil {
 			return 0, err
 		}

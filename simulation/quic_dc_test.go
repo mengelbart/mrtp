@@ -20,23 +20,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type pathFactory func() []netsim.Node
-
-func pathFactoryFunc(delay time.Duration, bandwidth float64, burst, queueSize int, headDrop bool) pathFactory {
-	return func() []netsim.Node {
-		nodes := []netsim.Node{}
-		if delay > 0 {
-			nodes = append(nodes, netsim.NewQueueNode(netsim.NewDelayQueue(delay)))
-		}
-		if bandwidth > 0 {
-			nodes = append(nodes,
-				netsim.NewQueueNode(netsim.NewRateQueue(float64(bandwidth), burst, queueSize, headDrop)),
-			)
-		}
-		return nodes
-	}
-}
-
 func TestQUICdc(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -44,7 +27,7 @@ func TestQUICdc(t *testing.T) {
 
 		// just a single network config for now
 		bw := float64(1_250_000) // bit/s
-		owd := 20 * time.Millisecond
+		owd := 50 * time.Millisecond
 		bdp := int(2 * bw * owd.Seconds())
 
 		forward := pathFactoryFunc(owd, bw, 5000, bdp, false)
@@ -80,11 +63,11 @@ func TestQUICdc(t *testing.T) {
 
 		// all connected, start sender and receiver
 		wg.Go(func() {
-			err = runReceiver(t, &wg, serverTransport)
+			err = runDcReceiver(t, &wg, serverTransport)
 			assert.NoError(t, err)
 		})
 
-		runSender(t, ctx, clientTransport)
+		runDcSender(t, ctx, clientTransport)
 
 		// give sink time to receive everything
 		time.Sleep(300 * time.Millisecond)
@@ -110,10 +93,10 @@ func TestQUICdc(t *testing.T) {
 func createSender(ctx context.Context, conn net.PacketConn) (*quictransport.Transport, error) {
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
-		quictransport.SetQuicCC(2), // pacer-only
+		quictransport.SetQuicCC(0), // reno
 		quictransport.SetRemoteAddress("10.0.0.1", 8080),
 		quictransport.SetNetConn(conn),
-		quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate, uint(20), uint64(flags.NadaFeedbackFlowID)),
+		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20), uint64(flags.NadaFeedbackFlowID)),
 		quictransport.EnableQLogs("./sender.qlog"),
 	}
 
@@ -121,17 +104,18 @@ func createSender(ctx context.Context, conn net.PacketConn) (*quictransport.Tran
 }
 
 func createReceiver(ctx context.Context, conn net.PacketConn) (*quictransport.Transport, error) {
+	feedbackDelta := time.Duration(20 * time.Millisecond)
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleServer)),
 		quictransport.SetNetConn(conn),
-		quictransport.EnableNADAfeedback(20, uint64(flags.NadaFeedbackFlowID)),
+		quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)),
 		quictransport.EnableQLogs("./receiver.qlog"),
 	}
 
 	return quictransport.New(ctx, []string{"dc"}, quicOptions...)
 }
 
-func runSender(t *testing.T, ctx context.Context, quicConn *quictransport.Transport) error {
+func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Transport) error {
 	dcTransport := quicConn.GetQuicDataChannel()
 
 	// set handlers for datagrams and streams
@@ -150,7 +134,11 @@ func runSender(t *testing.T, ctx context.Context, quicConn *quictransport.Transp
 	sender, err := dcTransport.NewDataChannelSender(uint64(flags.DataChannelFlowID), 0, true)
 	assert.NoError(t, err)
 
-	opts := []data.DataBinOption{data.UseChunkSource()}
+	opts := []data.DataBinOption{
+		data.UseRateLimiter(750_000, 10000),
+		data.UseChunkSource(),
+	}
+
 	source, err := data.NewDataBin(sender, opts...)
 	assert.NoError(t, err)
 
@@ -166,7 +154,7 @@ func runSender(t *testing.T, ctx context.Context, quicConn *quictransport.Transp
 	return source.Run(ctx)
 }
 
-func runReceiver(t *testing.T, wg *sync.WaitGroup, quicConn *quictransport.Transport) error {
+func runDcReceiver(t *testing.T, wg *sync.WaitGroup, quicConn *quictransport.Transport) error {
 	dcTransport := quicConn.GetQuicDataChannel()
 
 	// start handler
