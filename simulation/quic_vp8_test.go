@@ -180,18 +180,11 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	ticker := time.NewTicker(frameDuration)
 	defer ticker.Stop()
 	var next time.Time
-	frameCount := 0
-	maxFrames := 100
 	for range ticker.C {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-		}
-
-		if frameCount >= maxFrames {
-			println("sending done (max frames reached)")
-			return nil
 		}
 
 		now := time.Now()
@@ -206,7 +199,6 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 			}
 			return err
 		}
-		frameCount++
 		ioDone := time.Now()
 		slog.Info("read frame from disk", "latency", ioDone.Sub(now))
 		csr := convertSubsampleRatio(streamHeader.ChromaSubsampling)
