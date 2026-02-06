@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
@@ -61,7 +62,7 @@ Flags:
 	}
 
 	if flags.NadaFeedback {
-		feedbackDelta := uint64(20)
+		feedbackDelta := time.Duration(20 * time.Millisecond)
 		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)))
 	}
 

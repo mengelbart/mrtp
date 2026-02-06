@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"time"
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
@@ -186,7 +187,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 	}
 
 	if flags.NadaFeedback {
-		feedbackDelta := uint64(20)
+		feedbackDelta := time.Duration(20 * time.Millisecond)
 		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)))
 	}
 
@@ -199,7 +200,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 		return err
 	}
 
-	roqTransport, err := roq.New(quicConn.GetQuicConnection())
+	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
 	}

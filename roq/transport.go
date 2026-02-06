@@ -1,6 +1,7 @@
 package roq
 
 import (
+	"context"
 	"os"
 
 	"github.com/mengelbart/qlog"
@@ -22,11 +23,13 @@ type Transport struct {
 	logFilepath string
 
 	logFile *os.File
+	ctx     context.Context
 }
 
-func New(quicConn *quic.Conn, opts ...Option) (*Transport, error) {
+func New(ctx context.Context, quicConn *quic.Conn, opts ...Option) (*Transport, error) {
 	t := &Transport{
 		session: nil,
+		ctx:     ctx,
 	}
 
 	for _, opt := range opts {
@@ -71,7 +74,7 @@ func (t *Transport) NewSendFlow(id uint64, sendMode SendMode, logRTPpackets bool
 	if err != nil {
 		return nil, err
 	}
-	return newSender(flow, sendMode, logRTPpackets)
+	return newSender(t.ctx, flow, sendMode, logRTPpackets)
 }
 
 func (t *Transport) NewReceiveFlow(id uint64, logRTPpackets bool) (*Receiver, error) {
@@ -87,4 +90,8 @@ func (t *Transport) CloseLogFile() error {
 		return t.logFile.Close()
 	}
 	return nil
+}
+
+func (t *Transport) Close() error {
+	return t.session.Close()
 }
