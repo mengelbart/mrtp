@@ -5,6 +5,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -24,9 +26,16 @@ func TestDepacketizer(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		framesReceived := 0
-		depacketizer := NewRTPDepacketizer(func(frame []byte) {
+
+		timeout := 10 * time.Millisecond
+		depacketizer := NewRTPDepacketizer(timeout, func(frame []byte) {
 			slog.Info("got frame", "size", len(frame))
 			framesReceived++
+		})
+
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			depacketizer.Run()
 		})
 
 		sink := WriterFunc(func(b []byte, _ Attributes) error {
@@ -110,15 +119,20 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 
 		receivedFrames := make([][]byte, 0, maxFrames)
 
-		depacketizer := NewRTPDepacketizer(func(frame []byte) {
+		timeout := 10 * time.Millisecond
+		depacketizer := NewRTPDepacketizer(timeout, func(frame []byte) {
 			frameCopy := make([]byte, len(frame))
 			copy(frameCopy, frame)
 			receivedFrames = append(receivedFrames, frameCopy)
 			slog.Info("received frame", "size", len(frame), "count", len(receivedFrames))
 		})
-		defer depacketizer.Close()
 
-		// Sink writes to depacketizer
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			depacketizer.Run()
+		})
+
+		// sink writes to depacketizer
 		sink := WriterFunc(func(b []byte, _ Attributes) error {
 			return depacketizer.Write(b)
 		})
@@ -148,9 +162,9 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 			Ctx: ctx,
 		}
 
-		inter := newInterceptor()
+		fInter := newFrameInterceptor()
 
-		writer, err := Chain(i, sink, pacer, packetizer, inter, encoder)
+		writer, err := Chain(i, sink, pacer, packetizer, fInter, encoder)
 		assert.NoError(t, err)
 
 		fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
@@ -183,43 +197,173 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 			framesSent++
 		}
 
-		// Wait a bit for async processing
 		time.Sleep(100 * time.Millisecond)
 
-		// Verify frame counts match
-		assert.Equal(t, maxFrames, len(inter.sentFrames), "should have captured %d frames", maxFrames)
+		// verify frame counts match
+		assert.Equal(t, maxFrames, len(fInter.sentFrames), "should have captured %d frames", maxFrames)
 		assert.Equal(t, maxFrames, len(receivedFrames), "should have received %d frames", maxFrames)
-		assert.Equal(t, len(inter.sentFrames), len(receivedFrames), "sent and received frame counts should match")
+		assert.Equal(t, len(fInter.sentFrames), len(receivedFrames), "sent and received frame counts should match")
 
-		// Compare each frame
-		for i := 0; i < len(inter.sentFrames); i++ {
-			assert.Equal(t, len(inter.sentFrames[i]), len(receivedFrames[i]),
+		// compare each frame
+		for i := 0; i < len(fInter.sentFrames); i++ {
+			assert.Equal(t, len(fInter.sentFrames[i]), len(receivedFrames[i]),
 				"frame %d: length mismatch", i)
-			assert.Equal(t, inter.sentFrames[i], receivedFrames[i],
+			assert.Equal(t, fInter.sentFrames[i], receivedFrames[i],
 				"frame %d: content mismatch", i)
-			slog.Info("frame comparison", "index", i, "size", len(inter.sentFrames[i]), "match", true)
+			slog.Info("frame comparison", "index", i, "size", len(fInter.sentFrames[i]), "match", true)
 		}
 
+		depacketizer.Close()
+		wg.Wait()
 		synctest.Wait()
 	})
 }
 
-type interceptor struct {
+func TestDepacketizerRTPdrops(t *testing.T) {
+	// video file must exist
+	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
+		println("Video file not found. See simulation folder for more information.\n")
+		t.Skip("video not found")
+	}
+
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		const maxFrames = 30
+
+		receivedFrames := make([][]byte, 0, maxFrames)
+
+		timeout := 10 * time.Millisecond
+		depacketizer := NewRTPDepacketizer(timeout, func(frame []byte) {
+			frameCopy := make([]byte, len(frame))
+			copy(frameCopy, frame)
+			receivedFrames = append(receivedFrames, frameCopy)
+			slog.Info("received frame", "size", len(frame), "count", len(receivedFrames))
+		})
+
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			depacketizer.Run()
+		})
+
+		// Sink writes to depacketizer
+		sink := WriterFunc(func(b []byte, _ Attributes) error {
+			return depacketizer.Write(b)
+		})
+
+		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
+		assert.NoError(t, err)
+		defer file.Close()
+
+		reader, streamHeader, err := y4m.NewReader(file)
+		assert.NoError(t, err)
+
+		i := Info{
+			Width:       uint(streamHeader.Width),
+			Height:      uint(streamHeader.Height),
+			TimebaseNum: streamHeader.FrameRate.Numerator,
+			TimebaseDen: streamHeader.FrameRate.Denominator,
+		}
+
+		encoder := NewVP8Encoder()
+		packetizer := &RTPPacketizerFactory{
+			MTU:       1420,
+			PT:        96,
+			SSRC:      0,
+			ClockRate: 90_000,
+		}
+		pacer := &FrameSpacer{
+			Ctx: ctx,
+		}
+
+		fInter := newFrameInterceptor()
+		dropInter := newRtpDropInterceptor([]uint16{5, 444})
+
+		writer, err := Chain(i, sink, pacer, dropInter, packetizer, fInter, encoder)
+		assert.NoError(t, err)
+
+		fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
+		frameDuration := time.Duration(float64(time.Second) / fps)
+
+		ticker := time.NewTicker(frameDuration)
+		defer ticker.Stop()
+
+		framesSent := 0
+		for range ticker.C {
+			if framesSent >= maxFrames {
+				break
+			}
+
+			frame, _, err := reader.ReadNextFrame()
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				assert.NoError(t, err)
+				break
+			}
+
+			csr := convertSubsampleRatio(streamHeader.ChromaSubsampling)
+			err = writer.Write(frame, Attributes{
+				ChromaSubsampling: csr,
+			})
+			assert.NoError(t, err)
+
+			framesSent++
+		}
+
+		time.Sleep(100 * time.Millisecond)
+
+		// verify frame counts match
+		assert.Equal(t, maxFrames, len(fInter.sentFrames), "should have captured %d frames", maxFrames)
+		assert.Equal(t, maxFrames-2, len(receivedFrames), "should have received %d frames", maxFrames-2)
+
+		depacketizer.Close()
+		wg.Wait()
+		synctest.Wait()
+	})
+}
+
+type frameInterceptor struct {
 	sentFrames [][]byte
 }
 
-func newInterceptor() *interceptor {
-	return &interceptor{
+func newFrameInterceptor() *frameInterceptor {
+	return &frameInterceptor{
 		sentFrames: make([][]byte, 0),
 	}
 }
 
-func (i *interceptor) Link(w Writer, _ Info) (Writer, error) {
+func (i *frameInterceptor) Link(w Writer, _ Info) (Writer, error) {
 	return WriterFunc(func(b []byte, a Attributes) error {
 		frameCopy := make([]byte, len(b))
 		copy(frameCopy, b)
 		i.sentFrames = append(i.sentFrames, frameCopy)
 		// slog.Info("captured frame", "size", len(b), "count", len(i.sentFrames))
+
+		return w.Write(b, a)
+	}), nil
+}
+
+type rtpDropInterceptor struct {
+	toDrop    []uint16
+	packetCnt uint16
+}
+
+func newRtpDropInterceptor(toDrop []uint16) *rtpDropInterceptor {
+	return &rtpDropInterceptor{
+		toDrop: toDrop,
+	}
+}
+
+func (i *rtpDropInterceptor) Link(w Writer, _ Info) (Writer, error) {
+	return WriterFunc(func(b []byte, a Attributes) error {
+		defer func() { i.packetCnt++ }()
+		if slices.Contains(i.toDrop, i.packetCnt) {
+			// drop packet
+			return nil
+		}
 
 		return w.Write(b, a)
 	}), nil
