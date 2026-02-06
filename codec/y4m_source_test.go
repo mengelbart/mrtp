@@ -12,9 +12,15 @@ import (
 )
 
 func TestY4MSource(t *testing.T) {
+	// video file must exist
+	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
+		println("Video file not found. See simulation folder for more information.\n")
+		t.Skip("video not found")
+	}
+
 	synctest.Test(t, func(t *testing.T) {
 
-		file, err := os.Open("./bbb.y4m")
+		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
 
 		defer file.Close()

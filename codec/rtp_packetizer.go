@@ -40,9 +40,9 @@ func (p *RTPPacketizerFactory) Link(w Writer, i Info) (Writer, error) {
 	}, nil
 }
 
-func (p *RTPPacketizer) Write(b []byte, a Attributes) error {
+func (p *RTPPacketizer) Write(encFrame []byte, a Attributes) error {
 	samples := uint32(p.frameDuration.Seconds() * float64(p.ClockRate))
-	pkts := p.packetizer.Packetize(b, samples)
+	pkts := p.packetizer.Packetize(encFrame, samples)
 	pktBufs := make([][]byte, 0)
 	for _, pkt := range pkts {
 		buf, err := pkt.Marshal()
