@@ -2,6 +2,7 @@ package codec
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/pion/interceptor/pkg/jitterbuffer"
@@ -30,7 +31,7 @@ func NewRTPDepacketizer(timeout time.Duration, onFrame func([]byte)) *RTPDepacke
 		onFrame:      onFrame,
 		ctx:          ctx,
 		cancel:       cancel,
-		trigger:      make(chan struct{}, 100),
+		trigger:      make(chan struct{}, 1),
 		timeout:      timeout,
 	}
 	return d
@@ -69,6 +70,12 @@ func (d *RTPDepacketizer) Run() {
 func (d *RTPDepacketizer) processPackets() {
 	droppingFrame := false
 	for {
+		_, err := d.jitterBuffer.Peek(true)
+		if err == jitterbuffer.ErrBufferUnderrun {
+			// buffer is empty - wait for more packets
+			return
+		}
+
 		pkt, err := d.jitterBuffer.Pop()
 		if err == jitterbuffer.ErrNotFound {
 			// missing packet
@@ -80,6 +87,9 @@ func (d *RTPDepacketizer) processPackets() {
 			} else if time.Since(*d.missedPacketTime) > d.timeout {
 				// timeout expired, drop current frame
 				playoutHead := d.jitterBuffer.PlayoutHead()
+
+				slog.Info("packitzier dropping frame, rtp packet lost", "seqnr", playoutHead)
+
 				d.jitterBuffer.SetPlayoutHead(playoutHead + 1)
 				d.frameBuffer = d.frameBuffer[:0]
 				droppingFrame = true
