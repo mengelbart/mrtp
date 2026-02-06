@@ -51,7 +51,7 @@ func cancleClose(stream *roq.RTPSendStream) {
 	stream.Close()
 
 	go func() {
-		time.Sleep(500 * time.Millisecond) // 500 * time.Millisecond
+		time.Sleep(500 * time.Millisecond)
 		stream.CancelStream(0)
 	}()
 }

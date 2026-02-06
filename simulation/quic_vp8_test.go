@@ -78,12 +78,14 @@ func TestQUICvp8(t *testing.T) {
 		wg.Go(func() {
 			err = runVp8Receiver(ctx, serverTransport, &wg)
 			assert.NoError(t, err)
+			println("receiver ended")
 		})
 
 		err = runVp8Sender(ctx, clientTransport)
 		assert.NoError(t, err)
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(20 * time.Second)
+		println("closing everything")
 
 		if clientTransport != nil {
 			clientTransport.Close()
@@ -113,8 +115,6 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	if err != nil {
 		return err
 	}
-	defer roqTransport.CloseLogFile()
-	defer roqTransport.Close()
 
 	// set handlers for datagrams and streams
 	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
@@ -135,9 +135,19 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	if err != nil {
 		return err
 	}
-	defer rtpSink.Close()
+
+	defer func() {
+		println("closing sender")
+
+		// give pacer time to send everything
+		time.Sleep(5 * time.Second)
+		rtpSink.Close()
+		roqTransport.Close()
+		roqTransport.CloseLogFile()
+	}()
 
 	sink := codec.WriterFunc(func(b []byte, _ codec.Attributes) error {
+		println("Sender write len: ", len(b))
 		_, err := rtpSink.Write(b)
 		return err
 	})
@@ -265,12 +275,23 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 	}
 	defer rtpSrc.Close()
 
+	timeout := 10 * time.Millisecond
+	depacketizer := codec.NewRTPDepacketizer(timeout, func(frame []byte) {
+		slog.Info("received frame", "size", len(frame))
+	})
+	defer depacketizer.Close()
+
+	wg.Go(func() {
+		depacketizer.Run()
+	})
+
 	wg.Go(func() {
 		// end receiver orderly on context cancellation
 		<-ctx.Done()
 		roqTransport.CloseLogFile()
 		roqTransport.Close()
 		rtpSrc.Close()
+		depacketizer.Close()
 	})
 
 	buf := make([]byte, 150000)
@@ -291,7 +312,11 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 			println("receiver: read error:", err)
 			return err
 		}
-		println("recv: read bytes: ", n)
+
+		err = depacketizer.Write(buf[:n])
+		if err != nil {
+			return err
+		}
 	}
 }
 
