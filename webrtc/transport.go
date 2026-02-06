@@ -55,6 +55,7 @@ type Transport struct {
 	pacer         *pacing.InterceptorFactory
 	bwe           *gcc.SendSideController
 	nada          *nada.SenderOnly
+	scream        *ScreamInterceptorFactory
 	SetTargetRate func(ratebps uint) error
 }
 
@@ -147,6 +148,14 @@ func EnableNADA(initRate, minRate, maxRate uint) Option {
 
 		nada := nada.NewSenderOnly(nadaConfig)
 		t.nada = &nada
+		return nil
+	}
+}
+
+func EnableSCReAM(initRate, minRate, maxRate int) Option {
+	return func(t *Transport) error {
+		t.scream = NewScreaminterceptorFactory(initRate, minRate, maxRate)
+		t.interceptorRegistry.Add(t.scream)
 		return nil
 	}
 }
@@ -439,7 +448,7 @@ func (t *Transport) Close() error {
 }
 
 func (t *Transport) onCCFB(report rtpfb.Report) error {
-	t.logger.Info("received ccfb packet report", "arrival", report.Arrival, "RTT", report.RTT)
+	t.logger.Debug("received ccfb packet report", "arrival", report.Arrival, "RTT", report.RTT)
 
 	var tr uint
 	// GCC as CC
@@ -468,6 +477,28 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 			})
 		}
 		tr = uint(t.nada.OnAcks(report.RTT, acks))
+	}
+
+	// TODO(ME): This is a hacky way to get the target rate for the SSRC, it
+	// will break if we ever use more than one track. Instead, we should get
+	// target rates for each SSRC and set them for each track individually. For
+	// now, we can only set a total target rate.
+	if t.scream != nil {
+		ssrc := uint32(0)
+		for _, sender := range t.pc.GetSenders() {
+			for _, enc := range sender.GetParameters().Encodings {
+				ssrc = uint32(enc.SSRC)
+			}
+		}
+		if ssrc != 0 {
+			t, err := t.scream.GetTargetRate(t.pc.ID(), ssrc)
+			if err != nil {
+				return err
+			}
+			if t > 0 {
+				tr = uint(t)
+			}
+		}
 	}
 
 	if tr != 0 {
