@@ -137,7 +137,7 @@ func (s *ScreamInterceptor) loop() {
 	timer := time.NewTimer(time.Second)
 	for {
 		stats := s.tx.GetStatistics(time.Now())
-		s.logger.Debug("got scream statistics", "stats", stats)
+		s.logger.Info("got scream statistics", "stats", stats)
 		select {
 		case ns := <-s.newStreamQueue:
 			if _, ok := s.streams[ns.ssrc]; ok {
@@ -152,16 +152,20 @@ func (s *ScreamInterceptor) loop() {
 				s.logger.Error("got packet for unknown ssrc", "ssrc", pkt.pkt.SSRC)
 			}
 			stream.Enqueue(pkt)
+			s.logger.Debug("enqueue packet", "seq", pkt.SequenceNumber())
 			s.tx.NewMediaFrame(pkt.ts, pkt.pkt.SSRC, pkt.Size(), pkt.pkt.Marker)
 		case pkt := <-s.rtcpRxQueue:
 			s.receiveFeedback(pkt)
 		case <-timer.C:
+			s.logger.Debug("timer fired")
 		case <-s.closed:
 			return
 		}
 		now := time.Now()
 		next := s.transmit(now)
-		timer.Reset(time.Until(next))
+		until := time.Until(next)
+		s.logger.Debug("waiting for next tx", "next", next, "until", until)
+		timer.Reset(until)
 	}
 }
 
@@ -180,38 +184,50 @@ func (s *ScreamInterceptor) receiveFeedback(pkt *rxPacket) {
 }
 
 func (s *ScreamInterceptor) transmit(now time.Time) time.Time {
-	next := now.Add(time.Second)
+	var next time.Time
 	for ssrc, stream := range s.streams {
 		for {
 			tx := s.tx.IsOkToTransmit(time.Now(), ssrc)
-			if tx < 0 {
+			s.logger.Debug("scream IsOkToTransmit", "tx", tx)
+			if tx == -1 {
 				break
 			}
 			if tx == 0 {
 				pkt, ok := stream.Dequeue()
 				if !ok {
+					s.logger.Debug("stream queue empty")
 					break
 				}
 				n, err := pkt.writer.Write(&pkt.pkt.Header, pkt.pkt.Payload, pkt.attr)
 				if err != nil {
 					s.logger.Error("failed to write RTP packet", "err", err)
 				}
+				s.logger.Debug("transmitted packet", "seq", pkt.pkt.SequenceNumber, "queue-size", stream.SizeOfQueue())
 				// TODO: This check fails, why?
 				// if n != pkt.pkt.MarshalSize() {
 				// 	s.logger.Warn("wrote incorrect size of RTP packet", "expected", pkt.pkt.MarshalSize(), "got", n)
 				// }
 				nextTx := s.tx.AddTransmitted(now, ssrc, n, pkt.SequenceNumber(), pkt.pkt.Marker)
+				s.logger.Debug("scream AddTransmitted", "nextTx", nextTx)
 				if nextTx > 0 {
+					n := now.Add(time.Duration(tx * float64(time.Second)))
+					if next.IsZero() || n.Before(next) {
+						next = n
+					}
 					break
 				}
-			} else {
-				n := now.Add(time.Duration(tx) * time.Second)
-				if next.IsZero() || n.After(next) {
+			}
+			if tx > 0 {
+				n := now.Add(time.Duration(tx * float64(time.Second)))
+				if next.IsZero() || n.Before(next) {
 					next = n
 				}
 				break
 			}
 		}
+	}
+	if next.IsZero() {
+		next = now
 	}
 	return next
 }
