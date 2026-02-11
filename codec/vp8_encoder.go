@@ -8,6 +8,7 @@ import (
 )
 
 type VP8Encoder struct {
+	enc *Encoder
 }
 
 func NewVP8Encoder() *VP8Encoder {
@@ -26,6 +27,7 @@ func (e *VP8Encoder) Link(f Writer, i Info) (Writer, error) {
 	if err != nil {
 		return nil, err
 	}
+	e.enc = enc
 	fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
 	frameDuration := time.Duration(float64(time.Second) / fps)
 	var lastFrame time.Time
@@ -62,4 +64,10 @@ func (e *VP8Encoder) Link(f Writer, i Info) (Writer, error) {
 		a[IsKeyFrame] = encoded.IsKeyFrame
 		return f.Write(encoded.Payload, a)
 	}), nil
+}
+
+func (e *VP8Encoder) SetTargetRate(targetRate uint64) {
+	if e.enc != nil {
+		e.enc.SetTargetRate(targetRate)
+	}
 }

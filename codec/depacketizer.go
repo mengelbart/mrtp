@@ -27,7 +27,7 @@ func NewRTPDepacketizer(timeout time.Duration, onFrame func([]byte)) *RTPDepacke
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &RTPDepacketizer{
 		jitterBuffer: jitterbuffer.New(),
-		frameBuffer:  make([]byte, 0, 100000),
+		frameBuffer:  make([]byte, 0, 2000),
 		onFrame:      onFrame,
 		ctx:          ctx,
 		cancel:       cancel,

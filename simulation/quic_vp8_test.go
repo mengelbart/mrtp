@@ -6,6 +6,7 @@ import (
 	"image"
 	"io"
 	"log/slog"
+	"net"
 	"net/netip"
 	"os"
 	"sync"
@@ -65,7 +66,7 @@ func TestQUICvp8(t *testing.T) {
 		})
 
 		// start client in main goroutine
-		clientTransport, err = createSender(ctx, clientConn)
+		clientTransport, err = createVp8Sender(ctx, clientConn)
 		assert.NoError(t, err)
 		assert.NotNil(t, clientTransport)
 
@@ -106,6 +107,20 @@ func TestQUICvp8(t *testing.T) {
 		net.Close()
 		synctest.Wait()
 	})
+}
+
+func createVp8Sender(ctx context.Context, conn net.PacketConn) (*quictransport.Transport, error) {
+	quicTOptions := []quictransport.Option{
+		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
+		quictransport.SetQuicCC(0), // reno
+		quictransport.WithPacer(0), // TODO: rate-bassed pacer does not work yet in synctest
+		quictransport.SetRemoteAddress("10.0.0.1", 8080),
+		quictransport.SetNetConn(conn),
+		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20), uint64(flags.NadaFeedbackFlowID)),
+		quictransport.EnableQLogs("./sender.qlog"),
+	}
+
+	return quictransport.New(ctx, []string{"dc"}, quicTOptions...)
 }
 
 func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error {
@@ -170,6 +185,16 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 		TimebaseDen: streamHeader.FrameRate.Denominator,
 	}
 	encoder := codec.NewVP8Encoder()
+
+	// set rate callbacks
+	quicConn.SetSourceTargetRate = func(ratebps uint) error {
+		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
+
+		encoder.SetTargetRate(uint64(ratebps))
+
+		return nil
+	}
+
 	packetizer := &codec.RTPPacketizerFactory{
 		MTU:       1420,
 		PT:        96,

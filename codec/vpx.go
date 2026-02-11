@@ -32,6 +32,7 @@ import "C"
 import (
 	"fmt"
 	"image"
+	"sync/atomic"
 	"time"
 	"unsafe"
 )
@@ -59,6 +60,8 @@ type Encoder struct {
 	start time.Time
 
 	frame []byte
+
+	targetBitrate atomic.Uint64
 }
 
 type Config struct {
@@ -67,7 +70,7 @@ type Config struct {
 	Heigth      uint
 	TimebaseNum int
 	TimebaseDen int
-	TargetRate  uint
+	TargetRate  uint64
 }
 
 func NewEncoder(c Config) (*Encoder, error) {
@@ -85,7 +88,7 @@ func NewEncoder(c Config) (*Encoder, error) {
 	cfg.g_timebase.num = 1    // C.int(c.TimebaseNum)
 	cfg.g_timebase.den = 1000 // C.int(c.TimebaseDen)
 	cfg.rc_end_usage = C.VPX_CBR
-	cfg.rc_target_bitrate = C.uint(c.TargetRate)
+	cfg.rc_target_bitrate = C.uint(c.TargetRate) / 1000
 	cfg.g_error_resilient = C.vpx_codec_er_flags_t(0)
 	cfg.g_pass = C.VPX_RC_ONE_PASS
 	cfg.g_threads = 20
@@ -99,13 +102,16 @@ func NewEncoder(c Config) (*Encoder, error) {
 	if res != 0 {
 		return nil, fmt.Errorf("failed to init encoder")
 	}
-	return &Encoder{
+	e := &Encoder{
 		ctx:     ctx,
 		encoder: encoder,
 		cfg:     &cfg,
 		start:   time.Time{},
 		frame:   make([]byte, 0),
-	}, nil
+	}
+
+	e.targetBitrate.Store(c.TargetRate)
+	return e, nil
 }
 
 func (e *Encoder) Encode(
@@ -132,6 +138,15 @@ func (e *Encoder) Encode(
 	raw.planes[0] = (*C.uchar)(unsafe.Pointer(&image.Y[0]))
 	raw.planes[1] = (*C.uchar)(unsafe.Pointer(&image.Cb[0]))
 	raw.planes[2] = (*C.uchar)(unsafe.Pointer(&image.Cr[0]))
+
+	targetVpxBitrate := C.uint(float32(e.targetBitrate.Load() / 1000)) // convert to kilobits / second
+	if e.cfg.rc_target_bitrate != targetVpxBitrate && targetVpxBitrate >= 1 {
+		e.cfg.rc_target_bitrate = targetVpxBitrate
+		rc := C.vpx_codec_enc_config_set(e.ctx, e.cfg)
+		if rc != C.VPX_CODEC_OK {
+			return nil, fmt.Errorf("vpx_codec_enc_config_set failed (%d)", rc)
+		}
+	}
 
 	var flags int
 	res := C.vpx_codec_encode(
@@ -163,4 +178,8 @@ func (e *Encoder) Encode(
 	frame.Payload = make([]byte, len(e.frame))
 	copy(frame.Payload, e.frame)
 	return frame, nil
+}
+
+func (e *Encoder) SetTargetRate(targetRate uint64) {
+	e.targetBitrate.Store(targetRate)
 }
