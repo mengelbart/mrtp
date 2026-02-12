@@ -1,7 +1,7 @@
 github.com/Willi-42/go-nada v0.0.0-20250918135705-6a600030be0b h1:0yhrbZ3OV/j40hUuSVUiXkEJyVSA41GhZ5X2UeZWWOc=
 github.com/Willi-42/go-nada v0.0.0-20250918135705-6a600030be0b/go.mod h1:phbthXW20k81T2WY4cqUD5rWX3sPkXaN2aglf4YO/JM=
-github.com/Willi-42/quic-go v0.7.2 h1:JohQKUNREwtlpJjwf2r4ZOo+xhq5o2mOIqE35IL9v3k=
-github.com/Willi-42/quic-go v0.7.2/go.mod h1:upnsH4Ju1YkqpLXC305eW3yDZ4NfnNbmQRCMWS58IKU=
+github.com/Willi-42/quic-go v0.8.1 h1:YRIqgCnbx5DYDkSszPgT4envHD6SVrLtasXUQuafFm0=
+github.com/Willi-42/quic-go v0.8.1/go.mod h1:upnsH4Ju1YkqpLXC305eW3yDZ4NfnNbmQRCMWS58IKU=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

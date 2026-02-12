@@ -94,6 +94,7 @@ func createSender(ctx context.Context, conn net.PacketConn) (*quictransport.Tran
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
 		quictransport.SetQuicCC(0), // reno
+		quictransport.WithPacer(1), // rate-bassed pacer
 		quictransport.SetRemoteAddress("10.0.0.1", 8080),
 		quictransport.SetNetConn(conn),
 		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20), uint64(flags.NadaFeedbackFlowID)),
