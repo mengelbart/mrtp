@@ -19,7 +19,7 @@ func (e *VP8Encoder) Link(f Writer, i Info) (Writer, error) {
 	enc, err := NewEncoder(Config{
 		Codec:       "vp8",
 		Width:       i.Width,
-		Heigth:      i.Height,
+		Height:      i.Height,
 		TimebaseNum: i.TimebaseNum,
 		TimebaseDen: i.TimebaseDen,
 		TargetRate:  100_000,

@@ -67,7 +67,7 @@ type Encoder struct {
 type Config struct {
 	Codec       string
 	Width       uint
-	Heigth      uint
+	Height      uint
 	TimebaseNum int
 	TimebaseDen int
 	TargetRate  uint64
@@ -84,7 +84,7 @@ func NewEncoder(c Config) (*Encoder, error) {
 	}
 
 	cfg.g_w = C.uint(c.Width)
-	cfg.g_h = C.uint(c.Heigth)
+	cfg.g_h = C.uint(c.Height)
 	cfg.g_timebase.num = 1    // C.int(c.TimebaseNum)
 	cfg.g_timebase.den = 1000 // C.int(c.TimebaseDen)
 	cfg.rc_end_usage = C.VPX_CBR
@@ -139,7 +139,7 @@ func (e *Encoder) Encode(
 	raw.planes[1] = (*C.uchar)(unsafe.Pointer(&image.Cb[0]))
 	raw.planes[2] = (*C.uchar)(unsafe.Pointer(&image.Cr[0]))
 
-	targetVpxBitrate := C.uint(float32(e.targetBitrate.Load() / 1000)) // convert to kilobits / second
+	targetVpxBitrate := C.uint(float32(e.targetBitrate.Load() / 1000)) // convert to kbps
 	if e.cfg.rc_target_bitrate != targetVpxBitrate && targetVpxBitrate >= 1 {
 		e.cfg.rc_target_bitrate = targetVpxBitrate
 		rc := C.vpx_codec_enc_config_set(e.ctx, e.cfg)

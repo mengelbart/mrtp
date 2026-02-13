@@ -110,7 +110,7 @@ func (d *RTPDepacketizer) processPackets() {
 			panic(err)
 		}
 
-		// start of frame
+		// start of frame: RFC 7742: "The S bit MUST be set to 1 for the first packet of each encoded frame."
 		if vp8.S == 1 {
 			d.frameBuffer = d.frameBuffer[:0] // drop old data
 			droppingFrame = false
