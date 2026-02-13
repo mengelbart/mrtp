@@ -38,8 +38,8 @@ func TestQUICvp8(t *testing.T) {
 		defer cancel()
 
 		// just a single network config for now
-		bw := float64(1_250_000) // bit/s
-		owd := 20 * time.Millisecond
+		bw := float64(5_000_000) // bit/s
+		owd := 10 * time.Millisecond
 		bdp := int(2 * bw * owd.Seconds())
 
 		forward := pathFactoryFunc(owd, bw, 5000, bdp, false)
@@ -77,7 +77,7 @@ func TestQUICvp8(t *testing.T) {
 
 		// all connected, start sender and receiver
 		wg.Go(func() {
-			err = runVp8Receiver(ctx, serverTransport, &wg)
+			err = runVp8Receiver(t, ctx, serverTransport, &wg)
 			assert.NoError(t, err)
 			println("receiver ended")
 		})
@@ -146,7 +146,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	}
 	quicConn.StartHandlers()
 
-	rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendMode(1), flags.TraceRTPSend)
+	rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendModeSingleStream, flags.TraceRTPSend)
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,6 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	}()
 
 	sink := codec.WriterFunc(func(b []byte, _ codec.Attributes) error {
-		println("Sender write len: ", len(b))
 		_, err := rtpSink.Write(b)
 		return err
 	})
@@ -247,7 +246,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	return nil
 }
 
-func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
+func runVp8Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
 	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
@@ -300,9 +299,30 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 	}
 	defer rtpSrc.Close()
 
+	decoder, err := codec.NewDecoder()
+	if err != nil {
+		return err
+	}
+
+	sink, err := codec.NewY4MSink("./out.y4m", 60, 1)
+	if err != nil {
+		return err
+	}
+	defer sink.Close()
+
 	timeout := 10 * time.Millisecond
 	depacketizer := codec.NewRTPDepacketizer(timeout, func(frame []byte) {
-		slog.Info("received frame", "size", len(frame))
+		slog.Info("gonna try to decode frame")
+		img, err := decoder.Decode(frame)
+		if err != nil {
+			assert.NoError(t, err)
+			panic(err)
+		}
+
+		slog.Info("decoded frame")
+		assert.NotNil(t, img)
+		err = sink.SaveFrame(img)
+		assert.NoError(t, err)
 	})
 	defer depacketizer.Close()
 
