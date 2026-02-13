@@ -105,7 +105,7 @@ func TestVpxDecodeWithRTP(t *testing.T) {
 		assert.NoError(t, err)
 
 		timeout := 10 * time.Millisecond
-		depacketizer := NewRTPDepacketizer(timeout, func(frame []byte) {
+		depacketizer := newRTPDepacketizer(timeout, func(frame []byte) {
 			img, err := decoder.Decode(frame)
 			assert.NoError(t, err)
 			assert.NotNil(t, img)

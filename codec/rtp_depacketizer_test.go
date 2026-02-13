@@ -28,7 +28,7 @@ func TestDepacketizer(t *testing.T) {
 		framesReceived := 0
 
 		timeout := 10 * time.Millisecond
-		depacketizer := NewRTPDepacketizer(timeout, func(frame []byte) {
+		depacketizer := newRTPDepacketizer(timeout, func(frame []byte) {
 			slog.Info("got frame", "size", len(frame))
 			framesReceived++
 		})
@@ -120,7 +120,7 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 		receivedFrames := make([][]byte, 0, maxFrames)
 
 		timeout := 10 * time.Millisecond
-		depacketizer := NewRTPDepacketizer(timeout, func(frame []byte) {
+		depacketizer := newRTPDepacketizer(timeout, func(frame []byte) {
 			frameCopy := make([]byte, len(frame))
 			copy(frameCopy, frame)
 			receivedFrames = append(receivedFrames, frameCopy)
@@ -235,7 +235,7 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 		receivedFrames := make([][]byte, 0, maxFrames)
 
 		timeout := 10 * time.Millisecond
-		depacketizer := NewRTPDepacketizer(timeout, func(frame []byte) {
+		depacketizer := newRTPDepacketizer(timeout, func(frame []byte) {
 			frameCopy := make([]byte, len(frame))
 			copy(frameCopy, frame)
 			receivedFrames = append(receivedFrames, frameCopy)

@@ -10,7 +10,8 @@ import (
 	"github.com/pion/rtp/codecs"
 )
 
-type RTPDepacketizer struct {
+// rtpDepacketizer is the actual depacketizer implementation
+type rtpDepacketizer struct {
 	jitterBuffer *jitterbuffer.JitterBuffer
 	frameBuffer  []byte
 	onFrame      func([]byte) // callback for complete frames
@@ -23,9 +24,9 @@ type RTPDepacketizer struct {
 	timeout          time.Duration
 }
 
-func NewRTPDepacketizer(timeout time.Duration, onFrame func([]byte)) *RTPDepacketizer {
+func newRTPDepacketizer(timeout time.Duration, onFrame func([]byte)) *rtpDepacketizer {
 	ctx, cancel := context.WithCancel(context.Background())
-	d := &RTPDepacketizer{
+	d := &rtpDepacketizer{
 		jitterBuffer: jitterbuffer.New(),
 		frameBuffer:  make([]byte, 0, 2000),
 		onFrame:      onFrame,
@@ -38,7 +39,7 @@ func NewRTPDepacketizer(timeout time.Duration, onFrame func([]byte)) *RTPDepacke
 }
 
 // Write just pushes to jitter buffer
-func (d *RTPDepacketizer) Write(rtpBuf []byte) error {
+func (d *rtpDepacketizer) Write(rtpBuf []byte) error {
 	// copy rtp data to avoid memory reuse
 	rtpBufCopy := make([]byte, len(rtpBuf))
 	copy(rtpBufCopy, rtpBuf)
@@ -60,7 +61,7 @@ func (d *RTPDepacketizer) Write(rtpBuf []byte) error {
 }
 
 // Run processes packets and assembles frames
-func (d *RTPDepacketizer) Run() {
+func (d *rtpDepacketizer) Run() {
 	for {
 		select {
 		case <-d.ctx.Done():
@@ -71,7 +72,7 @@ func (d *RTPDepacketizer) Run() {
 	}
 }
 
-func (d *RTPDepacketizer) processPackets() {
+func (d *rtpDepacketizer) processPackets() {
 	droppingFrame := false
 	for {
 		_, err := d.jitterBuffer.Peek(true)
@@ -137,7 +138,43 @@ func (d *RTPDepacketizer) processPackets() {
 	}
 }
 
-func (d *RTPDepacketizer) Close() error {
+func (d *rtpDepacketizer) Close() error {
 	d.cancel()
 	return nil
+}
+
+// RTPDepacketizer is a linkable depacketizer element
+type RTPDepacketizer struct {
+	depacketizer *rtpDepacketizer
+	next         Writer
+}
+
+func NewRTPDepacketizer(timeout time.Duration) *RTPDepacketizer {
+	adapter := &RTPDepacketizer{}
+
+	// forwards to next writer when frame is complete
+	adapter.depacketizer = newRTPDepacketizer(timeout, func(frame []byte) {
+		if adapter.next != nil {
+			// Forward the assembled frame to the next stage
+			adapter.next.Write(frame, Attributes{})
+		} else {
+			panic("RTPDepacketizer: used before linked")
+		}
+	})
+
+	return adapter
+}
+
+func (d *RTPDepacketizer) Link(next Writer, i Info) (Writer, error) {
+	d.next = next
+
+	go d.depacketizer.Run()
+
+	return WriterFunc(func(rtpPacket []byte, attrs Attributes) error {
+		return d.depacketizer.Write(rtpPacket)
+	}), nil
+}
+
+func (d *RTPDepacketizer) Close() error {
+	return d.depacketizer.Close()
 }

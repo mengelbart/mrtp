@@ -77,7 +77,7 @@ func TestQUICvp8(t *testing.T) {
 
 		// all connected, start sender and receiver
 		wg.Go(func() {
-			err = runVp8Receiver(t, ctx, serverTransport, &wg)
+			err = runVp8Receiver(ctx, serverTransport, &wg)
 			assert.NoError(t, err)
 			println("receiver ended")
 		})
@@ -161,7 +161,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 		roqTransport.CloseLogFile()
 	}()
 
-	sink := codec.WriterFunc(func(b []byte, _ codec.Attributes) error {
+	appSink := codec.WriterFunc(func(b []byte, _ codec.Attributes) error {
 		_, err := rtpSink.Write(b)
 		return err
 	})
@@ -203,7 +203,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	pacer := &codec.FrameSpacer{
 		Ctx: ctx,
 	}
-	writer, err := codec.Chain(i, sink, pacer, packetizer, encoder)
+	rtpPipeline, err := codec.Chain(i, appSink, pacer, packetizer, encoder)
 	if err != nil {
 		return err
 	}
@@ -236,7 +236,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 		ioDone := time.Now()
 		slog.Info("read frame from disk", "latency", ioDone.Sub(now))
 		csr := convertSubsampleRatio(streamHeader.ChromaSubsampling)
-		if err = writer.Write(frame, codec.Attributes{
+		if err = rtpPipeline.Write(frame, codec.Attributes{
 			codec.ChromaSubsampling: csr,
 		}); err != nil {
 			return err
@@ -246,7 +246,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	return nil
 }
 
-func runVp8Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
+func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
 	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
@@ -304,31 +304,20 @@ func runVp8Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.T
 		return err
 	}
 
-	sink, err := codec.NewY4MSink("./out.y4m", 60, 1)
+	fileSink, err := codec.NewY4MSink("./out.y4m", 60, 1)
 	if err != nil {
 		return err
 	}
-	defer sink.Close()
+	defer fileSink.Close()
 
 	timeout := 10 * time.Millisecond
-	depacketizer := codec.NewRTPDepacketizer(timeout, func(frame []byte) {
-		slog.Info("gonna try to decode frame")
-		img, err := decoder.Decode(frame)
-		if err != nil {
-			assert.NoError(t, err)
-			panic(err)
-		}
-
-		slog.Info("decoded frame")
-		assert.NotNil(t, img)
-		err = sink.SaveFrame(img)
-		assert.NoError(t, err)
-	})
+	depacketizer := codec.NewRTPDepacketizer(timeout)
 	defer depacketizer.Close()
 
-	wg.Go(func() {
-		depacketizer.Run()
-	})
+	rtpPipeline, err := codec.Chain(codec.Info{}, fileSink, decoder, depacketizer)
+	if err != nil {
+		return err
+	}
 
 	wg.Go(func() {
 		// end receiver orderly on context cancellation
@@ -358,7 +347,7 @@ func runVp8Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.T
 			return err
 		}
 
-		err = depacketizer.Write(buf[:n])
+		err = rtpPipeline.Write(buf[:n], codec.Attributes{})
 		if err != nil {
 			return err
 		}
