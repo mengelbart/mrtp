@@ -33,7 +33,7 @@ func TestY4MSource(t *testing.T) {
 		encoder, err := NewEncoder(Config{
 			Codec:       "vp8",
 			Width:       uint(h.Width),
-			Heigth:      uint(h.Height),
+			Height:      uint(h.Height),
 			TimebaseNum: h.FrameRate.Numerator,
 			TimebaseDen: h.FrameRate.Denominator,
 			TargetRate:  1_000_000,
