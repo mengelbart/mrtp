@@ -39,12 +39,16 @@ func NewRTPDepacketizer(timeout time.Duration, onFrame func([]byte)) *RTPDepacke
 
 // Write just pushes to jitter buffer
 func (d *RTPDepacketizer) Write(rtpBuf []byte) error {
-	var pkt rtp.Packet
-	if err := pkt.Unmarshal(rtpBuf); err != nil {
+	// copy rtp data to avoid memory reuse
+	rtpBufCopy := make([]byte, len(rtpBuf))
+	copy(rtpBufCopy, rtpBuf)
+
+	pkt := new(rtp.Packet)
+	if err := pkt.Unmarshal(rtpBufCopy); err != nil {
 		return err
 	}
 
-	d.jitterBuffer.Push(&pkt)
+	d.jitterBuffer.Push(pkt)
 
 	// Signal that new packet is available
 	select {
@@ -77,7 +81,12 @@ func (d *RTPDepacketizer) processPackets() {
 		}
 
 		pkt, err := d.jitterBuffer.Pop()
+		if err == jitterbuffer.ErrPopWhileBuffering {
+			// still buffering - wait for more packets
+			return
+		}
 		if err == jitterbuffer.ErrNotFound {
+			slog.Info("packet reordering")
 			// missing packet
 			if d.missedPacketTime == nil {
 				// start new timeout
@@ -101,6 +110,7 @@ func (d *RTPDepacketizer) processPackets() {
 			return
 		}
 		if err != nil {
+			slog.Error("Depackitzer error: ", "mst", err.Error())
 			return
 		}
 
