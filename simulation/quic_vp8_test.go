@@ -3,7 +3,6 @@ package simulation
 import (
 	"context"
 	"fmt"
-	"image"
 	"io"
 	"log/slog"
 	"net"
@@ -21,7 +20,6 @@ import (
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/mengelbart/netsim"
 	roqProtocol "github.com/mengelbart/roq"
-	"github.com/mengelbart/y4m"
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/assert"
 )
@@ -172,17 +170,12 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	}
 	defer file.Close()
 
-	reader, streamHeader, err := y4m.NewReader(file)
+	fileSrc, err := codec.NewY4MSource(file)
 	if err != nil {
 		return err
 	}
 
-	i := codec.Info{
-		Width:       uint(streamHeader.Width),
-		Height:      uint(streamHeader.Height),
-		TimebaseNum: streamHeader.FrameRate.Numerator,
-		TimebaseDen: streamHeader.FrameRate.Denominator,
-	}
+	i := fileSrc.GetInfo()
 	encoder := codec.NewVP8Encoder()
 
 	// set rate callbacks
@@ -225,7 +218,8 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 		lateness := now.Sub(next)
 		next = now.Add(frameDuration)
 		slog.Info("FRAME", "duration", frameDuration, "next", now.Add(frameDuration), "lateness", lateness)
-		frame, _, err := reader.ReadNextFrame()
+
+		frame, attr, err := fileSrc.GetFrame()
 		if err != nil {
 			if err == io.EOF {
 				println("sending done")
@@ -235,10 +229,9 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 		}
 		ioDone := time.Now()
 		slog.Info("read frame from disk", "latency", ioDone.Sub(now))
-		csr := convertSubsampleRatio(streamHeader.ChromaSubsampling)
-		if err = rtpPipeline.Write(frame, codec.Attributes{
-			codec.ChromaSubsampling: csr,
-		}); err != nil {
+
+		err = rtpPipeline.Write(frame, attr)
+		if err != nil {
 			return err
 		}
 	}
@@ -351,28 +344,5 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 		if err != nil {
 			return err
 		}
-	}
-}
-
-func convertSubsampleRatio(s y4m.ChromaSubsamplingType) image.YCbCrSubsampleRatio {
-	switch s {
-	case y4m.CST411:
-		return image.YCbCrSubsampleRatio411
-	case y4m.CST420:
-		return image.YCbCrSubsampleRatio420
-	case y4m.CST420jpeg:
-		return image.YCbCrSubsampleRatio420
-	case y4m.CST420mpeg2:
-		return image.YCbCrSubsampleRatio420
-	case y4m.CST420paldv:
-		return image.YCbCrSubsampleRatio420
-	case y4m.CST422:
-		return image.YCbCrSubsampleRatio422
-	case y4m.CST444:
-		return image.YCbCrSubsampleRatio444
-	case y4m.CST444Alpha:
-		return image.YCbCrSubsampleRatio444
-	default:
-		panic(fmt.Sprintf("unexpected y4m.ChromaSubsamplingType: %#v", s))
 	}
 }
