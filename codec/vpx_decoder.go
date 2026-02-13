@@ -124,3 +124,20 @@ func (d *Decoder) Close() {
 	C.freeDecoderCtx(d.codec)
 	d.closed = true
 }
+
+func (d *Decoder) Link(next Writer, i Info) (Writer, error) {
+	return WriterFunc(func(encFrame []byte, attrs Attributes) error {
+		img, err := d.Decode(encFrame)
+		if err != nil {
+			return err
+		}
+
+		// TODO: is this the best design?
+		if attrs == nil {
+			attrs = make(Attributes)
+		}
+		attrs["image"] = img
+
+		return next.Write(nil, attrs)
+	}), nil
+}

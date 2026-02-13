@@ -84,3 +84,20 @@ func (s *Y4MSink) Close() error {
 	}
 	return nil
 }
+
+// Write implements the Writer interface for Y4MSink.
+// For use in the processing pipeline.
+func (a *Y4MSink) Write(b []byte, attrs Attributes) error {
+	// image saved as attribute
+	imgAttr, ok := attrs["image"]
+	if !ok {
+		panic("Y4MSinkAdapter: expected 'image' attribute with *image.YCbCr")
+	}
+
+	img, ok := imgAttr.(*image.YCbCr)
+	if !ok {
+		panic("Y4MSinkAdapter: 'image' attribute is not *image.YCbCr")
+	}
+
+	return a.SaveFrame(img)
+}
