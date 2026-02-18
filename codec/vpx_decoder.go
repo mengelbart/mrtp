@@ -1,5 +1,12 @@
 package codec
 
+import (
+	"fmt"
+	"image"
+	"maps"
+	"unsafe"
+)
+
 /*
 #cgo pkg-config: vpx
 #include <stdlib.h>
@@ -53,11 +60,6 @@ void freeDecoderCtx(vpx_codec_ctx_t* ctx) {
 
 */
 import "C"
-import (
-	"fmt"
-	"image"
-	"unsafe"
-)
 
 type Decoder struct {
 	codec  *C.vpx_codec_ctx_t
@@ -77,21 +79,21 @@ func NewDecoder() (*Decoder, error) {
 	}, nil
 }
 
-func (d *Decoder) Decode(encFrame []byte) (*image.YCbCr, error) {
+func (d *Decoder) Decode(encFrame []byte) ([]byte, Attributes, error) {
 	if d.closed {
-		return nil, fmt.Errorf("decoder is closed")
+		return nil, nil, fmt.Errorf("decoder is closed")
 	}
 
 	status := C.decodeFrame(d.codec, (*C.uint8_t)(&encFrame[0]), C.uint(len(encFrame)))
 	if status != C.VPX_CODEC_OK {
-		return nil, fmt.Errorf("decode failed: %v", status)
+		return nil, nil, fmt.Errorf("decode failed: %v", status)
 	}
 
 	d.iter = nil
 
 	input := C.getFrame(d.codec, &d.iter)
 	if input == nil {
-		return nil, fmt.Errorf("decode failed: no image in decoder")
+		return nil, nil, fmt.Errorf("decode failed: no image in decoder")
 	}
 
 	w := int(input.d_w)
@@ -104,20 +106,37 @@ func (d *Decoder) Decode(encFrame []byte) (*image.YCbCr, error) {
 	uSrc := unsafe.Slice((*byte)(unsafe.Pointer(input.planes[1])), uStride*h/2)
 	vSrc := unsafe.Slice((*byte)(unsafe.Pointer(input.planes[2])), vStride*h/2)
 
-	dst := image.NewYCbCr(image.Rect(0, 0, w, h), image.YCbCrSubsampleRatio420)
+	// YUV 4:2:0
+	ySize := w * h
+	uSize := (w / 2) * (h / 2)
+	frameData := make([]byte, ySize+uSize*2)
 
-	// copy luma
+	// copy Y plane
 	for r := range h {
-		copy(dst.Y[r*dst.YStride:r*dst.YStride+w], ySrc[r*yStride:r*yStride+w])
+		copy(frameData[r*w:r*w+w], ySrc[r*yStride:r*yStride+w])
 	}
-	// copy chroma
+
+	// copy U plane
+	uOffset := ySize
 	for r := 0; r < h/2; r++ {
-		copy(dst.Cb[r*dst.CStride:r*dst.CStride+w/2], uSrc[r*uStride:r*uStride+w/2])
-		copy(dst.Cr[r*dst.CStride:r*dst.CStride+w/2], vSrc[r*vStride:r*vStride+w/2])
+		copy(frameData[uOffset+r*(w/2):uOffset+r*(w/2)+(w/2)], uSrc[r*uStride:r*uStride+(w/2)])
 	}
+
+	// copy V plane
+	vOffset := ySize + uSize
+	for r := 0; r < h/2; r++ {
+		copy(frameData[vOffset+r*(w/2):vOffset+r*(w/2)+(w/2)], vSrc[r*vStride:r*vStride+(w/2)])
+	}
+
 	C.freeFrame(input)
 
-	return dst, nil
+	attrs := Attributes{
+		Width:             w,
+		Height:            h,
+		ChromaSubsampling: image.YCbCrSubsampleRatio420,
+	}
+
+	return frameData, attrs, nil
 }
 
 func (d *Decoder) Close() {
@@ -127,17 +146,17 @@ func (d *Decoder) Close() {
 
 func (d *Decoder) Link(next Writer, i Info) (Writer, error) {
 	return WriterFunc(func(encFrame []byte, attrs Attributes) error {
-		img, err := d.Decode(encFrame)
+		rawFrame, frameAttrs, err := d.Decode(encFrame)
 		if err != nil {
 			return err
 		}
 
-		// TODO: is this the best design?
+		// merge attributes
 		if attrs == nil {
 			attrs = make(Attributes)
 		}
-		attrs["image"] = img
+		maps.Copy(attrs, frameAttrs)
 
-		return next.Write(nil, attrs)
+		return next.Write(rawFrame, attrs)
 	}), nil
 }

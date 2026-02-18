@@ -26,15 +26,11 @@ func NewY4MSink(filePath string, fpsNum, fpsDen int) (*Y4MSink, error) {
 	}, nil
 }
 
-func (s *Y4MSink) SaveFrame(frame *image.YCbCr) error {
+func (s *Y4MSink) SaveFrame(frameData []byte, width, height int, subsampling image.YCbCrSubsampleRatio) error {
 	if !s.headerWritten {
-		bounds := frame.Bounds()
-		width := bounds.Dx()
-		height := bounds.Dy()
-
 		// determine chroma subsampling format
 		var chromaFormat string
-		switch frame.SubsampleRatio {
+		switch subsampling {
 		case image.YCbCrSubsampleRatio444:
 			chromaFormat = "444"
 		case image.YCbCrSubsampleRatio422:
@@ -44,7 +40,7 @@ func (s *Y4MSink) SaveFrame(frame *image.YCbCr) error {
 		case image.YCbCrSubsampleRatio411:
 			chromaFormat = "411"
 		default:
-			panic(fmt.Sprintf("unsupported chroma subsampling format: %v", frame.SubsampleRatio))
+			return fmt.Errorf("unsupported chroma subsampling format: %v", subsampling)
 		}
 
 		// Y4M header: YUV4MPEG2 W<width> H<height> F<fps_num>:<fps_den> Ip A<aspect> C<colorspace>
@@ -60,18 +56,8 @@ func (s *Y4MSink) SaveFrame(frame *image.YCbCr) error {
 		return err
 	}
 
-	// Y plane
-	if _, err := s.file.Write(frame.Y); err != nil {
-		return err
-	}
-
-	// Cb plane
-	if _, err := s.file.Write(frame.Cb); err != nil {
-		return err
-	}
-
-	// Cr plane
-	if _, err := s.file.Write(frame.Cr); err != nil {
+	// write YUV data directly
+	if _, err := s.file.Write(frameData); err != nil {
 		return err
 	}
 
@@ -88,16 +74,33 @@ func (s *Y4MSink) Close() error {
 // Write implements the Writer interface for Y4MSink.
 // For use in the processing pipeline.
 func (a *Y4MSink) Write(b []byte, attrs Attributes) error {
-	// image saved as attribute
-	imgAttr, ok := attrs["image"]
+	// parse attributes
+	widthAttr, ok := attrs[Width]
 	if !ok {
-		panic("Y4MSinkAdapter: expected 'image' attribute with *image.YCbCr")
+		return fmt.Errorf("Y4MSink: expected Width attribute")
+	}
+	width, ok := widthAttr.(int)
+	if !ok {
+		return fmt.Errorf("Y4MSink: Width attribute is not int")
 	}
 
-	img, ok := imgAttr.(*image.YCbCr)
+	heightAttr, ok := attrs[Height]
 	if !ok {
-		panic("Y4MSinkAdapter: 'image' attribute is not *image.YCbCr")
+		return fmt.Errorf("Y4MSink: expected Height attribute")
+	}
+	height, ok := heightAttr.(int)
+	if !ok {
+		return fmt.Errorf("Y4MSink: Height attribute is not int")
 	}
 
-	return a.SaveFrame(img)
+	csAttr, ok := attrs[ChromaSubsampling]
+	if !ok {
+		return fmt.Errorf("Y4MSink: expected ChromaSubsampling attribute")
+	}
+	subsampleRatio, ok := csAttr.(image.YCbCrSubsampleRatio)
+	if !ok {
+		return fmt.Errorf("Y4MSink: ChromaSubsampling attribute is not image.YCbCrSubsampleRatio")
+	}
+
+	return a.SaveFrame(b, width, height, subsampleRatio)
 }
