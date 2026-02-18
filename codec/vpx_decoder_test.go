@@ -27,9 +27,10 @@ func TestVpxDecode(t *testing.T) {
 		assert.NoError(t, err)
 
 		sink := WriterFunc(func(frame []byte, _ Attributes) error {
-			img, err := decoder.Decode(frame)
+			rawFrame, attrs, err := decoder.Decode(frame)
 			assert.NoError(t, err)
-			assert.NotNil(t, img)
+			assert.NotNil(t, rawFrame)
+			assert.NotNil(t, attrs)
 
 			framesReceived++
 
@@ -106,9 +107,10 @@ func TestVpxDecodeWithRTP(t *testing.T) {
 
 		timeout := 10 * time.Millisecond
 		depacketizer := newRTPDepacketizer(timeout, func(frame []byte) {
-			img, err := decoder.Decode(frame)
+			rawFrame, attrs, err := decoder.Decode(frame)
 			assert.NoError(t, err)
-			assert.NotNil(t, img)
+			assert.NotNil(t, rawFrame)
+			assert.NotNil(t, attrs)
 			framesReceived++
 		})
 

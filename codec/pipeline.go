@@ -6,6 +6,8 @@ const (
 	ChromaSubsampling AttributeKey = iota
 	IsKeyFrame
 	SampleDuration
+	Width
+	Height
 )
 
 type Info struct {
