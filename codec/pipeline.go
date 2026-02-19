@@ -8,6 +8,7 @@ const (
 	SampleDuration
 	Width
 	Height
+	PTS
 )
 
 type Info struct {

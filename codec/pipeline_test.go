@@ -13,7 +13,12 @@ func TestPipeline(t *testing.T) {
 		return nil
 	})
 	e := NewVP8Encoder()
-	i := Info{}
+	i := Info{
+		Width:       720,
+		Height:      480,
+		TimebaseNum: 30,
+		TimebaseDen: 1,
+	}
 
 	source, err := Chain(i, sink, e)
 	assert.NoError(t, err)

@@ -57,8 +57,6 @@ type Encoder struct {
 	ctx     *C.vpx_codec_ctx_t
 	cfg     *C.vpx_codec_enc_cfg_t
 
-	start time.Time
-
 	frame []byte
 
 	targetBitrate atomic.Uint64
@@ -85,14 +83,27 @@ func NewEncoder(c Config) (*Encoder, error) {
 
 	cfg.g_w = C.uint(c.Width)
 	cfg.g_h = C.uint(c.Height)
-	cfg.g_timebase.num = 1    // C.int(c.TimebaseNum)
-	cfg.g_timebase.den = 1000 // C.int(c.TimebaseDen)
+	cfg.g_timebase.num = C.int(c.TimebaseNum)
+	cfg.g_timebase.den = C.int(c.TimebaseDen)
 	cfg.rc_end_usage = C.VPX_CBR
 	cfg.rc_target_bitrate = C.uint(c.TargetRate) / 1000
 	cfg.g_error_resilient = C.vpx_codec_er_flags_t(0)
 	cfg.g_pass = C.VPX_RC_ONE_PASS
-	cfg.g_threads = 20
+	cfg.g_threads = 4
 	cfg.rc_resize_allowed = 0
+
+	cfg.g_error_resilient = C.VPX_ERROR_RESILIENT_DEFAULT
+
+	// TODO: how to configere these
+	cfg.rc_min_quantizer = C.uint(10)
+	cfg.rc_max_quantizer = C.uint(63)
+
+	// VP8: "This factor controls the maximum amount of bits that can be subtracted from the
+	// target bitrate in order to compensate for prior overshoot."
+	// VP9: "a threshold undershoot level (current rate vs target) beyond which more
+	//  aggressive corrective measures are taken."
+	cfg.rc_undershoot_pct = C.uint(10)
+	cfg.rc_overshoot_pct = C.uint(10)
 
 	ctx := (*C.vpx_codec_ctx_t)(C.malloc(C.size_t(unsafe.Sizeof(C.vpx_codec_ctx_t{}))))
 	if ctx == nil {
@@ -100,13 +111,12 @@ func NewEncoder(c Config) (*Encoder, error) {
 	}
 	res := C.vpx_codec_enc_init_macro(ctx, encoder, &cfg, 0)
 	if res != 0 {
-		return nil, fmt.Errorf("failed to init encoder")
+		return nil, fmt.Errorf("failed to init encoder: code %v", res)
 	}
 	e := &Encoder{
 		ctx:     ctx,
 		encoder: encoder,
 		cfg:     &cfg,
-		start:   time.Time{},
 		frame:   make([]byte, 0),
 	}
 
@@ -116,16 +126,9 @@ func NewEncoder(c Config) (*Encoder, error) {
 
 func (e *Encoder) Encode(
 	image *image.YCbCr,
-	ts time.Time,
+	pts int64,
 	duration time.Duration,
 ) (*VP8Frame, error) {
-	var pts int64
-	if e.start.IsZero() {
-		e.start = ts
-	} else {
-		pts = ts.Sub(e.start).Microseconds()
-	}
-
 	raw := C.vpx_img_alloc(
 		nil,
 		C.VPX_IMG_FMT_I420,
