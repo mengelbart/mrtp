@@ -91,6 +91,13 @@ func (d *rtpDepacketizer) processPackets() {
 			return
 		}
 		if err == jitterbuffer.ErrNotFound {
+			if droppingFrame {
+				// already dropping frame, skip to next packet
+				playoutHead := d.jitterBuffer.PlayoutHead()
+				d.jitterBuffer.SetPlayoutHead(playoutHead + 1)
+				continue
+			}
+
 			slog.Info("packet reordering")
 			// missing packet
 			if d.missedPacketTime == nil {
