@@ -3,6 +3,7 @@ package codec
 import (
 	"fmt"
 	"image"
+	"log/slog"
 	"maps"
 	"unsafe"
 )
@@ -62,8 +63,8 @@ void freeDecoderCtx(vpx_codec_ctx_t* ctx) {
 import "C"
 
 type Decoder struct {
-	codec  *C.vpx_codec_ctx_t
-	closed bool
+	codecCtx *C.vpx_codec_ctx_t
+	closed   bool
 
 	iter C.vpx_codec_iter_t
 }
@@ -75,23 +76,23 @@ func NewDecoder() (*Decoder, error) {
 	}
 
 	return &Decoder{
-		codec: codec,
+		codecCtx: codec,
 	}, nil
 }
 
-func (d *Decoder) Decode(encFrame []byte) ([]byte, Attributes, error) {
+func (d *Decoder) Decode(encFrame []byte, attrs Attributes) ([]byte, Attributes, error) {
 	if d.closed {
 		return nil, nil, fmt.Errorf("decoder is closed")
 	}
 
-	status := C.decodeFrame(d.codec, (*C.uint8_t)(&encFrame[0]), C.uint(len(encFrame)))
+	status := C.decodeFrame(d.codecCtx, (*C.uint8_t)(&encFrame[0]), C.uint(len(encFrame)))
 	if status != C.VPX_CODEC_OK {
 		return nil, nil, fmt.Errorf("decode failed: %v", status)
 	}
 
 	d.iter = nil
 
-	input := C.getFrame(d.codec, &d.iter)
+	input := C.getFrame(d.codecCtx, &d.iter)
 	if input == nil {
 		return nil, nil, fmt.Errorf("decode failed: no image in decoder")
 	}
@@ -130,23 +131,31 @@ func (d *Decoder) Decode(encFrame []byte) ([]byte, Attributes, error) {
 
 	C.freeFrame(input)
 
-	attrs := Attributes{
-		Width:             w,
-		Height:            h,
-		ChromaSubsampling: image.YCbCrSubsampleRatio420,
+	// log frame info
+	var pts int64
+	if ptsAttr, ok := attrs[PTS]; ok {
+		if ptsVal, ok := ptsAttr.(int64); ok {
+			pts = ptsVal
+		}
 	}
+	slog.Info("decoder src", "length", len(frameData), "pts", pts)
+
+	// add metadata to attributes
+	attrs[Width] = w
+	attrs[Height] = h
+	attrs[ChromaSubsampling] = image.YCbCrSubsampleRatio420
 
 	return frameData, attrs, nil
 }
 
 func (d *Decoder) Close() {
-	C.freeDecoderCtx(d.codec)
+	C.freeDecoderCtx(d.codecCtx)
 	d.closed = true
 }
 
 func (d *Decoder) Link(next Writer, i Info) (Writer, error) {
 	return WriterFunc(func(encFrame []byte, attrs Attributes) error {
-		rawFrame, frameAttrs, err := d.Decode(encFrame)
+		rawFrame, frameAttrs, err := d.Decode(encFrame, attrs)
 		if err != nil {
 			return err
 		}

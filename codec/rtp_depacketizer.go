@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/pion/interceptor/pkg/jitterbuffer"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
@@ -14,7 +15,7 @@ import (
 type rtpDepacketizer struct {
 	jitterBuffer *jitterbuffer.JitterBuffer
 	frameBuffer  []byte
-	onFrame      func([]byte) // callback for complete frames
+	onFrame      func([]byte, int64) // callback for complete frames
 
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -22,9 +23,11 @@ type rtpDepacketizer struct {
 
 	missedPacketTime *time.Time
 	timeout          time.Duration
+
+	unwrapper *logging.Unwrapper // for logging the rtp packets
 }
 
-func newRTPDepacketizer(timeout time.Duration, onFrame func([]byte)) *rtpDepacketizer {
+func newRTPDepacketizer(timeout time.Duration, onFrame func(encFrame []byte, pts int64)) *rtpDepacketizer {
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &rtpDepacketizer{
 		jitterBuffer: jitterbuffer.New(),
@@ -34,6 +37,7 @@ func newRTPDepacketizer(timeout time.Duration, onFrame func([]byte)) *rtpDepacke
 		cancel:       cancel,
 		trigger:      make(chan struct{}, 1),
 		timeout:      timeout,
+		unwrapper:    &logging.Unwrapper{},
 	}
 	return d
 }
@@ -115,6 +119,14 @@ func (d *rtpDepacketizer) processPackets() {
 			return
 		}
 
+		// log packet
+		slog.Info("rtp to pts mapping",
+			"rtp-timestamp", pkt.Timestamp,
+			"sequence-number", pkt.Header.SequenceNumber,
+			"unwrapped-sequence-number", d.unwrapper.Unwrap(pkt.Header.SequenceNumber),
+			"pts", pkt.Timestamp, // should be fine to use rtp ts as pts
+		)
+
 		var vp8 codecs.VP8Packet
 		payload, err := vp8.Unmarshal(pkt.Payload)
 		if err != nil {
@@ -133,7 +145,7 @@ func (d *rtpDepacketizer) processPackets() {
 		if pkt.Marker && !droppingFrame {
 			frame := make([]byte, len(d.frameBuffer))
 			copy(frame, d.frameBuffer)
-			d.onFrame(frame)
+			d.onFrame(frame, int64(pkt.Timestamp))
 		}
 	}
 }
@@ -153,10 +165,10 @@ func NewRTPDepacketizer(timeout time.Duration) *RTPDepacketizer {
 	adapter := &RTPDepacketizer{}
 
 	// forwards to next writer when frame is complete
-	adapter.depacketizer = newRTPDepacketizer(timeout, func(frame []byte) {
+	adapter.depacketizer = newRTPDepacketizer(timeout, func(frame []byte, pts int64) {
 		if adapter.next != nil {
 			// Forward the assembled frame to the next stage
-			adapter.next.Write(frame, Attributes{})
+			adapter.next.Write(frame, Attributes{PTS: pts})
 		} else {
 			panic("RTPDepacketizer: used before linked")
 		}

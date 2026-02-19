@@ -1,8 +1,10 @@
 package codec
 
 import (
+	"log/slog"
 	"time"
 
+	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 )
@@ -23,6 +25,8 @@ type RTPPacketizer struct {
 	frameDuration time.Duration
 	packetizer    rtp.Packetizer
 	writer        Writer
+
+	unwrapper *logging.Unwrapper // for logging the rtp packets
 }
 
 func (p *RTPPacketizerFactory) Link(w Writer, i Info) (Writer, error) {
@@ -37,6 +41,7 @@ func (p *RTPPacketizerFactory) Link(w Writer, i Info) (Writer, error) {
 		frameDuration: frameDuration,
 		packetizer:    packetizer,
 		writer:        w,
+		unwrapper:     &logging.Unwrapper{},
 	}, nil
 }
 
@@ -44,12 +49,29 @@ func (p *RTPPacketizer) Write(encFrame []byte, a Attributes) error {
 	samples := uint32(p.frameDuration.Seconds() * float64(p.ClockRate))
 	pkts := p.packetizer.Packetize(encFrame, samples)
 	pktBufs := make([][]byte, 0)
+
+	// get PTS from attributes for logging
+	var pts int64
+	if ptsAttr, ok := a[PTS]; ok {
+		if ptsVal, ok := ptsAttr.(int64); ok {
+			pts = ptsVal
+		}
+	}
+
 	for _, pkt := range pkts {
 		buf, err := pkt.Marshal()
 		if err != nil {
 			return err
 		}
 		pktBufs = append(pktBufs, buf)
+
+		// log packet
+		slog.Info("rtp to pts mapping",
+			"rtp-timestamp", pkt.Timestamp,
+			"sequence-number", pkt.Header.SequenceNumber,
+			"unwrapped-sequence-number", p.unwrapper.Unwrap(pkt.Header.SequenceNumber),
+			"pts", pts,
+		)
 	}
 	if writer, ok := p.writer.(MultiWriter); ok {
 		if err := writer.WriteAll(pktBufs, a); err != nil {
