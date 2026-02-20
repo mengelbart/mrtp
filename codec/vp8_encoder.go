@@ -1,10 +1,8 @@
 package codec
 
 import (
-	"errors"
 	"image"
 	"log/slog"
-	"time"
 )
 
 type VP8Encoder struct {
@@ -31,28 +29,20 @@ func (e *VP8Encoder) Link(f Writer, i Info) (Writer, error) {
 	frameCount := 0 // logging: plot script requires this field
 
 	return WriterFunc(func(b []byte, a Attributes) error {
-		var frameDuration time.Duration
-		if fdAttr, ok := a[FrameDuration]; ok {
-			if fdVal, ok := fdAttr.(time.Duration); ok {
-				frameDuration = fdVal
-			}
+		frameDuration, err := getFrameDuration(a)
+		if err != nil {
+			return err
 		}
-		var pts int64
-		if ptsAttr, ok := a[PTS]; ok {
-			if ptsVal, ok := ptsAttr.(int64); ok {
-				pts = ptsVal
-			}
+		pts, err := getPTS(a)
+		if err != nil {
+			return err
 		}
 
 		slog.Info("encoder sink", "length", len(b), "pts", pts, "duration", frameDuration.Microseconds(), "frame-count", frameCount)
 
-		csa, ok := a[ChromaSubsampling]
-		if !ok {
-			return errors.New("missing chroma subsampling type")
-		}
-		csr, ok := csa.(image.YCbCrSubsampleRatio)
-		if !ok {
-			return errors.New("invalid chroma subsampling ratio")
+		csr, err := getChromaSubsampling(a)
+		if err != nil {
+			return err
 		}
 		image := image.NewYCbCr(
 			image.Rect(0, 0, int(i.Width), int(i.Height)),
