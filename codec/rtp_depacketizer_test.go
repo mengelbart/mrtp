@@ -28,10 +28,11 @@ func TestDepacketizer(t *testing.T) {
 		framesReceived := 0
 
 		timeout := 10 * time.Millisecond
-		depacketizer := newRTPDepacketizer(timeout, func(frame []byte, pts int64) {
+		depacketizer, err := newRTPDepacketizer(timeout, VP8, func(frame []byte, pts int64) {
 			slog.Info("got frame", "size", len(frame))
 			framesReceived++
 		})
+		assert.NoError(t, err)
 
 		var wg sync.WaitGroup
 		wg.Go(func() {
@@ -50,12 +51,13 @@ func TestDepacketizer(t *testing.T) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewVP8Encoder()
+		encoder := NewVPXEncoder(VP8)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
 			SSRC:      0,
 			ClockRate: 90_000,
+			Codec:     VP8,
 		}
 		pacer := &FrameSpacer{
 			Ctx: ctx,
@@ -91,7 +93,7 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 
 		timeout := 10 * time.Millisecond
 		receivedFrameCount := 0
-		depacketizer := newRTPDepacketizer(timeout, func(frame []byte, pts int64) {
+		depacketizer, err := newRTPDepacketizer(timeout, VP8, func(frame []byte, pts int64) {
 			if receivedFrameCount < maxFrames {
 				frameCopy := make([]byte, len(frame))
 				copy(frameCopy, frame)
@@ -99,6 +101,7 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 			}
 			receivedFrameCount++
 		})
+		assert.NoError(t, err)
 
 		var wg sync.WaitGroup
 		wg.Go(func() {
@@ -119,12 +122,13 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 
 		i := fileSrc.GetInfo()
 
-		encoder := NewVP8Encoder()
+		encoder := NewVPXEncoder(VP8)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
 			SSRC:      0,
 			ClockRate: 90_000,
+			Codec:     VP8,
 		}
 		pacer := &FrameSpacer{
 			Ctx: ctx,
@@ -184,7 +188,7 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 
 		timeout := 10 * time.Millisecond
 		receivedFrameCount := 0
-		depacketizer := newRTPDepacketizer(timeout, func(frame []byte, pts int64) {
+		depacketizer, err := newRTPDepacketizer(timeout, VP8, func(frame []byte, pts int64) {
 			if receivedFrameCount < maxReceiveFrames {
 				frameCopy := make([]byte, len(frame))
 				copy(frameCopy, frame)
@@ -192,6 +196,7 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 			}
 			receivedFrameCount++
 		})
+		assert.NoError(t, err)
 
 		var wg sync.WaitGroup
 		wg.Go(func() {
@@ -212,12 +217,13 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 
 		i := fileSrc.GetInfo()
 
-		encoder := NewVP8Encoder()
+		encoder := NewVPXEncoder(VP8)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
 			SSRC:      0,
 			ClockRate: 90_000,
+			Codec:     VP8,
 		}
 		pacer := &FrameSpacer{
 			Ctx: ctx,

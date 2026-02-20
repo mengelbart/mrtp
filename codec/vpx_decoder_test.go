@@ -23,7 +23,7 @@ func TestVpxDecode(t *testing.T) {
 
 		framesReceived := 0
 
-		decoder, err := NewDecoder()
+		decoder, err := NewDecoder(VP8)
 		assert.NoError(t, err)
 
 		sink := WriterFunc(func(frame []byte, attr Attributes) error {
@@ -45,7 +45,7 @@ func TestVpxDecode(t *testing.T) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewVP8Encoder()
+		encoder := NewVPXEncoder(VP8)
 		frameInter := newFrameInterceptor(false, 0, nil)
 
 		writer, err := Chain(i, sink, encoder, frameInter)
@@ -68,22 +68,37 @@ func TestVpxDecodeWithRTP(t *testing.T) {
 		t.Skip("video not found")
 	}
 
+	runVpxDecodeWithRTP(t, VP8)
+}
+
+func TestVpxDecodeWithRTP_VP9(t *testing.T) {
+	// video file must exist
+	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
+		println("Video file not found. See simulation folder for more information.\n")
+		t.Skip("video not found")
+	}
+
+	runVpxDecodeWithRTP(t, VP9)
+}
+
+func runVpxDecodeWithRTP(t *testing.T, codec CodecType) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		framesReceived := 0
 
-		decoder, err := NewDecoder()
+		decoder, err := NewDecoder(codec)
 		assert.NoError(t, err)
 
 		timeout := 10 * time.Millisecond
-		depacketizer := newRTPDepacketizer(timeout, func(frame []byte, pts int64) {
+		depacketizer, err := newRTPDepacketizer(timeout, codec, func(frame []byte, pts int64) {
 			rawFrame, attrs, err := decoder.Decode(frame, Attributes{PTS: pts})
 			assert.NoError(t, err)
 			assert.NotNil(t, rawFrame)
 			assert.NotNil(t, attrs)
 			framesReceived++
 		})
+		assert.NoError(t, err)
 
 		var wg sync.WaitGroup
 		wg.Go(func() {
@@ -102,12 +117,13 @@ func TestVpxDecodeWithRTP(t *testing.T) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewVP8Encoder()
+		encoder := NewVPXEncoder(codec)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
 			SSRC:      0,
 			ClockRate: 90_000,
+			Codec:     codec,
 		}
 		pacer := &FrameSpacer{
 			Ctx: ctx,

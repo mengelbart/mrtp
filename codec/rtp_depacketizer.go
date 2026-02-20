@@ -2,6 +2,7 @@ package codec
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -23,11 +24,16 @@ type rtpDepacketizer struct {
 
 	missedPacketTime *time.Time
 	timeout          time.Duration
+	codec            CodecType
 
 	unwrapper *logging.Unwrapper // for logging the rtp packets
 }
 
-func newRTPDepacketizer(timeout time.Duration, onFrame func(encFrame []byte, pts int64)) *rtpDepacketizer {
+func newRTPDepacketizer(timeout time.Duration, codec CodecType, onFrame func(encFrame []byte, pts int64)) (*rtpDepacketizer, error) {
+	if codec != VP8 && codec != VP9 {
+		return nil, fmt.Errorf("unsupported codec for depacketizer: %s", codec.String())
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	d := &rtpDepacketizer{
 		jitterBuffer: jitterbuffer.New(),
@@ -38,8 +44,9 @@ func newRTPDepacketizer(timeout time.Duration, onFrame func(encFrame []byte, pts
 		trigger:      make(chan struct{}, 1),
 		timeout:      timeout,
 		unwrapper:    &logging.Unwrapper{},
+		codec:        codec,
 	}
-	return d
+	return d, nil
 }
 
 // Write just pushes to jitter buffer
@@ -94,6 +101,8 @@ func (d *rtpDepacketizer) processPackets() {
 			if droppingFrame {
 				// already dropping frame, skip to next packet
 				playoutHead := d.jitterBuffer.PlayoutHead()
+				slog.Info("drop rtp packet of skipped frame", "seqnr", playoutHead)
+
 				d.jitterBuffer.SetPlayoutHead(playoutHead + 1)
 				continue
 			}
@@ -134,14 +143,29 @@ func (d *rtpDepacketizer) processPackets() {
 			"pts", pkt.Timestamp, // should be fine to use rtp ts as pts
 		)
 
-		var vp8 codecs.VP8Packet
-		payload, err := vp8.Unmarshal(pkt.Payload)
-		if err != nil {
-			panic(err)
+		var payload []byte
+		var isFrameStart bool
+
+		switch d.codec {
+		case VP8:
+			var vp8 codecs.VP8Packet
+			payload, err = vp8.Unmarshal(pkt.Payload)
+			if err != nil {
+				panic(err)
+			}
+			// RFC 7742: "The S bit MUST be set to 1 for the first packet of each encoded frame."
+			isFrameStart = vp8.S == 1
+		case VP9:
+			var vp9 codecs.VP9Packet
+			payload, err = vp9.Unmarshal(pkt.Payload)
+			if err != nil {
+				panic(err)
+			}
+			// RFC 9628: "B: Start of Frame."
+			isFrameStart = vp9.B
 		}
 
-		// start of frame: RFC 7742: "The S bit MUST be set to 1 for the first packet of each encoded frame."
-		if vp8.S == 1 {
+		if isFrameStart {
 			d.frameBuffer = d.frameBuffer[:0] // drop old data
 			droppingFrame = false
 		}
@@ -168,11 +192,12 @@ type RTPDepacketizer struct {
 	next         Writer
 }
 
-func NewRTPDepacketizer(timeout time.Duration) *RTPDepacketizer {
+func NewRTPDepacketizer(timeout time.Duration, codec CodecType) (*RTPDepacketizer, error) {
 	adapter := &RTPDepacketizer{}
 
 	// forwards to next writer when frame is complete
-	adapter.depacketizer = newRTPDepacketizer(timeout, func(frame []byte, pts int64) {
+	var err error
+	adapter.depacketizer, err = newRTPDepacketizer(timeout, codec, func(frame []byte, pts int64) {
 		if adapter.next != nil {
 			// Forward the assembled frame to the next stage
 			adapter.next.Write(frame, Attributes{PTS: pts})
@@ -181,7 +206,7 @@ func NewRTPDepacketizer(timeout time.Duration) *RTPDepacketizer {
 		}
 	})
 
-	return adapter
+	return adapter, err
 }
 
 func (d *RTPDepacketizer) Link(next Writer, i Info) (Writer, error) {

@@ -69,14 +69,24 @@ type Decoder struct {
 	iter C.vpx_codec_iter_t
 }
 
-func NewDecoder() (*Decoder, error) {
-	codec := C.newDecoderCtx()
-	if C.decoderInit(codec, C.ifaceVP8Decoder()) != C.VPX_CODEC_OK {
+func NewDecoder(codec CodecType) (*Decoder, error) {
+	var ccodec *C.vpx_codec_iface_t
+	switch codec {
+	case VP8:
+		ccodec = C.ifaceVP8Decoder()
+	case VP9:
+		ccodec = C.ifaceVP9Decoder()
+	default:
+		return nil, fmt.Errorf("unsupported codec for decoder: %s", codec.String())
+	}
+
+	codecCtx := C.newDecoderCtx()
+	if C.decoderInit(codecCtx, ccodec) != C.VPX_CODEC_OK {
 		return nil, fmt.Errorf("vpx_codec_dec_init failed")
 	}
 
 	return &Decoder{
-		codecCtx: codec,
+		codecCtx: codecCtx,
 	}, nil
 }
 

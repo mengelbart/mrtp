@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -9,11 +10,22 @@ import (
 	"github.com/pion/rtp/codecs"
 )
 
+func getPacketizerByName(codec CodecType) (rtp.Payloader, error) {
+	switch codec {
+	case VP8:
+		return &codecs.VP8Payloader{}, nil
+	case VP9:
+		return &codecs.VP9Payloader{}, nil
+	}
+	return nil, fmt.Errorf("unknown codec: %v", codec)
+}
+
 type RTPPacketizerFactory struct {
 	MTU       uint16
 	PT        uint8
 	SSRC      uint32
 	ClockRate uint32
+	Codec     CodecType
 }
 
 type RTPPacketizer struct {
@@ -32,7 +44,13 @@ type RTPPacketizer struct {
 func (p *RTPPacketizerFactory) Link(w Writer, i Info) (Writer, error) {
 	fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
 	frameDuration := time.Duration(float64(time.Second) / fps)
-	packetizer := rtp.NewPacketizer(p.MTU, p.PT, p.SSRC, &codecs.VP8Payloader{}, rtp.NewRandomSequencer(), p.ClockRate)
+
+	payloader, err := getPacketizerByName(p.Codec)
+	if err != nil {
+		return nil, err
+	}
+
+	packetizer := rtp.NewPacketizer(p.MTU, p.PT, p.SSRC, payloader, rtp.NewRandomSequencer(), p.ClockRate)
 	return &RTPPacketizer{
 		MTU:           p.MTU,
 		PT:            p.PT,
