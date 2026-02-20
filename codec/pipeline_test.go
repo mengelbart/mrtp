@@ -12,12 +12,16 @@ func TestPipeline(t *testing.T) {
 		log.Println("sinking buffer")
 		return nil
 	})
-	e := NewVP8Encoder()
-	i := Info{}
+	e := NewVPXEncoder(VP8)
+	i := Info{
+		Width:       720,
+		Height:      480,
+		TimebaseNum: 30,
+		TimebaseDen: 1,
+	}
 
 	source, err := Chain(i, sink, e)
 	assert.NoError(t, err)
 
 	source.Write(nil, Attributes{})
-
 }

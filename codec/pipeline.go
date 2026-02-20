@@ -1,23 +1,11 @@
 package codec
 
-type AttributeKey int
-
-const (
-	ChromaSubsampling AttributeKey = iota
-	IsKeyFrame
-	SampleDuration
-	Width
-	Height
-)
-
 type Info struct {
 	Width       uint
 	Height      uint
 	TimebaseNum int
 	TimebaseDen int
 }
-
-type Attributes map[any]any
 
 type Writer interface {
 	Write([]byte, Attributes) error
