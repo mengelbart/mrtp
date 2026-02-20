@@ -132,11 +132,9 @@ func (d *Decoder) Decode(encFrame []byte, attrs Attributes) ([]byte, Attributes,
 	C.freeFrame(input)
 
 	// log frame info
-	var pts int64
-	if ptsAttr, ok := attrs[PTS]; ok {
-		if ptsVal, ok := ptsAttr.(int64); ok {
-			pts = ptsVal
-		}
+	pts, err := getPTS(attrs)
+	if err != nil {
+		return nil, nil, err
 	}
 	slog.Info("decoder src", "length", len(frameData), "pts", pts)
 

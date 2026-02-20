@@ -75,31 +75,19 @@ func (s *Y4MSink) Close() error {
 // For use in the processing pipeline.
 func (a *Y4MSink) Write(b []byte, attrs Attributes) error {
 	// parse attributes
-	widthAttr, ok := attrs[Width]
-	if !ok {
-		return fmt.Errorf("Y4MSink: expected Width attribute")
-	}
-	width, ok := widthAttr.(int)
-	if !ok {
-		return fmt.Errorf("Y4MSink: Width attribute is not int")
+	width, err := getWidth(attrs)
+	if err != nil {
+		return fmt.Errorf("Y4MSink: %w", err)
 	}
 
-	heightAttr, ok := attrs[Height]
-	if !ok {
-		return fmt.Errorf("Y4MSink: expected Height attribute")
-	}
-	height, ok := heightAttr.(int)
-	if !ok {
-		return fmt.Errorf("Y4MSink: Height attribute is not int")
+	height, err := getHeight(attrs)
+	if err != nil {
+		return fmt.Errorf("Y4MSink: %w", err)
 	}
 
-	csAttr, ok := attrs[ChromaSubsampling]
-	if !ok {
-		return fmt.Errorf("Y4MSink: expected ChromaSubsampling attribute")
-	}
-	subsampleRatio, ok := csAttr.(image.YCbCrSubsampleRatio)
-	if !ok {
-		return fmt.Errorf("Y4MSink: ChromaSubsampling attribute is not image.YCbCrSubsampleRatio")
+	subsampleRatio, err := getChromaSubsampling(attrs)
+	if err != nil {
+		return fmt.Errorf("Y4MSink: %w", err)
 	}
 
 	return a.SaveFrame(b, width, height, subsampleRatio)

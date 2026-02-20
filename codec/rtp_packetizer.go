@@ -51,11 +51,9 @@ func (p *RTPPacketizer) Write(encFrame []byte, a Attributes) error {
 	pktBufs := make([][]byte, 0)
 
 	// get PTS from attributes for logging
-	var pts int64
-	if ptsAttr, ok := a[PTS]; ok {
-		if ptsVal, ok := ptsAttr.(int64); ok {
-			pts = ptsVal
-		}
+	pts, err := getPTS(a)
+	if err != nil {
+		return err
 	}
 
 	for _, pkt := range pkts {
