@@ -24,5 +24,4 @@ func TestPipeline(t *testing.T) {
 	assert.NoError(t, err)
 
 	source.Write(nil, Attributes{})
-
 }

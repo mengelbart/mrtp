@@ -1,9 +1,11 @@
 package codec
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"io"
+	"time"
 
 	"github.com/mengelbart/y4m"
 )
@@ -11,6 +13,8 @@ import (
 type Y4MSource struct {
 	reader *y4m.Reader
 	header *y4m.StreamHeader
+
+	start time.Time
 }
 
 func NewY4MSource(reader io.Reader) (*Y4MSource, error) {
@@ -21,6 +25,7 @@ func NewY4MSource(reader io.Reader) (*Y4MSource, error) {
 	return &Y4MSource{
 		reader: y4mReader,
 		header: y4mHeader,
+		start:  time.Time{},
 	}, nil
 }
 
@@ -33,7 +38,7 @@ func (s *Y4MSource) GetInfo() Info {
 	}
 }
 
-func (s *Y4MSource) GetFrame() ([]byte, Attributes, error) {
+func (s *Y4MSource) getFrame() ([]byte, Attributes, error) {
 	frame, _, err := s.reader.ReadNextFrame()
 	if err != nil {
 		return nil, nil, err
@@ -68,4 +73,49 @@ func convertSubsampleRatio(s y4m.ChromaSubsamplingType) image.YCbCrSubsampleRati
 	default:
 		panic(fmt.Sprintf("unexpected y4m.ChromaSubsamplingType: %#v", s))
 	}
+}
+
+// StartLive starts the source as live source.
+func (s *Y4MSource) StartLive(ctx context.Context, pipeline Writer) error {
+	fps := float64(s.header.FrameRate.Numerator) / float64(s.header.FrameRate.Denominator)
+	frameDuration := time.Duration(float64(time.Second) / fps)
+
+	var lastFrame time.Time
+
+	ticker := time.NewTicker(frameDuration)
+	defer ticker.Stop()
+	for range ticker.C {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		frame, attr, err := s.getFrame()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+
+		// create pts
+		ts := lastFrame.Add(frameDuration)
+		lastFrame = ts
+		var pts int64
+		if s.start.IsZero() {
+			s.start = ts
+		} else {
+			pts = ts.Sub(s.start).Microseconds()
+		}
+
+		attr[PTS] = pts
+		attr[FrameDuration] = frameDuration
+		err = pipeline.Write(frame, attr)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

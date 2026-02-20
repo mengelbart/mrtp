@@ -2,7 +2,6 @@ package codec
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"os"
 	"slices"
@@ -11,7 +10,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/mengelbart/y4m"
+	"github.com/pion/rtp"
+	"github.com/pion/rtp/codecs"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -44,18 +44,12 @@ func TestDepacketizer(t *testing.T) {
 
 		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
-
 		defer file.Close()
 
-		reader, streamHeader, err := y4m.NewReader(file)
+		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
 
-		i := Info{
-			Width:       uint(streamHeader.Width),
-			Height:      uint(streamHeader.Height),
-			TimebaseNum: streamHeader.FrameRate.Numerator,
-			TimebaseDen: streamHeader.FrameRate.Denominator,
-		}
+		i := fileSrc.GetInfo()
 		encoder := NewVP8Encoder()
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
@@ -66,37 +60,13 @@ func TestDepacketizer(t *testing.T) {
 		pacer := &FrameSpacer{
 			Ctx: ctx,
 		}
-		writer, err := Chain(i, sink, pacer, packetizer, encoder)
+		frameInter := newFrameInterceptor(false, 0, nil)
+		rtpPipeline, err := Chain(i, sink, pacer, packetizer, encoder, frameInter)
 		assert.NoError(t, err)
 
-		fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
-		frameDuration := time.Duration(float64(time.Second) / fps)
+		fileSrc.StartLive(ctx, rtpPipeline)
 
-		framesSent := 0
-
-		ticker := time.NewTicker(frameDuration)
-		defer ticker.Stop()
-		for range ticker.C {
-			frame, _, err := reader.ReadNextFrame()
-			if err != nil {
-				if err == io.EOF {
-					println("sending done")
-					break
-				}
-				assert.NoError(t, err)
-				break
-			}
-			csr := convertSubsampleRatio(streamHeader.ChromaSubsampling)
-			if err = writer.Write(frame, Attributes{
-				ChromaSubsampling: csr,
-			}); err != nil {
-				assert.NoError(t, err)
-				break
-			}
-			framesSent++
-		}
-
-		assert.Equal(t, framesSent, framesReceived)
+		assert.Equal(t, frameInter.count, framesReceived)
 
 		depacketizer.Close()
 		cancel()
@@ -120,11 +90,14 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 		receivedFrames := make([][]byte, 0, maxFrames)
 
 		timeout := 10 * time.Millisecond
+		receivedFrameCount := 0
 		depacketizer := newRTPDepacketizer(timeout, func(frame []byte, pts int64) {
-			frameCopy := make([]byte, len(frame))
-			copy(frameCopy, frame)
-			receivedFrames = append(receivedFrames, frameCopy)
-			slog.Info("received frame", "length", len(frame), "count", len(receivedFrames))
+			if receivedFrameCount < maxFrames {
+				frameCopy := make([]byte, len(frame))
+				copy(frameCopy, frame)
+				receivedFrames = append(receivedFrames, frameCopy)
+			}
+			receivedFrameCount++
 		})
 
 		var wg sync.WaitGroup
@@ -141,15 +114,10 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 		assert.NoError(t, err)
 		defer file.Close()
 
-		reader, streamHeader, err := y4m.NewReader(file)
+		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
 
-		i := Info{
-			Width:       uint(streamHeader.Width),
-			Height:      uint(streamHeader.Height),
-			TimebaseNum: streamHeader.FrameRate.Numerator,
-			TimebaseDen: streamHeader.FrameRate.Denominator,
-		}
+		i := fileSrc.GetInfo()
 
 		encoder := NewVP8Encoder()
 		packetizer := &RTPPacketizerFactory{
@@ -162,9 +130,9 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 			Ctx: ctx,
 		}
 
-		fInter := newFrameInterceptor()
+		frameInter := newFrameInterceptor(true, maxFrames, nil)
 
-		writer, err := Chain(i, sink, pacer, packetizer, fInter, encoder)
+		rtpPipeline, err := Chain(i, sink, pacer, packetizer, frameInter, encoder)
 		assert.NoError(t, err)
 
 		fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
@@ -173,44 +141,22 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 		ticker := time.NewTicker(frameDuration)
 		defer ticker.Stop()
 
-		framesSent := 0
-		for range ticker.C {
-			if framesSent >= maxFrames {
-				break
-			}
-
-			frame, _, err := reader.ReadNextFrame()
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				assert.NoError(t, err)
-				break
-			}
-
-			csr := convertSubsampleRatio(streamHeader.ChromaSubsampling)
-			err = writer.Write(frame, Attributes{
-				ChromaSubsampling: csr,
-			})
-			assert.NoError(t, err)
-
-			framesSent++
-		}
+		fileSrc.StartLive(ctx, rtpPipeline)
 
 		time.Sleep(100 * time.Millisecond)
 
 		// verify frame counts match
-		assert.Equal(t, maxFrames, len(fInter.sentFrames), "should have captured %d frames", maxFrames)
+		assert.Equal(t, maxFrames, len(frameInter.sentFrames), "interceptor should have captured %d frames", maxFrames)
 		assert.Equal(t, maxFrames, len(receivedFrames), "should have received %d frames", maxFrames)
-		assert.Equal(t, len(fInter.sentFrames), len(receivedFrames), "sent and received frame counts should match")
+		assert.Equal(t, frameInter.count, receivedFrameCount, "total sent and received frame counts should match")
 
 		// compare each frame
-		for i := 0; i < len(fInter.sentFrames); i++ {
-			assert.Equal(t, len(fInter.sentFrames[i]), len(receivedFrames[i]),
+		for i := 0; i < len(frameInter.sentFrames); i++ {
+			assert.Equal(t, len(frameInter.sentFrames[i]), len(receivedFrames[i]),
 				"frame %d: length mismatch", i)
-			assert.Equal(t, fInter.sentFrames[i], receivedFrames[i],
+			assert.Equal(t, frameInter.sentFrames[i], receivedFrames[i],
 				"frame %d: content mismatch", i)
-			slog.Info("frame comparison", "index", i, "size", len(fInter.sentFrames[i]), "match", true)
+			slog.Info("frame comparison", "index", i, "size", len(frameInter.sentFrames[i]), "match", true)
 		}
 
 		depacketizer.Close()
@@ -231,15 +177,20 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 		defer cancel()
 
 		const maxFrames = 30
+		framesToBeDropped := []int{3, 24, 25}
 
-		receivedFrames := make([][]byte, 0, maxFrames)
+		maxReceiveFrames := maxFrames - len(framesToBeDropped)
+		receivedFrames := make([][]byte, 0, maxReceiveFrames)
 
 		timeout := 10 * time.Millisecond
+		receivedFrameCount := 0
 		depacketizer := newRTPDepacketizer(timeout, func(frame []byte, pts int64) {
-			frameCopy := make([]byte, len(frame))
-			copy(frameCopy, frame)
-			receivedFrames = append(receivedFrames, frameCopy)
-			slog.Info("received frame", "size", len(frame), "count", len(receivedFrames))
+			if receivedFrameCount < maxReceiveFrames {
+				frameCopy := make([]byte, len(frame))
+				copy(frameCopy, frame)
+				receivedFrames = append(receivedFrames, frameCopy)
+			}
+			receivedFrameCount++
 		})
 
 		var wg sync.WaitGroup
@@ -256,15 +207,10 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 		assert.NoError(t, err)
 		defer file.Close()
 
-		reader, streamHeader, err := y4m.NewReader(file)
+		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
 
-		i := Info{
-			Width:       uint(streamHeader.Width),
-			Height:      uint(streamHeader.Height),
-			TimebaseNum: streamHeader.FrameRate.Numerator,
-			TimebaseDen: streamHeader.FrameRate.Denominator,
-		}
+		i := fileSrc.GetInfo()
 
 		encoder := NewVP8Encoder()
 		packetizer := &RTPPacketizerFactory{
@@ -277,10 +223,10 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 			Ctx: ctx,
 		}
 
-		fInter := newFrameInterceptor()
-		dropInter := newRtpDropInterceptor([]uint16{5, 444})
+		frameInter := newFrameInterceptor(true, maxFrames, framesToBeDropped)
+		dropInter := newRtpDropInterceptor()
 
-		writer, err := Chain(i, sink, pacer, dropInter, packetizer, fInter, encoder)
+		rtpPipeline, err := Chain(i, sink, pacer, dropInter, packetizer, frameInter, encoder)
 		assert.NoError(t, err)
 
 		fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
@@ -289,35 +235,30 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 		ticker := time.NewTicker(frameDuration)
 		defer ticker.Stop()
 
-		framesSent := 0
-		for range ticker.C {
-			if framesSent >= maxFrames {
-				break
-			}
-
-			frame, _, err := reader.ReadNextFrame()
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				assert.NoError(t, err)
-				break
-			}
-
-			csr := convertSubsampleRatio(streamHeader.ChromaSubsampling)
-			err = writer.Write(frame, Attributes{
-				ChromaSubsampling: csr,
-			})
-			assert.NoError(t, err)
-
-			framesSent++
-		}
+		fileSrc.StartLive(ctx, rtpPipeline)
 
 		time.Sleep(100 * time.Millisecond)
 
 		// verify frame counts match
-		assert.Equal(t, maxFrames, len(fInter.sentFrames), "should have captured %d frames", maxFrames)
-		assert.Equal(t, maxFrames-2, len(receivedFrames), "should have received %d frames", maxFrames-2)
+		assert.Equal(t, maxFrames, len(frameInter.sentFrames), "interceptor should have captured %d frames", maxFrames)
+		assert.Equal(t, maxReceiveFrames, len(receivedFrames), "received frame saver should have saved %d frames", maxReceiveFrames)
+
+		expectedReceivedFrames := frameInter.count - len(framesToBeDropped)
+		assert.Equal(t, expectedReceivedFrames, receivedFrameCount)
+
+		// compare each frame, skipping the dropped ones
+		receivedIdx := 0
+		for sentIdx := 0; sentIdx < len(frameInter.sentFrames); sentIdx++ {
+			frameNum := sentIdx
+			if slices.Contains(framesToBeDropped, frameNum) {
+				continue
+			}
+
+			assert.Less(t, receivedIdx, len(receivedFrames), "received index %d out of range", receivedIdx)
+			assert.Equal(t, len(frameInter.sentFrames[sentIdx]), len(receivedFrames[receivedIdx]))
+			assert.Equal(t, frameInter.sentFrames[sentIdx], receivedFrames[receivedIdx])
+			receivedIdx++
+		}
 
 		depacketizer.Close()
 		wg.Wait()
@@ -326,43 +267,67 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 }
 
 type frameInterceptor struct {
-	sentFrames [][]byte
+	saveFrame        bool
+	sentFrames       [][]byte
+	maxSave          int
+	framesToBeMarked []int
+
+	count int
 }
 
-func newFrameInterceptor() *frameInterceptor {
+func newFrameInterceptor(saveFrame bool, maxSave int, framesToBeMarked []int) *frameInterceptor {
 	return &frameInterceptor{
-		sentFrames: make([][]byte, 0),
+		saveFrame:        saveFrame,
+		sentFrames:       make([][]byte, 0),
+		maxSave:          maxSave,
+		framesToBeMarked: framesToBeMarked,
 	}
 }
 
 func (i *frameInterceptor) Link(w Writer, _ Info) (Writer, error) {
 	return WriterFunc(func(b []byte, a Attributes) error {
-		frameCopy := make([]byte, len(b))
-		copy(frameCopy, b)
-		i.sentFrames = append(i.sentFrames, frameCopy)
-		// slog.Info("captured frame", "size", len(b), "count", len(i.sentFrames))
+		if i.saveFrame && len(i.sentFrames) < i.maxSave {
+			frameCopy := make([]byte, len(b))
+			copy(frameCopy, b)
+			i.sentFrames = append(i.sentFrames, frameCopy)
+		}
+
+		if slices.Contains(i.framesToBeMarked, i.count) {
+			a["DROP"] = true
+		}
+		i.count++
 
 		return w.Write(b, a)
 	}), nil
 }
 
+// rtpDropInterceptor drops the first rtp packet of marked frames
 type rtpDropInterceptor struct {
-	toDrop    []uint16
-	packetCnt uint16
 }
 
-func newRtpDropInterceptor(toDrop []uint16) *rtpDropInterceptor {
-	return &rtpDropInterceptor{
-		toDrop: toDrop,
-	}
+func newRtpDropInterceptor() *rtpDropInterceptor {
+	return &rtpDropInterceptor{}
 }
 
 func (i *rtpDropInterceptor) Link(w Writer, _ Info) (Writer, error) {
 	return WriterFunc(func(b []byte, a Attributes) error {
-		defer func() { i.packetCnt++ }()
-		if slices.Contains(i.toDrop, i.packetCnt) {
-			// drop packet
-			return nil
+		shouldDrop := false
+		if drop, ok := a["DROP"]; ok {
+			if dropBool, ok := drop.(bool); ok && dropBool {
+				shouldDrop = true
+			}
+		}
+
+		// parse RTP packet to detect frame start
+		pkt := new(rtp.Packet)
+		if err := pkt.Unmarshal(b); err == nil {
+			var vp8 codecs.VP8Packet
+			if _, err := vp8.Unmarshal(pkt.Payload); err == nil {
+				if vp8.S == 1 && shouldDrop {
+					// first packet of marked frame -> drop it
+					return nil
+				}
+			}
 		}
 
 		return w.Write(b, a)

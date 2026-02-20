@@ -2,14 +2,12 @@ package codec
 
 import (
 	"context"
-	"io"
 	"os"
 	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 
-	"github.com/mengelbart/y4m"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,6 +19,8 @@ func TestVpxDecode(t *testing.T) {
 	}
 
 	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+
 		framesReceived := 0
 
 		decoder, err := NewDecoder()
@@ -39,53 +39,24 @@ func TestVpxDecode(t *testing.T) {
 
 		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
-
 		defer file.Close()
 
-		reader, streamHeader, err := y4m.NewReader(file)
+		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
 
-		i := Info{
-			Width:       uint(streamHeader.Width),
-			Height:      uint(streamHeader.Height),
-			TimebaseNum: streamHeader.FrameRate.Numerator,
-			TimebaseDen: streamHeader.FrameRate.Denominator,
-		}
+		i := fileSrc.GetInfo()
 		encoder := NewVP8Encoder()
+		frameInter := newFrameInterceptor(false, 0, nil)
 
-		writer, err := Chain(i, sink, encoder)
+		writer, err := Chain(i, sink, encoder, frameInter)
 		assert.NoError(t, err)
 
-		fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
-		frameDuration := time.Duration(float64(time.Second) / fps)
+		fileSrc.StartLive(ctx, writer)
 
-		framesSent := 0
-
-		ticker := time.NewTicker(frameDuration)
-		defer ticker.Stop()
-		for range ticker.C {
-			frame, _, err := reader.ReadNextFrame()
-			if err != nil {
-				if err == io.EOF {
-					println("sending done")
-					break
-				}
-				assert.NoError(t, err)
-				break
-			}
-			csr := convertSubsampleRatio(streamHeader.ChromaSubsampling)
-			if err = writer.Write(frame, Attributes{
-				ChromaSubsampling: csr,
-			}); err != nil {
-				assert.NoError(t, err)
-				break
-			}
-			framesSent++
-		}
-
-		assert.Equal(t, framesSent, framesReceived)
+		assert.Equal(t, frameInter.count, framesReceived)
 
 		decoder.Close()
+		cancel()
 		synctest.Wait()
 	})
 }
@@ -125,18 +96,12 @@ func TestVpxDecodeWithRTP(t *testing.T) {
 
 		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
-
 		defer file.Close()
 
-		reader, streamHeader, err := y4m.NewReader(file)
+		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
 
-		i := Info{
-			Width:       uint(streamHeader.Width),
-			Height:      uint(streamHeader.Height),
-			TimebaseNum: streamHeader.FrameRate.Numerator,
-			TimebaseDen: streamHeader.FrameRate.Denominator,
-		}
+		i := fileSrc.GetInfo()
 		encoder := NewVP8Encoder()
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
@@ -147,37 +112,14 @@ func TestVpxDecodeWithRTP(t *testing.T) {
 		pacer := &FrameSpacer{
 			Ctx: ctx,
 		}
-		writer, err := Chain(i, sink, pacer, packetizer, encoder)
+		frameInter := newFrameInterceptor(false, 0, nil)
+
+		writer, err := Chain(i, sink, pacer, packetizer, encoder, frameInter)
 		assert.NoError(t, err)
 
-		fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
-		frameDuration := time.Duration(float64(time.Second) / fps)
+		fileSrc.StartLive(ctx, writer)
 
-		framesSent := 0
-
-		ticker := time.NewTicker(frameDuration)
-		defer ticker.Stop()
-		for range ticker.C {
-			frame, _, err := reader.ReadNextFrame()
-			if err != nil {
-				if err == io.EOF {
-					println("sending done")
-					break
-				}
-				assert.NoError(t, err)
-				break
-			}
-			csr := convertSubsampleRatio(streamHeader.ChromaSubsampling)
-			if err = writer.Write(frame, Attributes{
-				ChromaSubsampling: csr,
-			}); err != nil {
-				assert.NoError(t, err)
-				break
-			}
-			framesSent++
-		}
-
-		assert.Equal(t, framesSent, framesReceived)
+		assert.Equal(t, frameInter.count, framesReceived)
 
 		depacketizer.Close()
 		cancel()
