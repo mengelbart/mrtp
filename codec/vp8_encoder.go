@@ -9,12 +9,10 @@ import (
 
 type VP8Encoder struct {
 	enc *Encoder
-
-	start time.Time
 }
 
 func NewVP8Encoder() *VP8Encoder {
-	return &VP8Encoder{start: time.Time{}}
+	return &VP8Encoder{}
 }
 
 func (e *VP8Encoder) Link(f Writer, i Info) (Writer, error) {
@@ -30,20 +28,20 @@ func (e *VP8Encoder) Link(f Writer, i Info) (Writer, error) {
 		return nil, err
 	}
 	e.enc = enc
-	fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
-	frameDuration := time.Duration(float64(time.Second) / fps)
-	frameCount := 0 // plot script requires this field
+	frameCount := 0 // logging: plot script requires this field
 
-	var lastFrame time.Time
 	return WriterFunc(func(b []byte, a Attributes) error {
-		// TODO: pts should be managed by source
-		ts := lastFrame.Add(frameDuration)
-		lastFrame = ts
+		var frameDuration time.Duration
+		if fdAttr, ok := a[FrameDuration]; ok {
+			if fdVal, ok := fdAttr.(time.Duration); ok {
+				frameDuration = fdVal
+			}
+		}
 		var pts int64
-		if e.start.IsZero() {
-			e.start = ts
-		} else {
-			pts = ts.Sub(e.start).Microseconds()
+		if ptsAttr, ok := a[PTS]; ok {
+			if ptsVal, ok := ptsAttr.(int64); ok {
+				pts = ptsVal
+			}
 		}
 
 		slog.Info("encoder sink", "length", len(b), "pts", pts, "duration", frameDuration.Microseconds(), "frame-count", frameCount)
@@ -76,7 +74,6 @@ func (e *VP8Encoder) Link(f Writer, i Info) (Writer, error) {
 		frameCount++
 
 		a[IsKeyFrame] = encoded.IsKeyFrame
-		a[PTS] = pts
 		return f.Write(encoded.Payload, a)
 	}), nil
 }

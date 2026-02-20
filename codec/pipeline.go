@@ -9,6 +9,7 @@ const (
 	Width
 	Height
 	PTS
+	FrameDuration
 )
 
 type Info struct {

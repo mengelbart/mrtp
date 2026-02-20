@@ -3,7 +3,6 @@ package simulation
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -201,42 +200,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 		return err
 	}
 
-	fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
-	frameDuration := time.Duration(float64(time.Second) / fps)
-
-	ticker := time.NewTicker(frameDuration)
-	defer ticker.Stop()
-	var next time.Time
-	for range ticker.C {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		now := time.Now()
-		lateness := now.Sub(next)
-		next = now.Add(frameDuration)
-		slog.Info("FRAME", "duration", frameDuration, "next", now.Add(frameDuration), "lateness", lateness)
-
-		frame, attr, err := fileSrc.GetFrame()
-		if err != nil {
-			if err == io.EOF {
-				println("sending done")
-				return nil
-			}
-			return err
-		}
-		ioDone := time.Now()
-		slog.Info("read frame from disk", "latency", ioDone.Sub(now))
-
-		err = rtpPipeline.Write(frame, attr)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return fileSrc.StartLive(ctx, rtpPipeline)
 }
 
 func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
