@@ -15,6 +15,10 @@ vpx_codec_err_t vpx_codec_enc_init_macro(
 	return vpx_codec_enc_init(ctx, iface, cfg, flags);
 }
 
+inline vpx_codec_err_t vp9_set_cpu_used(vpx_codec_ctx_t *ctx, int value) {
+	return vpx_codec_control_(ctx, 13, value);  // VP9E_SET_CPU_USED = 13
+}
+
 void *pktBuf(vpx_codec_cx_pkt_t *pkt) {
   return pkt->data.frame.buf;
 }
@@ -37,11 +41,11 @@ import (
 	"unsafe"
 )
 
-func getEncoderByName(codec string) (*C.vpx_codec_iface_t, error) {
+func getEncoderByName(codec CodecType) (*C.vpx_codec_iface_t, error) {
 	switch codec {
-	case "vp8":
+	case VP8:
 		return C.vpx_codec_vp8_cx(), nil
-	case "vp9":
+	case VP9:
 		return C.vpx_codec_vp9_cx(), nil
 	}
 	return nil, fmt.Errorf("unknown codec: %v", codec)
@@ -58,12 +62,13 @@ type Encoder struct {
 	cfg     *C.vpx_codec_enc_cfg_t
 
 	frame []byte
+	codec CodecType
 
 	targetBitrate atomic.Uint64
 }
 
 type Config struct {
-	Codec       string
+	Codec       CodecType
 	Width       uint
 	Height      uint
 	TimebaseNum int
@@ -81,6 +86,7 @@ func NewEncoder(c Config) (*Encoder, error) {
 		return nil, fmt.Errorf("failed to get encoder default config: %v", res)
 	}
 
+	// general vpx settings
 	cfg.g_w = C.uint(c.Width)
 	cfg.g_h = C.uint(c.Height)
 	cfg.g_timebase.num = C.int(c.TimebaseNum)
@@ -91,6 +97,7 @@ func NewEncoder(c Config) (*Encoder, error) {
 	cfg.g_pass = C.VPX_RC_ONE_PASS
 	cfg.g_threads = 4
 	cfg.rc_resize_allowed = 0
+	cfg.g_lag_in_frames = 0 // Required for real-time encoding (no frame buffering)
 
 	cfg.g_error_resilient = C.VPX_ERROR_RESILIENT_DEFAULT
 
@@ -113,11 +120,22 @@ func NewEncoder(c Config) (*Encoder, error) {
 	if res != 0 {
 		return nil, fmt.Errorf("failed to init encoder: code %v", res)
 	}
+
+	// VP9-specific settings
+	if c.Codec == VP9 {
+		// VP9E_SET_CPU_USED: Speed vs quality tradeoff
+		// higher values = faster encoding
+		if res := C.vp9_set_cpu_used(ctx, 5); res != C.VPX_CODEC_OK {
+			return nil, fmt.Errorf("failed to set VP9E_SET_CPU_USED: %v", res)
+		}
+	}
+
 	e := &Encoder{
 		ctx:     ctx,
 		encoder: encoder,
 		cfg:     &cfg,
 		frame:   make([]byte, 0),
+		codec:   c.Codec,
 	}
 
 	e.targetBitrate.Store(c.TargetRate)
@@ -151,13 +169,12 @@ func (e *Encoder) Encode(
 		}
 	}
 
-	var flags int
 	res := C.vpx_codec_encode(
 		e.ctx,
 		raw,
 		C.vpx_codec_pts_t(pts),
 		C.ulong(duration.Microseconds()),
-		C.vpx_enc_frame_flags_t(flags),
+		C.vpx_enc_frame_flags_t(0),
 		C.VPX_DL_REALTIME,
 	)
 

@@ -5,22 +5,26 @@ import (
 	"log/slog"
 )
 
-type VP8Encoder struct {
+type VPXEncoder struct {
 	enc *Encoder
+
+	codec CodecType
 }
 
-func NewVP8Encoder() *VP8Encoder {
-	return &VP8Encoder{}
+func NewVPXEncoder(codec CodecType) *VPXEncoder {
+	return &VPXEncoder{
+		codec: codec,
+	}
 }
 
-func (e *VP8Encoder) Link(f Writer, i Info) (Writer, error) {
+func (e *VPXEncoder) Link(f Writer, i Info) (Writer, error) {
 	enc, err := NewEncoder(Config{
-		Codec:       "vp8",
+		Codec:       e.codec,
 		Width:       i.Width,
 		Height:      i.Height,
 		TimebaseNum: i.TimebaseNum,
 		TimebaseDen: i.TimebaseDen,
-		TargetRate:  100_000,
+		TargetRate:  750_000,
 	})
 	if err != nil {
 		return nil, err
@@ -68,7 +72,7 @@ func (e *VP8Encoder) Link(f Writer, i Info) (Writer, error) {
 	}), nil
 }
 
-func (e *VP8Encoder) SetTargetRate(targetRate uint64) {
+func (e *VPXEncoder) SetTargetRate(targetRate uint64) {
 	if e.enc != nil {
 		e.enc.SetTargetRate(targetRate)
 	}
