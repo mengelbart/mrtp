@@ -23,6 +23,7 @@ type rtpDepacketizer struct {
 	trigger chan struct{}
 
 	missedPacketTime *time.Time
+	playoutTs        uint32
 	timeout          time.Duration
 	codec            CodecType
 
@@ -98,16 +99,6 @@ func (d *rtpDepacketizer) processPackets() {
 			return
 		}
 		if err == jitterbuffer.ErrNotFound {
-			if droppingFrame {
-				// already dropping frame, skip to next packet
-				playoutHead := d.jitterBuffer.PlayoutHead()
-				slog.Info("drop rtp packet of skipped frame", "seqnr", playoutHead)
-
-				d.jitterBuffer.SetPlayoutHead(playoutHead + 1)
-				continue
-			}
-
-			slog.Info("packet reordering")
 			// missing packet
 			if d.missedPacketTime == nil {
 				// start new timeout
@@ -134,6 +125,15 @@ func (d *rtpDepacketizer) processPackets() {
 			slog.Error("Depackitzer error: ", "mst", err.Error())
 			return
 		}
+		if d.playoutTs != pkt.Timestamp {
+			d.playoutTs = pkt.Timestamp
+			d.frameBuffer = d.frameBuffer[:0] // drop old data
+			droppingFrame = false
+		}
+
+		if d.missedPacketTime != nil {
+			d.missedPacketTime = nil
+		}
 
 		// log packet
 		slog.Info("rtp to pts mapping",
@@ -144,8 +144,6 @@ func (d *rtpDepacketizer) processPackets() {
 		)
 
 		var payload []byte
-		var isFrameStart bool
-
 		switch d.codec {
 		case VP8:
 			var vp8 codecs.VP8Packet
@@ -153,21 +151,12 @@ func (d *rtpDepacketizer) processPackets() {
 			if err != nil {
 				panic(err)
 			}
-			// RFC 7742: "The S bit MUST be set to 1 for the first packet of each encoded frame."
-			isFrameStart = vp8.S == 1
 		case VP9:
 			var vp9 codecs.VP9Packet
 			payload, err = vp9.Unmarshal(pkt.Payload)
 			if err != nil {
 				panic(err)
 			}
-			// RFC 9628: "B: Start of Frame."
-			isFrameStart = vp9.B
-		}
-
-		if isFrameStart {
-			d.frameBuffer = d.frameBuffer[:0] // drop old data
-			droppingFrame = false
 		}
 
 		d.frameBuffer = append(d.frameBuffer, payload...)
