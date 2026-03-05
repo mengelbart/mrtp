@@ -2,6 +2,7 @@ package codec
 
 /*
 #cgo pkg-config: vpx
+#include <stdlib.h>
 #include "vpx/vpx_encoder.h"
 #include "vpx/vp8cx.h"
 #include "vpx/vpx_image.h"
@@ -34,6 +35,7 @@ vpx_codec_frame_flags_t pktFrameFlags(vpx_codec_cx_pkt_t *pkt) {
 */
 import "C"
 import (
+	"errors"
 	"fmt"
 	"image"
 	"sync/atomic"
@@ -51,12 +53,12 @@ func getEncoderByName(codec CodecType) (*C.vpx_codec_iface_t, error) {
 	return nil, fmt.Errorf("unknown codec: %v", codec)
 }
 
-type VP8Frame struct {
+type Frame struct {
 	IsKeyFrame bool
 	Payload    []byte
 }
 
-type Encoder struct {
+type VPXEncoder struct {
 	encoder *C.vpx_codec_iface_t
 	ctx     *C.vpx_codec_ctx_t
 	cfg     *C.vpx_codec_enc_cfg_t
@@ -65,6 +67,8 @@ type Encoder struct {
 	codec CodecType
 
 	targetBitrate atomic.Uint64
+
+	closed bool
 }
 
 type Config struct {
@@ -76,7 +80,7 @@ type Config struct {
 	TargetRate  uint64
 }
 
-func NewEncoder(c Config) (*Encoder, error) {
+func NewVPXEncoder(c Config) (*VPXEncoder, error) {
 	encoder, err := getEncoderByName(c.Codec)
 	if err != nil {
 		return nil, err
@@ -130,7 +134,7 @@ func NewEncoder(c Config) (*Encoder, error) {
 		}
 	}
 
-	e := &Encoder{
+	e := &VPXEncoder{
 		ctx:     ctx,
 		encoder: encoder,
 		cfg:     &cfg,
@@ -142,11 +146,15 @@ func NewEncoder(c Config) (*Encoder, error) {
 	return e, nil
 }
 
-func (e *Encoder) Encode(
+func (e *VPXEncoder) Encode(
 	image *image.YCbCr,
 	pts int64,
 	duration time.Duration,
-) (*VP8Frame, error) {
+) (*Frame, error) {
+	if e.closed {
+		return nil, fmt.Errorf("encoder is closed")
+	}
+
 	raw := C.vpx_img_alloc(
 		nil,
 		C.VPX_IMG_FMT_I420,
@@ -182,7 +190,7 @@ func (e *Encoder) Encode(
 		return nil, fmt.Errorf("failed to encode frame: %v", res)
 	}
 	var iter C.vpx_codec_iter_t
-	frame := &VP8Frame{}
+	frame := &Frame{}
 	e.frame = e.frame[:0]
 	for {
 		pkt := C.vpx_codec_get_cx_data(e.ctx, &iter)
@@ -200,6 +208,21 @@ func (e *Encoder) Encode(
 	return frame, nil
 }
 
-func (e *Encoder) SetTargetRate(targetRate uint64) {
+func (e *VPXEncoder) SetTargetRate(targetRate uint64) {
 	e.targetBitrate.Store(targetRate)
+}
+
+func (e *VPXEncoder) Close() error {
+	if e.closed {
+		return nil
+	}
+
+	e.closed = true
+
+	defer C.free(unsafe.Pointer(e.ctx))
+
+	if C.vpx_codec_destroy(e.ctx) != 0 {
+		return errors.New("vpx_codec_destroy failed")
+	}
+	return nil
 }

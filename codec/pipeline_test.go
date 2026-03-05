@@ -12,7 +12,7 @@ func TestPipeline(t *testing.T) {
 		log.Println("sinking buffer")
 		return nil
 	})
-	e := NewVPXEncoder(VP8)
+	e := NewEncoder(VP8)
 	i := Info{
 		Width:       720,
 		Height:      480,

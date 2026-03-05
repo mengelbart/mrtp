@@ -62,14 +62,14 @@ void freeDecoderCtx(vpx_codec_ctx_t* ctx) {
 */
 import "C"
 
-type Decoder struct {
+type VPXDecoder struct {
 	codecCtx *C.vpx_codec_ctx_t
 	closed   bool
 
 	iter C.vpx_codec_iter_t
 }
 
-func NewDecoder(codec CodecType) (*Decoder, error) {
+func NewVPXDecoder(codec CodecType) (*VPXDecoder, error) {
 	var ccodec *C.vpx_codec_iface_t
 	switch codec {
 	case VP8:
@@ -85,12 +85,12 @@ func NewDecoder(codec CodecType) (*Decoder, error) {
 		return nil, fmt.Errorf("vpx_codec_dec_init failed")
 	}
 
-	return &Decoder{
+	return &VPXDecoder{
 		codecCtx: codecCtx,
 	}, nil
 }
 
-func (d *Decoder) Decode(encFrame []byte, attrs Attributes) ([]byte, Attributes, error) {
+func (d *VPXDecoder) Decode(encFrame []byte, attrs Attributes) ([]byte, Attributes, error) {
 	if d.closed {
 		return nil, nil, fmt.Errorf("decoder is closed")
 	}
@@ -156,12 +156,12 @@ func (d *Decoder) Decode(encFrame []byte, attrs Attributes) ([]byte, Attributes,
 	return frameData, attrs, nil
 }
 
-func (d *Decoder) Close() {
+func (d *VPXDecoder) Close() {
 	C.freeDecoderCtx(d.codecCtx)
 	d.closed = true
 }
 
-func (d *Decoder) Link(next Writer, i Info) (Writer, error) {
+func (d *VPXDecoder) Link(next Writer, i Info) (Writer, error) {
 	return WriterFunc(func(encFrame []byte, attrs Attributes) error {
 		rawFrame, frameAttrs, err := d.Decode(encFrame, attrs)
 		if err != nil {

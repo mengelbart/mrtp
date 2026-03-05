@@ -23,7 +23,7 @@ func TestVpxDecode(t *testing.T) {
 
 		framesReceived := 0
 
-		decoder, err := NewDecoder(VP8)
+		decoder, err := NewVPXDecoder(VP8)
 		assert.NoError(t, err)
 
 		sink := WriterFunc(func(frame []byte, attr Attributes) error {
@@ -45,7 +45,7 @@ func TestVpxDecode(t *testing.T) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewVPXEncoder(VP8)
+		encoder := NewEncoder(VP8)
 		frameInter := newFrameInterceptor(false, 0, nil)
 
 		writer, err := Chain(i, sink, encoder, frameInter)
@@ -87,7 +87,7 @@ func runVpxDecodeWithRTP(t *testing.T, codec CodecType) {
 
 		framesReceived := 0
 
-		decoder, err := NewDecoder(codec)
+		decoder, err := NewVPXDecoder(codec)
 		assert.NoError(t, err)
 
 		timeout := 10 * time.Millisecond
@@ -117,7 +117,7 @@ func runVpxDecodeWithRTP(t *testing.T, codec CodecType) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewVPXEncoder(codec)
+		encoder := NewEncoder(codec)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
