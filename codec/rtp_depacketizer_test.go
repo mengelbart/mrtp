@@ -11,11 +11,22 @@ import (
 	"time"
 
 	"github.com/pion/rtp"
-	"github.com/pion/rtp/codecs"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDepacketizer(t *testing.T) {
+func TestDepacketizerVP8(t *testing.T) {
+	testDepacketizerWithCodec(t, VP8)
+}
+
+func TestDepacketizerVP9(t *testing.T) {
+	testDepacketizerWithCodec(t, VP9)
+}
+
+func TestDepacketizerH264(t *testing.T) {
+	testDepacketizerWithCodec(t, H264)
+}
+
+func testDepacketizerWithCodec(t *testing.T, codec CodecType) {
 	// video file must exist
 	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
 		println("Video file not found. See simulation folder for more information.\n")
@@ -28,7 +39,7 @@ func TestDepacketizer(t *testing.T) {
 		framesReceived := 0
 
 		timeout := 10 * time.Millisecond
-		depacketizer, err := newRTPDepacketizer(timeout, VP8, func(frame []byte, pts int64) {
+		depacketizer, err := newRTPDepacketizer(timeout, codec, func(frame []byte, pts int64) {
 			slog.Info("got frame", "size", len(frame))
 			framesReceived++
 		})
@@ -51,13 +62,13 @@ func TestDepacketizer(t *testing.T) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewEncoder(VP8)
+		encoder := NewEncoder(codec)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
 			SSRC:      0,
 			ClockRate: 90_000,
-			Codec:     VP8,
+			Codec:     codec,
 		}
 		pacer := &FrameSpacer{
 			Ctx: ctx,
@@ -76,7 +87,15 @@ func TestDepacketizer(t *testing.T) {
 	})
 }
 
-func TestDepacketizerFrameIntegrity(t *testing.T) {
+func TestDepacketizerFrameIntegrityVP8(t *testing.T) {
+	testDepacketizerFrameIntegrityWithCodec(t, VP8)
+}
+
+func TestDepacketizerFrameIntegrityVP9(t *testing.T) {
+	testDepacketizerFrameIntegrityWithCodec(t, VP9)
+}
+
+func testDepacketizerFrameIntegrityWithCodec(t *testing.T, codec CodecType) {
 	// video file must exist
 	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
 		println("Video file not found. See simulation folder for more information.\n")
@@ -93,7 +112,7 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 
 		timeout := 10 * time.Millisecond
 		receivedFrameCount := 0
-		depacketizer, err := newRTPDepacketizer(timeout, VP8, func(frame []byte, pts int64) {
+		depacketizer, err := newRTPDepacketizer(timeout, codec, func(frame []byte, pts int64) {
 			if receivedFrameCount < maxFrames {
 				frameCopy := make([]byte, len(frame))
 				copy(frameCopy, frame)
@@ -122,13 +141,13 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 
 		i := fileSrc.GetInfo()
 
-		encoder := NewEncoder(VP8)
+		encoder := NewEncoder(codec)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
 			SSRC:      0,
 			ClockRate: 90_000,
-			Codec:     VP8,
+			Codec:     codec,
 		}
 		pacer := &FrameSpacer{
 			Ctx: ctx,
@@ -169,7 +188,15 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 	})
 }
 
-func TestDepacketizerRTPdrops(t *testing.T) {
+func TestDepacketizerRTPdropsVP8(t *testing.T) {
+	testDepacketizerRTPdropsWithCodec(t, VP8)
+}
+
+func TestDepacketizerRTPdropsVP9(t *testing.T) {
+	testDepacketizerRTPdropsWithCodec(t, VP9)
+}
+
+func testDepacketizerRTPdropsWithCodec(t *testing.T, codec CodecType) {
 	// video file must exist
 	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
 		println("Video file not found. See simulation folder for more information.\n")
@@ -188,7 +215,7 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 
 		timeout := 10 * time.Millisecond
 		receivedFrameCount := 0
-		depacketizer, err := newRTPDepacketizer(timeout, VP8, func(frame []byte, pts int64) {
+		depacketizer, err := newRTPDepacketizer(timeout, codec, func(frame []byte, pts int64) {
 			if receivedFrameCount < maxReceiveFrames {
 				frameCopy := make([]byte, len(frame))
 				copy(frameCopy, frame)
@@ -217,13 +244,13 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 
 		i := fileSrc.GetInfo()
 
-		encoder := NewEncoder(VP8)
+		encoder := NewEncoder(codec)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
 			SSRC:      0,
 			ClockRate: 90_000,
-			Codec:     VP8,
+			Codec:     codec,
 		}
 		pacer := &FrameSpacer{
 			Ctx: ctx,
@@ -308,14 +335,15 @@ func (i *frameInterceptor) Link(w Writer, _ Info) (Writer, error) {
 }
 
 // rtpDropInterceptor drops the first rtp packet of marked frames
-type rtpDropInterceptor struct {
-}
+type rtpDropInterceptor struct{}
 
 func newRtpDropInterceptor() *rtpDropInterceptor {
 	return &rtpDropInterceptor{}
 }
 
 func (i *rtpDropInterceptor) Link(w Writer, _ Info) (Writer, error) {
+	var lastTS uint32
+	first := true
 	return WriterFunc(func(b []byte, a Attributes) error {
 		shouldDrop := false
 		if drop, ok := a["DROP"]; ok {
@@ -324,16 +352,18 @@ func (i *rtpDropInterceptor) Link(w Writer, _ Info) (Writer, error) {
 			}
 		}
 
-		// parse RTP packet to detect frame start
 		pkt := new(rtp.Packet)
-		if err := pkt.Unmarshal(b); err == nil {
-			var vp8 codecs.VP8Packet
-			if _, err := vp8.Unmarshal(pkt.Payload); err == nil {
-				if vp8.S == 1 && shouldDrop {
-					// first packet of marked frame -> drop it
-					return nil
-				}
-			}
+		if err := pkt.Unmarshal(b); err != nil {
+			return w.Write(b, a)
+		}
+
+		isFrameStart := first || pkt.Timestamp != lastTS
+		first = false
+		lastTS = pkt.Timestamp
+
+		if isFrameStart && shouldDrop {
+			// first packet of marked frame -> drop it
+			return nil
 		}
 
 		return w.Write(b, a)
