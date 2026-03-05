@@ -51,7 +51,7 @@ func TestDepacketizer(t *testing.T) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewVPXEncoder(VP8)
+		encoder := NewEncoder(VP8)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
@@ -122,7 +122,7 @@ func TestDepacketizerFrameIntegrity(t *testing.T) {
 
 		i := fileSrc.GetInfo()
 
-		encoder := NewVPXEncoder(VP8)
+		encoder := NewEncoder(VP8)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
@@ -217,7 +217,7 @@ func TestDepacketizerRTPdrops(t *testing.T) {
 
 		i := fileSrc.GetInfo()
 
-		encoder := NewVPXEncoder(VP8)
+		encoder := NewEncoder(VP8)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,

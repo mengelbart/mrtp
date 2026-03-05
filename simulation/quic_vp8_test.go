@@ -175,7 +175,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	}
 
 	i := fileSrc.GetInfo()
-	encoder := codec.NewVPXEncoder(codec.VP8)
+	encoder := codec.NewEncoder(codec.VP8)
 
 	// set rate callbacks
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {
@@ -256,7 +256,7 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 	}
 	defer rtpSrc.Close()
 
-	decoder, err := codec.NewDecoder(codec.VP8)
+	decoder, err := codec.NewVPXDecoder(codec.VP8)
 	if err != nil {
 		return err
 	}
@@ -267,7 +267,7 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 	}
 	defer fileSink.Close()
 
-	timeout := 10 * time.Millisecond
+	timeout := 50 * time.Millisecond
 	depacketizer, err := codec.NewRTPDepacketizer(timeout, codec.VP8)
 	if err != nil {
 		return err

@@ -211,8 +211,12 @@ Flags:
 	}
 
 	i := fileSrc.GetInfo()
-	codecTyp := codec.VP9
-	encoder := codec.NewVPXEncoder(codecTyp)
+	codecTyp, err := codec.CodecTypeFromString(flags.Codec)
+	if err != nil {
+		return err
+	}
+
+	encoder := codec.NewEncoder(codecTyp)
 
 	// set rate callbacks
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {

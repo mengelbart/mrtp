@@ -157,8 +157,12 @@ Flags:
 		return err
 	}
 
-	codecTyp := codec.VP9
-	decoder, err := codec.NewDecoder(codecTyp)
+	codecTyp, err := codec.CodecTypeFromString(flags.Codec)
+	if err != nil {
+		return err
+	}
+
+	decoder, err := codec.NewVPXDecoder(codecTyp)
 	if err != nil {
 		return err
 	}
