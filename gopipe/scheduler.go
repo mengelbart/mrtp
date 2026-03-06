@@ -1,4 +1,4 @@
-package codec
+package gopipe
 
 import (
 	"math"

@@ -2,6 +2,7 @@ package codec
 
 import (
 	"fmt"
+	"image"
 	"strings"
 )
 
@@ -36,4 +37,11 @@ func (c CodecType) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+type DecodedFrame struct {
+	Data              []byte
+	Width             int
+	Height            int
+	ChromaSubsampling image.YCbCrSubsampleRatio
 }

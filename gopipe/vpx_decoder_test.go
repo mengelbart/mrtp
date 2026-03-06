@@ -1,4 +1,4 @@
-package codec
+package gopipe
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,14 +24,13 @@ func TestVpxDecode(t *testing.T) {
 
 		framesReceived := 0
 
-		decoder, err := NewVPXDecoder(VP8)
+		decoder, err := codec.NewVPXDecoder(codec.VP8)
 		assert.NoError(t, err)
 
 		sink := WriterFunc(func(frame []byte, attr Attributes) error {
-			rawFrame, attrs, err := decoder.Decode(frame, attr)
+			rawFrame, err := decoder.Decode(frame)
 			assert.NoError(t, err)
 			assert.NotNil(t, rawFrame)
-			assert.NotNil(t, attrs)
 
 			framesReceived++
 
@@ -45,7 +45,7 @@ func TestVpxDecode(t *testing.T) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewEncoder(VP8)
+		encoder := NewEncoder(codec.VP8)
 		frameInter := newFrameInterceptor(false, 0, nil)
 
 		writer, err := Chain(i, sink, encoder, frameInter)
@@ -61,41 +61,40 @@ func TestVpxDecode(t *testing.T) {
 	})
 }
 
-func TestVpxDecodeWithRTP(t *testing.T) {
+func TestVpxDecodeWithRtpVP8(t *testing.T) {
 	// video file must exist
 	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
 		println("Video file not found. See simulation folder for more information.\n")
 		t.Skip("video not found")
 	}
 
-	runVpxDecodeWithRTP(t, VP8)
+	runVpxDecodeWithRTP(t, codec.VP8)
 }
 
-func TestVpxDecodeWithRTP_VP9(t *testing.T) {
+func TestVpxDecodeWithRtpVP9(t *testing.T) {
 	// video file must exist
 	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
 		println("Video file not found. See simulation folder for more information.\n")
 		t.Skip("video not found")
 	}
 
-	runVpxDecodeWithRTP(t, VP9)
+	runVpxDecodeWithRTP(t, codec.VP9)
 }
 
-func runVpxDecodeWithRTP(t *testing.T, codec CodecType) {
+func runVpxDecodeWithRTP(t *testing.T, c codec.CodecType) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		framesReceived := 0
 
-		decoder, err := NewVPXDecoder(codec)
+		decoder, err := codec.NewVPXDecoder(c)
 		assert.NoError(t, err)
 
 		timeout := 10 * time.Millisecond
-		depacketizer, err := newRTPDepacketizer(timeout, codec, func(frame []byte, pts int64) {
-			rawFrame, attrs, err := decoder.Decode(frame, Attributes{PTS: pts})
+		depacketizer, err := newRTPDepacketizer(timeout, c, func(frame []byte, pts int64) {
+			rawFrame, err := decoder.Decode(frame)
 			assert.NoError(t, err)
 			assert.NotNil(t, rawFrame)
-			assert.NotNil(t, attrs)
 			framesReceived++
 		})
 		assert.NoError(t, err)
@@ -117,13 +116,13 @@ func runVpxDecodeWithRTP(t *testing.T, codec CodecType) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewEncoder(codec)
+		encoder := NewEncoder(c)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
 			SSRC:      0,
 			ClockRate: 90_000,
-			Codec:     codec,
+			Codec:     c,
 		}
 		pacer := &FrameSpacer{
 			Ctx: ctx,

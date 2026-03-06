@@ -1,4 +1,4 @@
-package codec
+package gopipe
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,14 +24,13 @@ func TestH264Decode(t *testing.T) {
 
 		framesReceived := 0
 
-		decoder, err := NewH264Decoder()
+		decoder, err := codec.NewH264Decoder()
 		assert.NoError(t, err)
 
 		sink := WriterFunc(func(frame []byte, attr Attributes) error {
-			rawFrame, attrs, err := decoder.Decode(frame, attr)
+			rawFrame, err := decoder.Decode(frame)
 			assert.NoError(t, err)
 			assert.NotNil(t, rawFrame)
-			assert.NotNil(t, attrs)
 
 			framesReceived++
 
@@ -45,7 +45,7 @@ func TestH264Decode(t *testing.T) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewEncoder(H264)
+		encoder := NewEncoder(codec.H264)
 		frameInter := newFrameInterceptor(false, 0, nil)
 
 		pipeline, err := Chain(i, sink, encoder, frameInter)
@@ -73,15 +73,14 @@ func TestH264DecodeWithRTP(t *testing.T) {
 
 		framesReceived := 0
 
-		decoder, err := NewH264Decoder()
+		decoder, err := codec.NewH264Decoder()
 		assert.NoError(t, err)
 
 		timeout := 10 * time.Millisecond
-		depacketizer, err := newRTPDepacketizer(timeout, H264, func(frame []byte, pts int64) {
-			rawFrame, attrs, err := decoder.Decode(frame, Attributes{PTS: pts})
+		depacketizer, err := newRTPDepacketizer(timeout, codec.H264, func(frame []byte, pts int64) {
+			rawFrame, err := decoder.Decode(frame)
 			assert.NoError(t, err)
 			assert.NotNil(t, rawFrame)
-			assert.NotNil(t, attrs)
 			framesReceived++
 		})
 		assert.NoError(t, err)
@@ -103,13 +102,13 @@ func TestH264DecodeWithRTP(t *testing.T) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewEncoder(H264)
+		encoder := NewEncoder(codec.H264)
 		packetizer := &RTPPacketizerFactory{
 			MTU:       1420,
 			PT:        96,
 			SSRC:      0,
 			ClockRate: 90_000,
-			Codec:     H264,
+			Codec:     codec.H264,
 		}
 		pacer := &FrameSpacer{
 			Ctx: ctx,
