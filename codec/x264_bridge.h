@@ -1,3 +1,7 @@
+// taken from https://github.com/pion/mediadevices
+// Copyright (c) 2019-2020 Pion
+// MIT License: https://github.com/pion/mediadevices/blob/master/LICENSE
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

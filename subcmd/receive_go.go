@@ -162,7 +162,7 @@ Flags:
 		return err
 	}
 
-	decoder, err := codec.NewVPXDecoder(codecTyp)
+	decoder, err := codec.NewDecoder(codecTyp)
 	if err != nil {
 		return err
 	}
