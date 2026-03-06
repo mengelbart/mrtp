@@ -103,12 +103,12 @@ func (d *H264Decoder) Link(next Writer, i Info) (Writer, error) {
 	return WriterFunc(func(encFrame []byte, attrs Attributes) error {
 		rawFrame, frameAttrs, err := d.Decode(encFrame, attrs)
 		if err != nil {
+			if errors.Is(err, ErrFrameNotReady) {
+				slog.Info("decoder: frame not ready, need more data")
+				// Frame not ready, end pipeline chain here
+				return nil
+			}
 			return err
-		}
-		if errors.Is(err, ErrFrameNotReady) {
-			slog.Info("decoder: frame not ready, need more data")
-			// Frame not ready, end pipeline chain here
-			return nil
 		}
 
 		// merge attributes

@@ -27,6 +27,10 @@ type rtpDepacketizer struct {
 	timeout          time.Duration
 	codec            CodecType
 
+	vp8Depacketizer  codecs.VP8Packet
+	vp9Depacketizer  codecs.VP9Packet
+	h264Depacketizer codecs.H264Packet
+
 	unwrapper *logging.Unwrapper // for logging the rtp packets
 }
 
@@ -146,20 +150,17 @@ func (d *rtpDepacketizer) processPackets() {
 		var payload []byte
 		switch d.codec {
 		case VP8:
-			var vp8 codecs.VP8Packet
-			payload, err = vp8.Unmarshal(pkt.Payload)
+			payload, err = d.vp8Depacketizer.Unmarshal(pkt.Payload)
 			if err != nil {
 				panic(err)
 			}
 		case VP9:
-			var vp9 codecs.VP9Packet
-			payload, err = vp9.Unmarshal(pkt.Payload)
+			payload, err = d.vp9Depacketizer.Unmarshal(pkt.Payload)
 			if err != nil {
 				panic(err)
 			}
 		case H264:
-			var h264 codecs.H264Packet
-			payload, err = h264.Unmarshal(pkt.Payload)
+			payload, err = d.h264Depacketizer.Unmarshal(pkt.Payload)
 			if err != nil {
 				panic(err)
 			}

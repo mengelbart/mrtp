@@ -22,18 +22,20 @@ type x264encoder struct {
 
 func newX264encoder(c Config) (*x264encoder, error) {
 	param := C.x264_param_t{
-		i_csp:    C.X264_CSP_I420,
-		i_width:  C.int(c.Width),
-		i_height: C.int(c.Height),
-		// i_keyint_max: C.int(0),
+		i_csp:        C.X264_CSP_I420,
+		i_width:      C.int(c.Width),
+		i_height:     C.int(c.Height),
+		i_fps_num:    C.uint(c.TimebaseNum),
+		i_fps_den:    C.uint(c.TimebaseDen),
+		i_keyint_max: C.int(60), // TODO: maybe based on fps?
 	}
 	param.rc.i_bitrate = C.int(c.TargetRate / 1000) // convert to kbps
 	param.rc.i_vbv_max_bitrate = param.rc.i_bitrate
-	param.rc.i_vbv_buffer_size = param.rc.i_vbv_max_bitrate * 2
+	param.rc.i_vbv_buffer_size = param.rc.i_vbv_max_bitrate // 1 second buffer for tighter latency
 
 	var rc C.int
 	// cPreset will be freed in C.enc_new
-	cPreset := C.CString(fmt.Sprint(0)) // ultrafast preset
+	cPreset := C.CString("ultrafast")
 	engine := C.enc_new(param, cPreset, &rc)
 	if rc != 0 {
 		return nil, fmt.Errorf("failed to create x264 encoder with error code: %v", rc)
@@ -41,7 +43,7 @@ func newX264encoder(c Config) (*x264encoder, error) {
 
 	e := x264encoder{
 		engine:              engine,
-		currentTrgetBitrate: c.TargetRate / 1000,
+		currentTrgetBitrate: c.TargetRate,
 	}
 	return &e, nil
 }
@@ -86,7 +88,7 @@ func (e *x264encoder) encode(image *image.YCbCr) (*Frame, error) {
 }
 
 func (e *x264encoder) setTargetRate(bitrate uint64) {
-	e.targetBitrate.Store(bitrate / 1000) // convert to kbps
+	e.targetBitrate.Store(bitrate)
 }
 
 func (e *x264encoder) close() error {
