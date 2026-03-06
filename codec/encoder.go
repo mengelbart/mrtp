@@ -96,6 +96,10 @@ func (e *Encoder) Link(f Writer, i Info) (Writer, error) {
 }
 
 func (e *Encoder) SetTargetRate(targetRate uint64) {
+	// reduce target rate
+	targetRate = uint64(0.9 * float64(targetRate))
+	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", targetRate)
+
 	if e.vpxEnc != nil {
 		e.vpxEnc.SetTargetRate(targetRate)
 	} else if e.x264Enc != nil {

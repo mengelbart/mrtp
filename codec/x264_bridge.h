@@ -41,7 +41,7 @@ Encoder *enc_new(x264_param_t param, char *preset, int *rc) {
   e->param.i_width = param.i_width;
   e->param.i_height = param.i_height;
   e->param.i_fps_num = param.i_fps_num;
-  e->param.i_fps_den = 1;
+  e->param.i_fps_den = param.i_fps_den;
   // Intra refres:
   e->param.i_keyint_max = param.i_keyint_max;
   // Rate control:
@@ -121,7 +121,7 @@ Slice enc_encode(Encoder *e, uint8_t *y, uint8_t *cb, uint8_t *cr, int *rc) {
     return s;
   }
 
-  // e->pic_in.i_pts++;
+  e->pic_in.i_pts++;
   s.data = nal->p_payload;
   return s;
 }
