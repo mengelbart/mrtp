@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp/cmdmain"
-	"github.com/mengelbart/mrtp/codec"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
+	"github.com/mengelbart/mrtp/gopipe"
+	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
 	roqProtocol "github.com/mengelbart/roq"
@@ -194,7 +195,7 @@ Flags:
 		roqTransport.CloseLogFile()
 	}()
 
-	appSink := codec.WriterFunc(func(b []byte, _ codec.Attributes) error {
+	appSink := gopipe.WriterFunc(func(b []byte, _ gopipe.Attributes) error {
 		_, err := rtpSink.Write(b)
 		return err
 	})
@@ -205,14 +206,18 @@ Flags:
 	}
 	defer file.Close()
 
-	fileSrc, err := codec.NewY4MSource(file)
+	fileSrc, err := gopipe.NewY4MSource(file)
 	if err != nil {
 		return err
 	}
 
 	i := fileSrc.GetInfo()
-	codecTyp := codec.VP9
-	encoder := codec.NewVPXEncoder(codecTyp)
+	codecTyp, err := codec.CodecTypeFromString(flags.Codec)
+	if err != nil {
+		return err
+	}
+
+	encoder := gopipe.NewEncoder(codecTyp)
 
 	// set rate callbacks
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {
@@ -223,17 +228,17 @@ Flags:
 		return nil
 	}
 
-	packetizer := &codec.RTPPacketizerFactory{
+	packetizer := &gopipe.RTPPacketizerFactory{
 		MTU:       1420,
 		PT:        96,
 		SSRC:      0,
 		ClockRate: 90_000,
 		Codec:     codecTyp,
 	}
-	pacer := &codec.FrameSpacer{
+	pacer := &gopipe.FrameSpacer{
 		Ctx: ctx,
 	}
-	rtpPipeline, err := codec.Chain(i, appSink, pacer, packetizer, encoder)
+	rtpPipeline, err := gopipe.Chain(i, appSink, pacer, packetizer, encoder)
 	if err != nil {
 		return err
 	}

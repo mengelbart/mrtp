@@ -1,9 +1,10 @@
-package codec
+package gopipe
 
 import (
 	"log"
 	"testing"
 
+	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -12,7 +13,7 @@ func TestPipeline(t *testing.T) {
 		log.Println("sinking buffer")
 		return nil
 	})
-	e := NewVPXEncoder(VP8)
+	e := NewEncoder(codec.VP8)
 	i := Info{
 		Width:       720,
 		Height:      480,

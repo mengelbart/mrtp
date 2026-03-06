@@ -1,4 +1,4 @@
-package codec
+package gopipe
 
 type Info struct {
 	Width       uint

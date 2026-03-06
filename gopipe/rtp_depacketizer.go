@@ -1,4 +1,4 @@
-package codec
+package gopipe
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/pion/interceptor/pkg/jitterbuffer"
 	"github.com/pion/rtp"
@@ -25,14 +26,18 @@ type rtpDepacketizer struct {
 	missedPacketTime *time.Time
 	playoutTs        uint32
 	timeout          time.Duration
-	codec            CodecType
+	codec            codec.CodecType
+
+	vp8Depacketizer  codecs.VP8Packet
+	vp9Depacketizer  codecs.VP9Packet
+	h264Depacketizer codecs.H264Packet
 
 	unwrapper *logging.Unwrapper // for logging the rtp packets
 }
 
-func newRTPDepacketizer(timeout time.Duration, codec CodecType, onFrame func(encFrame []byte, pts int64)) (*rtpDepacketizer, error) {
-	if codec != VP8 && codec != VP9 {
-		return nil, fmt.Errorf("unsupported codec for depacketizer: %s", codec.String())
+func newRTPDepacketizer(timeout time.Duration, c codec.CodecType, onFrame func(encFrame []byte, pts int64)) (*rtpDepacketizer, error) {
+	if c != codec.VP8 && c != codec.VP9 && c != codec.H264 {
+		return nil, fmt.Errorf("unsupported codec for depacketizer: %s", c.String())
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -45,7 +50,7 @@ func newRTPDepacketizer(timeout time.Duration, codec CodecType, onFrame func(enc
 		trigger:      make(chan struct{}, 1),
 		timeout:      timeout,
 		unwrapper:    &logging.Unwrapper{},
-		codec:        codec,
+		codec:        c,
 	}
 	return d, nil
 }
@@ -145,15 +150,18 @@ func (d *rtpDepacketizer) processPackets() {
 
 		var payload []byte
 		switch d.codec {
-		case VP8:
-			var vp8 codecs.VP8Packet
-			payload, err = vp8.Unmarshal(pkt.Payload)
+		case codec.VP8:
+			payload, err = d.vp8Depacketizer.Unmarshal(pkt.Payload)
 			if err != nil {
 				panic(err)
 			}
-		case VP9:
-			var vp9 codecs.VP9Packet
-			payload, err = vp9.Unmarshal(pkt.Payload)
+		case codec.VP9:
+			payload, err = d.vp9Depacketizer.Unmarshal(pkt.Payload)
+			if err != nil {
+				panic(err)
+			}
+		case codec.H264:
+			payload, err = d.h264Depacketizer.Unmarshal(pkt.Payload)
 			if err != nil {
 				panic(err)
 			}
@@ -181,7 +189,7 @@ type RTPDepacketizer struct {
 	next         Writer
 }
 
-func NewRTPDepacketizer(timeout time.Duration, codec CodecType) (*RTPDepacketizer, error) {
+func NewRTPDepacketizer(timeout time.Duration, codec codec.CodecType) (*RTPDepacketizer, error) {
 	adapter := &RTPDepacketizer{}
 
 	// forwards to next writer when frame is complete

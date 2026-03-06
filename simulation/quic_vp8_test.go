@@ -12,9 +12,10 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/mengelbart/mrtp/codec"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
+	"github.com/mengelbart/mrtp/gopipe"
+	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/mengelbart/netsim"
@@ -158,7 +159,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 		roqTransport.CloseLogFile()
 	}()
 
-	appSink := codec.WriterFunc(func(b []byte, _ codec.Attributes) error {
+	appSink := gopipe.WriterFunc(func(b []byte, _ gopipe.Attributes) error {
 		_, err := rtpSink.Write(b)
 		return err
 	})
@@ -169,13 +170,13 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	}
 	defer file.Close()
 
-	fileSrc, err := codec.NewY4MSource(file)
+	fileSrc, err := gopipe.NewY4MSource(file)
 	if err != nil {
 		return err
 	}
 
 	i := fileSrc.GetInfo()
-	encoder := codec.NewVPXEncoder(codec.VP8)
+	encoder := gopipe.NewEncoder(codec.VP8)
 
 	// set rate callbacks
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {
@@ -186,16 +187,16 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 		return nil
 	}
 
-	packetizer := &codec.RTPPacketizerFactory{
+	packetizer := &gopipe.RTPPacketizerFactory{
 		MTU:       1420,
 		PT:        96,
 		SSRC:      0,
 		ClockRate: 90_000,
 	}
-	pacer := &codec.FrameSpacer{
+	pacer := &gopipe.FrameSpacer{
 		Ctx: ctx,
 	}
-	rtpPipeline, err := codec.Chain(i, appSink, pacer, packetizer, encoder)
+	rtpPipeline, err := gopipe.Chain(i, appSink, pacer, packetizer, encoder)
 	if err != nil {
 		return err
 	}
@@ -256,25 +257,25 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 	}
 	defer rtpSrc.Close()
 
-	decoder, err := codec.NewDecoder(codec.VP8)
+	decoder, err := gopipe.NewDecoder(codec.VP8)
 	if err != nil {
 		return err
 	}
 
-	fileSink, err := codec.NewY4MSink("./out.y4m", 60, 1)
+	fileSink, err := gopipe.NewY4MSink("./out.y4m", 60, 1)
 	if err != nil {
 		return err
 	}
 	defer fileSink.Close()
 
-	timeout := 10 * time.Millisecond
-	depacketizer, err := codec.NewRTPDepacketizer(timeout, codec.VP8)
+	timeout := 50 * time.Millisecond
+	depacketizer, err := gopipe.NewRTPDepacketizer(timeout, codec.VP8)
 	if err != nil {
 		return err
 	}
 	defer depacketizer.Close()
 
-	rtpPipeline, err := codec.Chain(codec.Info{}, fileSink, decoder, depacketizer)
+	rtpPipeline, err := gopipe.Chain(gopipe.Info{}, fileSink, decoder, depacketizer)
 	if err != nil {
 		return err
 	}
@@ -307,7 +308,7 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 			return err
 		}
 
-		err = rtpPipeline.Write(buf[:n], codec.Attributes{})
+		err = rtpPipeline.Write(buf[:n], gopipe.Attributes{})
 		if err != nil {
 			return err
 		}

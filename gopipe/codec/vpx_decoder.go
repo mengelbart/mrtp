@@ -3,8 +3,6 @@ package codec
 import (
 	"fmt"
 	"image"
-	"log/slog"
-	"maps"
 	"unsafe"
 )
 
@@ -62,14 +60,14 @@ void freeDecoderCtx(vpx_codec_ctx_t* ctx) {
 */
 import "C"
 
-type Decoder struct {
+type VPXDecoder struct {
 	codecCtx *C.vpx_codec_ctx_t
 	closed   bool
 
 	iter C.vpx_codec_iter_t
 }
 
-func NewDecoder(codec CodecType) (*Decoder, error) {
+func NewVPXDecoder(codec CodecType) (*VPXDecoder, error) {
 	var ccodec *C.vpx_codec_iface_t
 	switch codec {
 	case VP8:
@@ -85,26 +83,26 @@ func NewDecoder(codec CodecType) (*Decoder, error) {
 		return nil, fmt.Errorf("vpx_codec_dec_init failed")
 	}
 
-	return &Decoder{
+	return &VPXDecoder{
 		codecCtx: codecCtx,
 	}, nil
 }
 
-func (d *Decoder) Decode(encFrame []byte, attrs Attributes) ([]byte, Attributes, error) {
+func (d *VPXDecoder) Decode(encFrame []byte) (*DecodedFrame, error) {
 	if d.closed {
-		return nil, nil, fmt.Errorf("decoder is closed")
+		return nil, fmt.Errorf("decoder is closed")
 	}
 
 	status := C.decodeFrame(d.codecCtx, (*C.uint8_t)(&encFrame[0]), C.uint(len(encFrame)))
 	if status != C.VPX_CODEC_OK {
-		return nil, nil, fmt.Errorf("decode failed: %v", status)
+		return nil, fmt.Errorf("decode failed: %v", status)
 	}
 
 	d.iter = nil
 
 	input := C.getFrame(d.codecCtx, &d.iter)
 	if input == nil {
-		return nil, nil, fmt.Errorf("decode failed: no image in decoder")
+		return nil, fmt.Errorf("decode failed: no image in decoder")
 	}
 
 	w := int(input.d_w)
@@ -141,39 +139,15 @@ func (d *Decoder) Decode(encFrame []byte, attrs Attributes) ([]byte, Attributes,
 
 	C.freeFrame(input)
 
-	// log frame info
-	pts, err := getPTS(attrs)
-	if err != nil {
-		return nil, nil, err
-	}
-	slog.Info("decoder src", "length", len(frameData), "pts", pts)
-
-	// add metadata to attributes
-	attrs[Width] = w
-	attrs[Height] = h
-	attrs[ChromaSubsampling] = image.YCbCrSubsampleRatio420
-
-	return frameData, attrs, nil
+	return &DecodedFrame{
+		Data:              frameData,
+		Width:             w,
+		Height:            h,
+		ChromaSubsampling: image.YCbCrSubsampleRatio420,
+	}, nil
 }
 
-func (d *Decoder) Close() {
+func (d *VPXDecoder) Close() {
 	C.freeDecoderCtx(d.codecCtx)
 	d.closed = true
-}
-
-func (d *Decoder) Link(next Writer, i Info) (Writer, error) {
-	return WriterFunc(func(encFrame []byte, attrs Attributes) error {
-		rawFrame, frameAttrs, err := d.Decode(encFrame, attrs)
-		if err != nil {
-			return err
-		}
-
-		// merge attributes
-		if attrs == nil {
-			attrs = make(Attributes)
-		}
-		maps.Copy(attrs, frameAttrs)
-
-		return next.Write(rawFrame, attrs)
-	}), nil
 }

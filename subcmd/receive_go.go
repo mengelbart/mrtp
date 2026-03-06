@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp/cmdmain"
-	"github.com/mengelbart/mrtp/codec"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
+	"github.com/mengelbart/mrtp/gopipe"
+	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
@@ -157,25 +158,29 @@ Flags:
 		return err
 	}
 
-	codecTyp := codec.VP9
-	decoder, err := codec.NewDecoder(codecTyp)
+	codecTyp, err := codec.CodecTypeFromString(flags.Codec)
 	if err != nil {
 		return err
 	}
 
-	fileSink, err := codec.NewY4MSink("./out.y4m", 30, 1)
+	decoder, err := gopipe.NewDecoder(codecTyp)
+	if err != nil {
+		return err
+	}
+
+	fileSink, err := gopipe.NewY4MSink("./out.y4m", 30, 1)
 	if err != nil {
 		return err
 	}
 
 	timeout := 60 * time.Millisecond
-	depacketizer, err := codec.NewRTPDepacketizer(timeout, codecTyp)
+	depacketizer, err := gopipe.NewRTPDepacketizer(timeout, codecTyp)
 	if err != nil {
 		return err
 	}
 	defer depacketizer.Close()
 
-	rtpPipeline, err := codec.Chain(codec.Info{}, fileSink, decoder, depacketizer)
+	rtpPipeline, err := gopipe.Chain(gopipe.Info{}, fileSink, decoder, depacketizer)
 	if err != nil {
 		return err
 	}
@@ -192,7 +197,7 @@ Flags:
 		if err != nil {
 			return err
 		}
-		err = rtpPipeline.Write(buf[:n], codec.Attributes{})
+		err = rtpPipeline.Write(buf[:n], gopipe.Attributes{})
 		if err != nil {
 			return err
 		}
