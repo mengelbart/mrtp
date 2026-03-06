@@ -1,4 +1,4 @@
-package codec
+package gopipe
 
 type MediaFrameSource interface {
 	FrameRate() (numerator uint, denominator uint)

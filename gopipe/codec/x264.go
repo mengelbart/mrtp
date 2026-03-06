@@ -11,7 +11,7 @@ import (
 	"unsafe"
 )
 
-type x264encoder struct {
+type X264encoder struct {
 	engine *C.Encoder
 	mu     sync.Mutex
 	closed bool
@@ -20,7 +20,7 @@ type x264encoder struct {
 	currentTrgetBitrate uint64        // kbps
 }
 
-func newX264encoder(c Config) (*x264encoder, error) {
+func NewX264encoder(c Config) (*X264encoder, error) {
 	param := C.x264_param_t{
 		i_csp:        C.X264_CSP_I420,
 		i_width:      C.int(c.Width),
@@ -41,14 +41,14 @@ func newX264encoder(c Config) (*x264encoder, error) {
 		return nil, fmt.Errorf("failed to create x264 encoder with error code: %v", rc)
 	}
 
-	e := x264encoder{
+	e := X264encoder{
 		engine:              engine,
 		currentTrgetBitrate: c.TargetRate,
 	}
 	return &e, nil
 }
 
-func (e *x264encoder) encode(image *image.YCbCr) (*Frame, error) {
+func (e *X264encoder) Encode(image *image.YCbCr) (*Frame, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -87,11 +87,11 @@ func (e *x264encoder) encode(image *image.YCbCr) (*Frame, error) {
 	return frame, nil
 }
 
-func (e *x264encoder) setTargetRate(bitrate uint64) {
+func (e *X264encoder) SetTargetRate(bitrate uint64) {
 	e.targetBitrate.Store(bitrate)
 }
 
-func (e *x264encoder) close() error {
+func (e *X264encoder) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 

@@ -1,26 +1,28 @@
-package codec
+package gopipe
 
 import (
 	"fmt"
 	"image"
 	"log/slog"
+
+	"github.com/mengelbart/mrtp/gopipe/codec"
 )
 
 type Encoder struct {
-	vpxEnc  *VPXEncoder
-	x264Enc *x264encoder
+	vpxEnc  *codec.VPXEncoder
+	x264Enc *codec.X264encoder
 
-	codec CodecType
+	codec codec.CodecType
 }
 
-func NewEncoder(codec CodecType) *Encoder {
+func NewEncoder(codec codec.CodecType) *Encoder {
 	return &Encoder{
 		codec: codec,
 	}
 }
 
 func (e *Encoder) Link(f Writer, i Info) (Writer, error) {
-	conf := Config{
+	conf := codec.Config{
 		Codec:       e.codec,
 		Width:       i.Width,
 		Height:      i.Height,
@@ -29,14 +31,14 @@ func (e *Encoder) Link(f Writer, i Info) (Writer, error) {
 		TimebaseDen: i.TimebaseDen,
 	}
 	switch e.codec {
-	case VP8, VP9:
-		enc, err := NewVPXEncoder(conf)
+	case codec.VP8, codec.VP9:
+		enc, err := codec.NewVPXEncoder(conf)
 		if err != nil {
 			return nil, err
 		}
 		e.vpxEnc = enc
-	case H264:
-		enc, err := newX264encoder(conf)
+	case codec.H264:
+		enc, err := codec.NewX264encoder(conf)
 		if err != nil {
 			return nil, err
 		}
@@ -74,14 +76,14 @@ func (e *Encoder) Link(f Writer, i Info) (Writer, error) {
 		image.Cb = b[ySize : ySize+uSize]
 		image.Cr = b[ySize+uSize:]
 
-		var encoded *Frame
+		var encoded *codec.Frame
 		if e.vpxEnc != nil {
 			encoded, err = e.vpxEnc.Encode(image, pts, frameDuration)
 			if err != nil {
 				return err
 			}
 		} else if e.x264Enc != nil {
-			encoded, err = e.x264Enc.encode(image)
+			encoded, err = e.x264Enc.Encode(image)
 			if err != nil {
 				return err
 			}
@@ -103,7 +105,7 @@ func (e *Encoder) SetTargetRate(targetRate uint64) {
 	if e.vpxEnc != nil {
 		e.vpxEnc.SetTargetRate(targetRate)
 	} else if e.x264Enc != nil {
-		e.x264Enc.setTargetRate(targetRate)
+		e.x264Enc.SetTargetRate(targetRate)
 	}
 }
 
@@ -111,7 +113,7 @@ func (e *Encoder) Close() error {
 	if e.vpxEnc != nil {
 		return e.vpxEnc.Close()
 	} else if e.x264Enc != nil {
-		return e.x264Enc.close()
+		return e.x264Enc.Close()
 	}
 	return nil
 }

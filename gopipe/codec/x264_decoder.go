@@ -10,8 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"log/slog"
-	"maps"
 	"unsafe"
 )
 
@@ -31,22 +29,22 @@ func NewH264Decoder() (*H264Decoder, error) {
 	return &H264Decoder{dec: dec}, nil
 }
 
-func (d *H264Decoder) Decode(encFrame []byte, attrs Attributes) ([]byte, Attributes, error) {
+func (d *H264Decoder) Decode(encFrame []byte) (*DecodedFrame, error) {
 	if d.closed {
-		return nil, nil, fmt.Errorf("decoder is closed")
+		return nil, fmt.Errorf("decoder is closed")
 	}
 
 	cErr := C.h264dec_decode(d.dec, (*C.uint8_t)(unsafe.Pointer(&encFrame[0])), C.int(len(encFrame)))
 	if cErr < 0 {
-		return nil, nil, fmt.Errorf("h264dec_decode failed: %d", int(cErr))
+		return nil, fmt.Errorf("h264dec_decode failed: %d", int(cErr))
 	}
 
 	rc := C.h264dec_get_frame(d.dec)
 	if rc == C.H264DEC_EAGAIN {
-		return nil, nil, ErrFrameNotReady
+		return nil, ErrFrameNotReady
 	}
 	if rc < 0 {
-		return nil, nil, fmt.Errorf("h264dec_get_frame failed: %d", int(rc))
+		return nil, fmt.Errorf("h264dec_get_frame failed: %d", int(rc))
 	}
 
 	w := int(C.h264dec_width(d.dec))
@@ -81,42 +79,15 @@ func (d *H264Decoder) Decode(encFrame []byte, attrs Attributes) ([]byte, Attribu
 		copy(frameData[vOffset+r*(w/2):vOffset+r*(w/2)+(w/2)], vSrc[r*vStride:r*vStride+(w/2)])
 	}
 
-	pts, err := getPTS(attrs)
-	if err != nil {
-		return nil, nil, err
-	}
-	slog.Info("decoder src", "length", len(frameData), "pts", pts)
-
-	attrs[Width] = w
-	attrs[Height] = h
-	attrs[ChromaSubsampling] = image.YCbCrSubsampleRatio420
-
-	return frameData, attrs, nil
+	return &DecodedFrame{
+		Data:              frameData,
+		Width:             w,
+		Height:            h,
+		ChromaSubsampling: image.YCbCrSubsampleRatio420,
+	}, nil
 }
 
 func (d *H264Decoder) Close() {
 	C.h264dec_free(d.dec)
 	d.closed = true
-}
-
-func (d *H264Decoder) Link(next Writer, i Info) (Writer, error) {
-	return WriterFunc(func(encFrame []byte, attrs Attributes) error {
-		rawFrame, frameAttrs, err := d.Decode(encFrame, attrs)
-		if err != nil {
-			if errors.Is(err, ErrFrameNotReady) {
-				slog.Info("decoder: frame not ready, need more data")
-				// Frame not ready, end pipeline chain here
-				return nil
-			}
-			return err
-		}
-
-		// merge attributes
-		if attrs == nil {
-			attrs = make(Attributes)
-		}
-		maps.Copy(attrs, frameAttrs)
-
-		return next.Write(rawFrame, attrs)
-	}), nil
 }

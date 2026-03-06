@@ -1,4 +1,4 @@
-package codec
+package gopipe
 
 import (
 	"image"
@@ -7,6 +7,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -26,14 +27,14 @@ func TestX264Encoder(t *testing.T) {
 		assert.NoError(t, err)
 		i := fileSrc.GetInfo()
 
-		conf := Config{
-			Codec:      H264,
+		conf := codec.Config{
+			Codec:      codec.H264,
 			Width:      i.Width,
 			Height:     i.Height,
 			TargetRate: 750_000,
 		}
 
-		enc, err := newX264encoder(conf)
+		enc, err := codec.NewX264encoder(conf)
 		assert.NoError(t, err)
 
 		for {
@@ -49,18 +50,18 @@ func TestX264Encoder(t *testing.T) {
 			// normaly done by Encoder
 			csr, err := getChromaSubsampling(attr)
 			assert.NoError(t, err)
-			image := image.NewYCbCr(
+			img := image.NewYCbCr(
 				image.Rect(0, 0, int(i.Width), int(i.Height)),
 				csr,
 			)
 
 			ySize := i.Width * i.Height
 			uSize := ySize / 4
-			image.Y = frame[:ySize]
-			image.Cb = frame[ySize : ySize+uSize]
-			image.Cr = frame[ySize+uSize:]
+			img.Y = frame[:ySize]
+			img.Cb = frame[ySize : ySize+uSize]
+			img.Cr = frame[ySize+uSize:]
 
-			encFrame, err := enc.encode(image)
+			encFrame, err := enc.Encode(img)
 			assert.NoError(t, err)
 			assert.NotNil(t, encFrame)
 			assert.Greater(t, len(encFrame.Payload), 0)
