@@ -50,6 +50,9 @@ func (d *Decoder) Link(next Writer, i Info) (Writer, error) {
 		} else {
 			return fmt.Errorf("no decoder available")
 		}
+		if err != nil {
+			return fmt.Errorf("failed to decode frame: %w", err)
+		}
 
 		slog.Info("decoder src", "length", len(decFrame.Data), "pts", pts)
 
