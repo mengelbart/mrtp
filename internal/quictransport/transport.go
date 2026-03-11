@@ -270,6 +270,10 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 	return t, nil
 }
 
+func (t *Transport) GetRTT() time.Duration {
+	return t.lastRTT.lastRtt
+}
+
 func (t *Transport) StartHandlers() {
 	go t.receiveDatagrams()
 	go t.receiveUniStreams() // already opened feedback stream; do not have to worry about that here

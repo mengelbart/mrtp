@@ -243,5 +243,7 @@ Flags:
 		return err
 	}
 
+	time.Sleep(100 * time.Millisecond)
+
 	return fileSrc.StartLive(ctx, rtpPipeline)
 }

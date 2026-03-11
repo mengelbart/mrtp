@@ -173,8 +173,8 @@ Flags:
 		return err
 	}
 
-	timeout := 60 * time.Millisecond
-	depacketizer, err := gopipe.NewRTPDepacketizer(timeout, codecTyp)
+	maxTimeout := 150 * time.Millisecond
+	depacketizer, err := gopipe.NewRTPDepacketizer(maxTimeout, codecTyp)
 	if err != nil {
 		return err
 	}
@@ -197,6 +197,9 @@ Flags:
 		if err != nil {
 			return err
 		}
+
+		depacketizer.UpdateRTT(quicConn.GetRTT())
+
 		err = rtpPipeline.Write(buf[:n], gopipe.Attributes{})
 		if err != nil {
 			return err
