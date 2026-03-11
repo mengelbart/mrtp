@@ -106,6 +106,8 @@ func (d *rtpDepacketizer) processPackets() {
 		if err == jitterbuffer.ErrNotFound {
 			// missing packet
 			if d.missedPacketTime == nil {
+				slog.Info("packitzier misses packet; start timeout", "seqnr", d.jitterBuffer.PlayoutHead())
+
 				// start new timeout
 				now := time.Now()
 				d.missedPacketTime = &now
@@ -137,6 +139,7 @@ func (d *rtpDepacketizer) processPackets() {
 		}
 
 		if d.missedPacketTime != nil {
+			slog.Info("got packet before timeout", "seqnr", pkt.SequenceNumber)
 			d.missedPacketTime = nil
 		}
 
