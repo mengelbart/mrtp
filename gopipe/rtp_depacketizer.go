@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/mengelbart/mrtp/gopipe/codec"
@@ -24,9 +25,11 @@ type rtpDepacketizer struct {
 	trigger chan struct{}
 
 	missedPacketTime *time.Time
-	playoutTs        uint32
-	timeout          time.Duration
+	playoutTs        uint32 // playout timestamp of the current frame being assembled
 	codec            codec.CodecType
+
+	maxTimeout     time.Duration
+	currentTimeout atomic.Int64
 
 	vp8Depacketizer  codecs.VP8Packet
 	vp9Depacketizer  codecs.VP9Packet
@@ -35,7 +38,7 @@ type rtpDepacketizer struct {
 	unwrapper *logging.Unwrapper // for logging the rtp packets
 }
 
-func newRTPDepacketizer(timeout time.Duration, c codec.CodecType, onFrame func(encFrame []byte, pts int64)) (*rtpDepacketizer, error) {
+func newRTPDepacketizer(maxTimeout time.Duration, c codec.CodecType, onFrame func(encFrame []byte, pts int64)) (*rtpDepacketizer, error) {
 	if c != codec.VP8 && c != codec.VP9 && c != codec.H264 {
 		return nil, fmt.Errorf("unsupported codec for depacketizer: %s", c.String())
 	}
@@ -48,11 +51,23 @@ func newRTPDepacketizer(timeout time.Duration, c codec.CodecType, onFrame func(e
 		ctx:          ctx,
 		cancel:       cancel,
 		trigger:      make(chan struct{}, 1),
-		timeout:      timeout,
+		maxTimeout:   maxTimeout,
 		unwrapper:    &logging.Unwrapper{},
 		codec:        c,
 	}
+	d.currentTimeout.Store(int64(maxTimeout))
 	return d, nil
+}
+
+func (d *rtpDepacketizer) UpdateRTT(rtt time.Duration) {
+	if rtt <= 0 {
+		return
+	}
+
+	timeout := time.Duration(float64(rtt) * 1.5)
+	timeout = min(timeout, d.maxTimeout)
+
+	d.currentTimeout.Store(int64(timeout))
 }
 
 // Write just pushes to jitter buffer
@@ -112,7 +127,7 @@ func (d *rtpDepacketizer) processPackets() {
 				now := time.Now()
 				d.missedPacketTime = &now
 				return
-			} else if time.Since(*d.missedPacketTime) > d.timeout {
+			} else if time.Since(*d.missedPacketTime) > time.Duration(d.currentTimeout.Load()) {
 				// timeout expired, drop current frame
 				playoutHead := d.jitterBuffer.PlayoutHead()
 
@@ -121,7 +136,8 @@ func (d *rtpDepacketizer) processPackets() {
 				d.jitterBuffer.SetPlayoutHead(playoutHead + 1)
 				d.frameBuffer = d.frameBuffer[:0]
 				droppingFrame = true
-				d.missedPacketTime = nil
+				// do not reset timeout here => we drop everything until we get a new packet
+				// to avoid cascading delay in bursty loss scenarios
 				continue
 			}
 
@@ -217,6 +233,10 @@ func (d *RTPDepacketizer) Link(next Writer, i Info) (Writer, error) {
 	return WriterFunc(func(rtpPacket []byte, attrs Attributes) error {
 		return d.depacketizer.Write(rtpPacket)
 	}), nil
+}
+
+func (d *RTPDepacketizer) UpdateRTT(rtt time.Duration) {
+	d.depacketizer.UpdateRTT(rtt)
 }
 
 func (d *RTPDepacketizer) Close() error {

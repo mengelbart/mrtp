@@ -268,8 +268,8 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 	}
 	defer fileSink.Close()
 
-	timeout := 50 * time.Millisecond
-	depacketizer, err := gopipe.NewRTPDepacketizer(timeout, codec.VP8)
+	maxTimeout := 150 * time.Millisecond
+	depacketizer, err := gopipe.NewRTPDepacketizer(maxTimeout, codec.VP8)
 	if err != nil {
 		return err
 	}
@@ -297,6 +297,8 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 			return nil
 		default:
 		}
+
+		depacketizer.UpdateRTT(quicConn.GetRTT())
 
 		n, err := rtpSrc.Read(buf)
 		if err != nil {
