@@ -25,6 +25,7 @@ type rtpDepacketizer struct {
 	trigger chan struct{}
 
 	missedPacketTime *time.Time
+	fastSkip         bool   // skip missing packets immediately after first timeout until buffer drains
 	playoutTs        uint32 // playout timestamp of the current frame being assembled
 	codec            codec.CodecType
 
@@ -109,7 +110,12 @@ func (d *rtpDepacketizer) processPackets() {
 	for {
 		_, err := d.jitterBuffer.Peek(true)
 		if err == jitterbuffer.ErrBufferUnderrun {
-			// buffer is empty - wait for more packets
+			// buffer is empty - reset skip state
+			if d.fastSkip {
+				slog.Info("packetizer fast-skip done, buffer dra./plined")
+			}
+			d.fastSkip = false
+			d.missedPacketTime = nil
 			return
 		}
 
@@ -120,6 +126,17 @@ func (d *rtpDepacketizer) processPackets() {
 		}
 		if err == jitterbuffer.ErrNotFound {
 			// missing packet
+			if d.fastSkip {
+				// already timed out once - skip immediately to avoid cascading delay
+				playoutHead := d.jitterBuffer.PlayoutHead()
+
+				slog.Info("packitzier fast-skipping lost packet", "seqnr", playoutHead)
+
+				d.jitterBuffer.SetPlayoutHead(playoutHead + 1)
+				d.frameBuffer = d.frameBuffer[:0]
+				droppingFrame = true
+				continue
+			}
 			if d.missedPacketTime == nil {
 				slog.Info("packitzier misses packet; start timeout", "seqnr", d.jitterBuffer.PlayoutHead())
 
@@ -128,7 +145,7 @@ func (d *rtpDepacketizer) processPackets() {
 				d.missedPacketTime = &now
 				return
 			} else if time.Since(*d.missedPacketTime) > time.Duration(d.currentTimeout.Load()) {
-				// timeout expired, drop current frame
+				// timeout expired, drop current frame and enter fast-skip mode
 				playoutHead := d.jitterBuffer.PlayoutHead()
 
 				slog.Info("packitzier dropping frame, rtp packet lost", "seqnr", playoutHead)
@@ -136,8 +153,7 @@ func (d *rtpDepacketizer) processPackets() {
 				d.jitterBuffer.SetPlayoutHead(playoutHead + 1)
 				d.frameBuffer = d.frameBuffer[:0]
 				droppingFrame = true
-				// do not reset timeout here => we drop everything until we get a new packet
-				// to avoid cascading delay in bursty loss scenarios
+				d.fastSkip = true
 				continue
 			}
 
@@ -148,13 +164,14 @@ func (d *rtpDepacketizer) processPackets() {
 			slog.Error("Depackitzer error: ", "mst", err.Error())
 			return
 		}
+
 		if d.playoutTs != pkt.Timestamp {
 			d.playoutTs = pkt.Timestamp
 			d.frameBuffer = d.frameBuffer[:0] // drop old data
 			droppingFrame = false
 		}
 
-		if d.missedPacketTime != nil {
+		if d.missedPacketTime != nil && !d.fastSkip {
 			slog.Info("got packet before timeout", "seqnr", pkt.SequenceNumber)
 			d.missedPacketTime = nil
 		}
