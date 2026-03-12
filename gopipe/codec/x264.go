@@ -27,11 +27,11 @@ func NewX264encoder(c Config) (*X264encoder, error) {
 		i_height:     C.int(c.Height),
 		i_fps_num:    C.uint(c.TimebaseNum),
 		i_fps_den:    C.uint(c.TimebaseDen),
-		i_keyint_max: C.int(60), // TODO: maybe based on fps?
+		i_keyint_max: C.int(60), // intra-refresh cycle: 60 frames
 	}
 	param.rc.i_bitrate = C.int(c.TargetRate / 1000) // convert to kbps
 	param.rc.i_vbv_max_bitrate = param.rc.i_bitrate
-	param.rc.i_vbv_buffer_size = param.rc.i_vbv_max_bitrate // 1 second buffer for tighter latency
+	param.rc.i_vbv_buffer_size = param.rc.i_vbv_max_bitrate // 1 second buffer
 
 	var rc C.int
 	// cPreset will be freed in C.enc_new
