@@ -1,6 +1,5 @@
-// taken from https://github.com/pion/mediadevices
-// Copyright (c) 2019-2020 Pion
-// MIT License: https://github.com/pion/mediadevices/blob/master/LICENSE
+// Originally based on https://github.com/pion/mediadevices (MIT License, Copyright (c) 2019-2020 Pion)
+// Modified by the mrtp authors.
 
 #include <stdint.h>
 #include <stdio.h>
@@ -42,13 +41,15 @@ Encoder *enc_new(x264_param_t param, char *preset, int *rc) {
   e->param.i_height = param.i_height;
   e->param.i_fps_num = param.i_fps_num;
   e->param.i_fps_den = param.i_fps_den;
-  // Intra refres:
+  // Use periodic intra refresh instead of key frames
   e->param.i_keyint_max = param.i_keyint_max;
+  e->param.b_intra_refresh = 1;
   // Rate control:
   e->param.rc.i_rc_method = X264_RC_ABR;
   e->param.rc.i_bitrate = param.rc.i_bitrate;
   e->param.rc.i_vbv_max_bitrate = param.rc.i_vbv_max_bitrate;
   e->param.rc.i_vbv_buffer_size = param.rc.i_vbv_buffer_size;
+  e->param.rc.f_rate_tolerance = 1.0;  // here we set the inital tolarance
   // For streaming:
   e->param.b_repeat_headers = 1;
   e->param.b_annexb = 1;
@@ -83,7 +84,6 @@ fail:
   return NULL;
 }
 
-#define RC_MARGIN 10000 /* 1kilobits / second*/
 static int apply_target_bitrate(Encoder *e, int target_bitrate) {
   int target_encoder_bitrate = (int)target_bitrate / 1000;
   if (e->param.rc.i_bitrate == target_encoder_bitrate || target_encoder_bitrate <= 1) {
@@ -92,8 +92,9 @@ static int apply_target_bitrate(Encoder *e, int target_bitrate) {
 
   e->param.rc.i_bitrate = target_encoder_bitrate;
   e->param.rc.f_rate_tolerance = 0.1;
-  e->param.rc.i_vbv_max_bitrate = target_encoder_bitrate + RC_MARGIN / 2;
-  e->param.rc.i_vbv_buffer_size = e->param.rc.i_vbv_max_bitrate;
+  // VBV ceiling == target
+  e->param.rc.i_vbv_max_bitrate = target_encoder_bitrate;
+  e->param.rc.i_vbv_buffer_size = target_encoder_bitrate; // 1-second buffer
   e->param.rc.f_vbv_buffer_init = 0.6;
   int success = x264_encoder_reconfig(e->h, &e->param);
   return success; // 0 on success or negative on error
