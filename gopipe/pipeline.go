@@ -7,7 +7,7 @@ type Info struct {
 	TimebaseDen int
 }
 
-type Writer interface {
+type Sink interface {
 	Write([]byte, Attributes) error
 }
 
@@ -18,15 +18,15 @@ func (f WriterFunc) Write(b []byte, a Attributes) error {
 }
 
 type MultiWriter interface {
-	Writer
+	Sink
 	WriteAll([][]byte, Attributes) error
 }
 
 type Processor interface {
-	Link(Writer, Info) (Writer, error)
+	Link(Sink, Info) (Sink, error)
 }
 
-func Chain(i Info, f Writer, processors ...Processor) (Writer, error) {
+func Chain(i Info, f Sink, processors ...Processor) (Sink, error) {
 	var err error
 	for _, p := range processors {
 		f, err = p.Link(f, i)

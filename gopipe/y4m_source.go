@@ -13,8 +13,6 @@ import (
 type Y4MSource struct {
 	reader *y4m.Reader
 	header *y4m.StreamHeader
-
-	start time.Time
 }
 
 func NewY4MSource(reader io.Reader) (*Y4MSource, error) {
@@ -25,7 +23,6 @@ func NewY4MSource(reader io.Reader) (*Y4MSource, error) {
 	return &Y4MSource{
 		reader: y4mReader,
 		header: y4mHeader,
-		start:  time.Time{},
 	}, nil
 }
 
@@ -76,11 +73,11 @@ func convertSubsampleRatio(s y4m.ChromaSubsamplingType) image.YCbCrSubsampleRati
 }
 
 // StartLive starts the source as live source.
-func (s *Y4MSource) StartLive(ctx context.Context, pipeline Writer) error {
+func (s *Y4MSource) StartLive(ctx context.Context, pipeline Sink) error {
 	fps := float64(s.header.FrameRate.Numerator) / float64(s.header.FrameRate.Denominator)
 	frameDuration := time.Duration(float64(time.Second) / fps)
 
-	var lastFrame time.Time
+	var pts int64
 
 	ticker := time.NewTicker(frameDuration)
 	defer ticker.Stop()
@@ -99,18 +96,11 @@ func (s *Y4MSource) StartLive(ctx context.Context, pipeline Writer) error {
 			return err
 		}
 
-		// create pts
-		ts := lastFrame.Add(frameDuration)
-		lastFrame = ts
-		var pts int64
-		if s.start.IsZero() {
-			s.start = ts
-		} else {
-			pts = ts.Sub(s.start).Microseconds()
-		}
-
 		attr[PTS] = pts
 		attr[FrameDuration] = frameDuration
+
+		pts += frameDuration.Microseconds()
+
 		err = pipeline.Write(frame, attr)
 		if err != nil {
 			return err

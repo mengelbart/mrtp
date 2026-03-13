@@ -10,7 +10,7 @@ import (
 type Scheduler struct {
 	lock       sync.Mutex
 	stream     MediaFrameSource
-	transport  Writer
+	transport  Sink
 	pacer      *rate.Limiter
 	targetRate uint
 }

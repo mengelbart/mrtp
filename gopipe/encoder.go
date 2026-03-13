@@ -21,7 +21,7 @@ func NewEncoder(codec codec.CodecType) *Encoder {
 	}
 }
 
-func (e *Encoder) Link(f Writer, i Info) (Writer, error) {
+func (e *Encoder) Link(f Sink, i Info) (Sink, error) {
 	conf := codec.Config{
 		Codec:       e.codec,
 		Width:       i.Width,

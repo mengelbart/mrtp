@@ -12,7 +12,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/gopipe/codec"
@@ -218,8 +217,6 @@ func runH264Receiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	}
 	defer roqTransport.Close()
 
-	dcTransport := quicConn.GetQuicDataChannel()
-
 	// set handlers for datagrams and streams
 	// have to forward it ether to roq or dc
 	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
@@ -231,32 +228,11 @@ func runH264Receiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 			return
 		}
 
-		if flags.DataChannel {
-			dcTransport.ReadStream(context.Background(), rs, flowID)
-			return
-		}
-
 		panic(fmt.Sprint("unknown stream flowID ", flowID))
 	}
 
 	// start handler
 	quicConn.StartHandlers()
-
-	if flags.DataChannel {
-		// setup data channel receiver
-		// quic tranpsorts has to be started before
-		dcReceiver, err := dcTransport.AddDataChannelReceiver(uint64(flags.DataChannelFlowID))
-		if err != nil {
-			return err
-		}
-
-		dataSink, err := data.NewSink(dcReceiver)
-		if err != nil {
-			return err
-		}
-
-		go dataSink.Run()
-	}
 
 	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPFlowID), flags.TraceRTPRecv)
 	if err != nil {
