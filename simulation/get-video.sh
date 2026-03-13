@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# always execute in simulation folder
+cd "$(dirname "$0")"
+
 if [ ! -f "Johnny_1280x720_60.y4m" ]; then
     wget https://media.xiph.org/video/derf/y4m/Johnny_1280x720_60.y4m
     concat_file=$(mktemp /tmp/concat_XXXXXX.txt)
