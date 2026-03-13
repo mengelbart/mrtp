@@ -12,14 +12,14 @@ type packets struct {
 }
 
 type FrameSpacer struct {
-	writer        Writer
+	writer        Sink
 	frameDuration time.Duration
 	pktChan       chan packets
 
 	Ctx context.Context
 }
 
-func (p *FrameSpacer) Link(w Writer, i Info) (Writer, error) {
+func (p *FrameSpacer) Link(w Sink, i Info) (Sink, error) {
 	p.pktChan = make(chan packets, 1000000)
 	p.writer = w
 	fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)

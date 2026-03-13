@@ -222,7 +222,7 @@ func (d *rtpDepacketizer) Close() error {
 // RTPDepacketizer is a linkable depacketizer element
 type RTPDepacketizer struct {
 	depacketizer *rtpDepacketizer
-	next         Writer
+	next         Sink
 }
 
 func NewRTPDepacketizer(timeout time.Duration, codec codec.CodecType) (*RTPDepacketizer, error) {
@@ -242,7 +242,7 @@ func NewRTPDepacketizer(timeout time.Duration, codec codec.CodecType) (*RTPDepac
 	return adapter, err
 }
 
-func (d *RTPDepacketizer) Link(next Writer, i Info) (Writer, error) {
+func (d *RTPDepacketizer) Link(next Sink, i Info) (Sink, error) {
 	d.next = next
 
 	go d.depacketizer.Run()

@@ -35,7 +35,7 @@ func NewDecoder(c codec.CodecType) (*Decoder, error) {
 	}
 }
 
-func (d *Decoder) Link(next Writer, i Info) (Writer, error) {
+func (d *Decoder) Link(next Sink, i Info) (Sink, error) {
 	return WriterFunc(func(encFrame []byte, attrs Attributes) error {
 		pts, err := getPTS(attrs)
 		if err != nil {

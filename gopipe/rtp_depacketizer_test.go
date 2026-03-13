@@ -318,7 +318,7 @@ func newFrameInterceptor(saveFrame bool, maxSave int, framesToBeMarked []int) *f
 	}
 }
 
-func (i *frameInterceptor) Link(w Writer, _ Info) (Writer, error) {
+func (i *frameInterceptor) Link(w Sink, _ Info) (Sink, error) {
 	return WriterFunc(func(b []byte, a Attributes) error {
 		if i.saveFrame && len(i.sentFrames) < i.maxSave {
 			frameCopy := make([]byte, len(b))
@@ -342,7 +342,7 @@ func newRtpDropInterceptor() *rtpDropInterceptor {
 	return &rtpDropInterceptor{}
 }
 
-func (i *rtpDropInterceptor) Link(w Writer, _ Info) (Writer, error) {
+func (i *rtpDropInterceptor) Link(w Sink, _ Info) (Sink, error) {
 	var lastTS uint32
 	first := true
 	dropping := false

@@ -39,12 +39,12 @@ type RTPPacketizer struct {
 
 	frameDuration time.Duration
 	packetizer    rtp.Packetizer
-	writer        Writer
+	writer        Sink
 
 	unwrapper *logging.Unwrapper // for logging the rtp packets
 }
 
-func (p *RTPPacketizerFactory) Link(w Writer, i Info) (Writer, error) {
+func (p *RTPPacketizerFactory) Link(w Sink, i Info) (Sink, error) {
 	fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
 	frameDuration := time.Duration(float64(time.Second) / fps)
 
