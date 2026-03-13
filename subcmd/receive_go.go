@@ -21,7 +21,7 @@ import (
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("receivego", func() cmdmain.SubCmd { return new(ReceiveGo) })
+	cmdmain.RegisterSubCmd("receive-go", func() cmdmain.SubCmd { return new(ReceiveGo) })
 }
 
 type ReceiveGo struct {
@@ -30,11 +30,11 @@ type ReceiveGo struct {
 }
 
 func (r *ReceiveGo) Help() string {
-	return "Run receiver pipeline"
+	return "Run receiver pipeline without gstreamer (experimental)"
 }
 
 func (r *ReceiveGo) Exec(cmd string, args []string) error {
-	fs := flag.NewFlagSet("receivego", flag.ExitOnError)
+	fs := flag.NewFlagSet("receive-go", flag.ExitOnError)
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.LocalAddrFlag,

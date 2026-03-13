@@ -20,19 +20,19 @@ import (
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("sendgo", func() cmdmain.SubCmd { return new(SendGo) })
+	cmdmain.RegisterSubCmd("send-go", func() cmdmain.SubCmd { return new(SendGo) })
 }
 
 // Help implements cmdmain.SubCmd.
 func (s *SendGo) Help() string {
-	return "Run a sender, differs from send by using the Go pipeline architecture instead of Gstreamer"
+	return "Run sender pipeline without gstreamer (experimental)"
 }
 
 type SendGo struct{}
 
 // Exec implements cmdmain.SubCmd.
 func (s *SendGo) Exec(cmd string, args []string) error {
-	fs := flag.NewFlagSet("sendgo", flag.ExitOnError)
+	fs := flag.NewFlagSet("send-go", flag.ExitOnError)
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.LocalAddrFlag,
