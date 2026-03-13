@@ -8,7 +8,7 @@ require (
 	github.com/go-gst/go-gst v1.4.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mengelbart/moqtransport v0.5.0
-	github.com/mengelbart/netsim v0.0.0-20260129121243-5ee92221ce52
+	github.com/mengelbart/netsim v0.0.0-20260313101905-3800aab93f5e
 	github.com/mengelbart/qlog v0.1.0
 	github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6
 	github.com/mengelbart/roq v0.3.1-0.20251205153041-761658450d93

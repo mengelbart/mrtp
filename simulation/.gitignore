@@ -1,3 +1,5 @@
 *.qlog
+*.log
 Johnny_1280x720_60.y4m
 out.y4m
+config.json
