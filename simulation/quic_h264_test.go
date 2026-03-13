@@ -24,12 +24,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestQUICvp8(t *testing.T) {
+func TestQUICh264(t *testing.T) {
 	// video file must exist
 	if _, err := os.Stat("Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
 		println("Video file not found: Johnny_1280x720_60.y4m - run ./get-video.sh to download it.\n")
 		t.Skip("video not found")
 	}
+
+	logFile := configureLogging()
+	defer logFile.Close()
 
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -44,6 +47,9 @@ func TestQUICvp8(t *testing.T) {
 		backward := pathFactoryFunc(owd, bw, 5000, bdp, false)
 
 		net := netsim.NewNet(forward(), backward())
+
+		net.WriteTcLogForwardPath("tc.log", 100*time.Second)
+		createFakeConfig("config.json")
 
 		left := net.NIC(netsim.LeftLocation, netip.MustParseAddr("10.0.0.1"))
 		serverConn, err := left.ListenPacket("udp", "10.0.0.1:8080")
@@ -64,7 +70,7 @@ func TestQUICvp8(t *testing.T) {
 		})
 
 		// start client in main goroutine
-		clientTransport, err = createVp8Sender(ctx, clientConn)
+		clientTransport, err = createH264Sender(ctx, clientConn)
 		assert.NoError(t, err)
 		assert.NotNil(t, clientTransport)
 
@@ -75,12 +81,12 @@ func TestQUICvp8(t *testing.T) {
 
 		// all connected, start sender and receiver
 		wg.Go(func() {
-			err = runVp8Receiver(ctx, serverTransport, &wg)
+			err = runH264Receiver(ctx, serverTransport, &wg)
 			assert.NoError(t, err)
 			println("receiver ended")
 		})
 
-		err = runVp8Sender(ctx, clientTransport)
+		err = runH264Sender(ctx, clientTransport)
 		assert.NoError(t, err)
 
 		time.Sleep(20 * time.Second)
@@ -107,7 +113,7 @@ func TestQUICvp8(t *testing.T) {
 	})
 }
 
-func createVp8Sender(ctx context.Context, conn net.PacketConn) (*quictransport.Transport, error) {
+func createH264Sender(ctx context.Context, conn net.PacketConn) (*quictransport.Transport, error) {
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
 		quictransport.SetQuicCC(0), // reno
@@ -121,7 +127,7 @@ func createVp8Sender(ctx context.Context, conn net.PacketConn) (*quictransport.T
 	return quictransport.New(ctx, []string{"dc"}, quicTOptions...)
 }
 
-func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error {
+func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error {
 	// open roq connection
 	roqOpt := []roq.Option{roq.EnableRoqLogs("sender.roq.qlog")}
 	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection(), roqOpt...)
@@ -176,7 +182,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	}
 
 	i := fileSrc.GetInfo()
-	encoder := gopipe.NewEncoder(codec.VP8)
+	encoder := gopipe.NewEncoder(codec.H264)
 
 	// set rate callbacks
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {
@@ -192,6 +198,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 		PT:        96,
 		SSRC:      0,
 		ClockRate: 90_000,
+		Codec:     codec.H264,
 	}
 	pacer := &gopipe.FrameSpacer{
 		Ctx: ctx,
@@ -204,7 +211,7 @@ func runVp8Sender(ctx context.Context, quicConn *quictransport.Transport) error 
 	return fileSrc.StartLive(ctx, rtpPipeline)
 }
 
-func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
+func runH264Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
 	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
@@ -257,7 +264,7 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 	}
 	defer rtpSrc.Close()
 
-	decoder, err := gopipe.NewDecoder(codec.VP8)
+	decoder, err := gopipe.NewDecoder(codec.H264)
 	if err != nil {
 		return err
 	}
@@ -269,7 +276,7 @@ func runVp8Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *
 	defer fileSink.Close()
 
 	maxTimeout := 150 * time.Millisecond
-	depacketizer, err := gopipe.NewRTPDepacketizer(maxTimeout, codec.VP8)
+	depacketizer, err := gopipe.NewRTPDepacketizer(maxTimeout, codec.H264)
 	if err != nil {
 		return err
 	}
