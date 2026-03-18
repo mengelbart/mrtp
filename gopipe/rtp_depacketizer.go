@@ -40,7 +40,7 @@ type rtpDepacketizer struct {
 }
 
 func newRTPDepacketizer(maxTimeout time.Duration, c codec.CodecType, onFrame func(encFrame []byte, pts int64)) (*rtpDepacketizer, error) {
-	if c != codec.VP8 && c != codec.VP9 && c != codec.H264 {
+	if c != codec.VP8 && c != codec.VP9 && c != codec.H264 && c != codec.FAKE {
 		return nil, fmt.Errorf("unsupported codec for depacketizer: %s", c.String())
 	}
 
@@ -201,6 +201,9 @@ func (d *rtpDepacketizer) processPackets() {
 			if err != nil {
 				panic(err)
 			}
+		case codec.FAKE:
+			// just pass it through
+			payload = pkt.Payload
 		}
 
 		d.frameBuffer = append(d.frameBuffer, payload...)
