@@ -12,6 +12,7 @@ const (
 	VP8 CodecType = iota
 	VP9
 	H264
+	FAKE
 )
 
 func CodecTypeFromString(s string) (CodecType, error) {

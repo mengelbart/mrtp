@@ -19,6 +19,9 @@ func getPacketizerByName(c codec.CodecType) (rtp.Payloader, error) {
 		return &codecs.VP9Payloader{}, nil
 	case codec.H264:
 		return &codecs.H264Payloader{}, nil
+	case codec.FAKE:
+		// use G722 as 0s are a valid payload for it
+		return &codecs.G722Payloader{}, nil
 	}
 	return nil, fmt.Errorf("unknown codec: %v", c)
 }
