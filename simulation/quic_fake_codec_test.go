@@ -128,7 +128,7 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 	}
 	quicConn.StartHandlers()
 
-	rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendModeSingleStream, flags.TraceRTPSend)
+	rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendModeSingleStream, false)
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	// start handler
 	quicConn.StartHandlers()
 
-	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPFlowID), flags.TraceRTPRecv)
+	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPFlowID), false)
 	if err != nil {
 		return err
 	}
