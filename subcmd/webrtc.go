@@ -41,7 +41,10 @@ type WebRTCCodecParameters struct {
 
 var WebRTCExtraCodecs = []WebRTCCodecParameters{}
 
-type WebRTC struct{}
+type WebRTC struct {
+	localAddr  string
+	remoteAddr string
+}
 
 // Help implements cmdmain.SubCmd.
 func (w *WebRTC) Help() string {
@@ -50,9 +53,10 @@ func (w *WebRTC) Help() string {
 
 func (w *WebRTC) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("webrtc", flag.ExitOnError)
+	fs.StringVar(&w.localAddr, "local", "127.0.0.1", "Local address")
+	fs.StringVar(&w.remoteAddr, "remote", "127.0.0.1", "Remote address")
+
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.LocalAddrFlag,
-		flags.RemoteAddrFlag,
 		flags.GstCCFBFlag,
 		flags.TraceRTPRecvFlag,
 		flags.TraceRTPSendFlag,
@@ -99,7 +103,7 @@ Usage:
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	signaler := webrtc.NewHTTPClientSignaler(fmt.Sprintf("http://%v:%v", flags.RemoteAddr, remotePort))
+	signaler := webrtc.NewHTTPClientSignaler(fmt.Sprintf("http://%v:%v", w.remoteAddr, remotePort))
 
 	stdnet, err := webrtc.NewNet(webrtc.SetRecvBufferSize(10_000_000)) // 10MB
 	if err != nil {
@@ -181,7 +185,7 @@ Usage:
 	router.HandlerFunc("POST", "/candidate", signalingHandler.HandleCandidate)
 	router.HandlerFunc("POST", "/session_description", signalingHandler.HandleSessionDescription)
 
-	host := net.JoinHostPort(flags.LocalAddr, localPort)
+	host := net.JoinHostPort(w.localAddr, localPort)
 	s, err := http.NewServer(
 		http.H1Address(host),
 		http.ListenH2(false),

@@ -28,15 +28,18 @@ func (s *SendGo) Help() string {
 	return "Run sender pipeline without gstreamer (experimental)"
 }
 
-type SendGo struct{}
+type SendGo struct {
+	localAddr  string
+	remoteAddr string
+}
 
 // Exec implements cmdmain.SubCmd.
 func (s *SendGo) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("send-go", flag.ExitOnError)
+	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
+	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
 
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.LocalAddrFlag,
-		flags.RemoteAddrFlag,
 		flags.RTPPortFlag,
 		flags.RTPFlowIDFlag,
 		flags.RoQMappingFlag,
@@ -115,8 +118,8 @@ Flags:
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(flags.RoQServer)),
 		quictransport.SetQuicCC(int(flags.QuicCC)),
-		quictransport.SetLocalAddress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-		quictransport.SetRemoteAddress(flags.RemoteAddr, flags.RTPPort),
+		quictransport.SetLocalAddress(s.localAddr, flags.RTPPort), // TODO: which port to use?
+		quictransport.SetRemoteAddress(s.remoteAddr, flags.RTPPort),
 		quictransport.WithPacer(int(flags.QuicPacer)),
 	}
 

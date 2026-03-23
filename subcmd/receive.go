@@ -68,8 +68,10 @@ func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (g
 var DefaultStreamSinkFactory StreamSinkFactory = &gstreamerVideoStreamSinkFactory{}
 
 type Receive struct {
-	receiver *gstreamer.RTPBin
-	sink     gstreamer.RTPSinkBin
+	localAddr  string
+	remoteAddr string
+	receiver   *gstreamer.RTPBin
+	sink       gstreamer.RTPSinkBin
 }
 
 func (r *Receive) Help() string {
@@ -78,13 +80,13 @@ func (r *Receive) Help() string {
 
 func (r *Receive) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("receive", flag.ExitOnError)
+	fs.StringVar(&r.localAddr, "local", "127.0.0.1", "Local address")
+	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
 
 	// swap default values
 	flags.SwapRTCPDefaults()
 
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.LocalAddrFlag,
-		flags.RemoteAddrFlag,
 		flags.RTPPortFlag,
 		flags.RTCPSendPortFlag,
 		flags.RTCPRecvPortFlag,
@@ -182,8 +184,8 @@ Flags:
 func (r *Receive) setupRoQ(ctx context.Context) error {
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(flags.RoQServer)),
-		quictransport.SetLocalAddress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-		quictransport.SetRemoteAddress(flags.RemoteAddr, flags.RTPPort),
+		quictransport.SetLocalAddress(r.localAddr, flags.RTPPort), // TODO: which port to use?
+		quictransport.SetRemoteAddress(r.remoteAddr, flags.RTPPort),
 	}
 
 	if flags.NadaFeedback {
@@ -276,7 +278,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 
 func (r *Receive) setupUDP() error {
 	rtpSrc, err := gstreamer.NewUDPSrc(
-		flags.LocalAddr,
+		r.localAddr,
 		uint32(flags.RTPPort),
 		gstreamer.EnabelUDPSrcPadProbe(flags.TraceRTPRecv),
 		gstreamer.SetReceiveBufferSize(UDPRecvBufferSize),
@@ -291,7 +293,7 @@ func (r *Receive) setupUDP() error {
 		return err
 	}
 
-	rtcpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTCPSendPort))
+	rtcpSink, err := gstreamer.NewUDPSink(r.remoteAddr, uint32(flags.RTCPSendPort))
 	if err != nil {
 		return err
 	}
@@ -299,7 +301,7 @@ func (r *Receive) setupUDP() error {
 		return err
 	}
 
-	rtcpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTCPRecvPort))
+	rtcpSrc, err := gstreamer.NewUDPSrc(r.localAddr, uint32(flags.RTCPRecvPort))
 	if err != nil {
 		return err
 	}

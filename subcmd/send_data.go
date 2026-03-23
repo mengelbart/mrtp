@@ -26,7 +26,10 @@ func init() {
 }
 
 // SendData is a command to run a receiver pipeline for data channels.
-type SendData struct{}
+type SendData struct {
+	localAddr  string
+	remoteAddr string
+}
 
 func (s *SendData) Help() string {
 	return "Run sender pipeline for data channels"
@@ -34,9 +37,10 @@ func (s *SendData) Help() string {
 
 func (s *SendData) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("send-data", flag.ExitOnError)
+	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
+	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
+
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.LocalAddrFlag,
-		flags.RemoteAddrFlag,
 		flags.QuicCCFlag,
 		flags.CCnadaFlag,
 		flags.CCgccFlag,
@@ -72,8 +76,8 @@ Flags:
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
 		quictransport.SetQuicCC(int(flags.QuicCC)),
-		quictransport.SetLocalAddress(flags.LocalAddr, 8080),
-		quictransport.SetRemoteAddress(flags.RemoteAddr, 8080),
+		quictransport.SetLocalAddress(s.localAddr, 8080),
+		quictransport.SetRemoteAddress(s.remoteAddr, 8080),
 	}
 
 	if flags.CCnada {
