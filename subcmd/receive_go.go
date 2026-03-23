@@ -25,8 +25,10 @@ func init() {
 }
 
 type ReceiveGo struct {
-	receiver *gstreamer.RTPBin
-	sink     gstreamer.RTPSinkBin
+	localAddr  string
+	remoteAddr string
+	receiver   *gstreamer.RTPBin
+	sink       gstreamer.RTPSinkBin
 }
 
 func (r *ReceiveGo) Help() string {
@@ -35,10 +37,10 @@ func (r *ReceiveGo) Help() string {
 
 func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("receive-go", flag.ExitOnError)
+	fs.StringVar(&r.localAddr, "local", "127.0.0.1", "Local address")
+	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
 
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.LocalAddrFlag,
-		flags.RemoteAddrFlag,
 		flags.RTPPortFlag,
 		flags.RTPFlowIDFlag,
 		flags.RoQMappingFlag,
@@ -90,8 +92,8 @@ Flags:
 
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(flags.RoQServer)),
-		quictransport.SetLocalAddress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-		quictransport.SetRemoteAddress(flags.RemoteAddr, flags.RTPPort),
+		quictransport.SetLocalAddress(r.localAddr, flags.RTPPort), // TODO: which port to use?
+		quictransport.SetRemoteAddress(r.remoteAddr, flags.RTPPort),
 	}
 
 	if flags.NadaFeedback {

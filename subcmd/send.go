@@ -78,7 +78,10 @@ var (
 	dcPercatage uint
 )
 
-type Send struct{}
+type Send struct {
+	localAddr  string
+	remoteAddr string
+}
 
 func (s *Send) Help() string {
 	return "Run sender pipeline"
@@ -86,9 +89,10 @@ func (s *Send) Help() string {
 
 func (s *Send) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
+	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
+	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
+
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.LocalAddrFlag,
-		flags.RemoteAddrFlag,
 		flags.RTPPortFlag,
 		flags.RTCPSendPortFlag,
 		flags.RTCPRecvPortFlag,
@@ -218,8 +222,8 @@ Flags:
 		quicOptions := []quictransport.Option{
 			quictransport.WithRole(quictransport.Role(flags.RoQServer)),
 			quictransport.SetQuicCC(int(flags.QuicCC)),
-			quictransport.SetLocalAddress(flags.LocalAddr, flags.RTPPort), // TODO: which port to use?
-			quictransport.SetRemoteAddress(flags.RemoteAddr, flags.RTPPort),
+			quictransport.SetLocalAddress(s.localAddr, flags.RTPPort), // TODO: which port to use?
+			quictransport.SetRemoteAddress(s.remoteAddr, flags.RTPPort),
 			quictransport.WithPacer(int(flags.QuicPacer)),
 		}
 
@@ -329,7 +333,7 @@ Flags:
 		}
 
 	} else {
-		rtpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSinkPadProbe(flags.TraceRTPSend))
+		rtpSink, err := gstreamer.NewUDPSink(s.remoteAddr, uint32(flags.RTPPort), gstreamer.EnabelUDPSinkPadProbe(flags.TraceRTPSend))
 		if err != nil {
 			return err
 		}
@@ -340,7 +344,7 @@ Flags:
 			return err
 		}
 
-		rtcpSink, err := gstreamer.NewUDPSink(flags.RemoteAddr, uint32(flags.RTCPSendPort))
+		rtcpSink, err := gstreamer.NewUDPSink(s.remoteAddr, uint32(flags.RTCPSendPort))
 		if err != nil {
 			return err
 		}
@@ -348,7 +352,7 @@ Flags:
 			return err
 		}
 
-		rtcpSrc, err := gstreamer.NewUDPSrc(flags.LocalAddr, uint32(flags.RTCPRecvPort))
+		rtcpSrc, err := gstreamer.NewUDPSrc(s.localAddr, uint32(flags.RTCPRecvPort))
 		if err != nil {
 			return err
 		}

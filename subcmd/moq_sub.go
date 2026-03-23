@@ -9,7 +9,6 @@ import (
 	"github.com/mengelbart/moqtransport"
 	"github.com/mengelbart/moqtransport/quicmoq"
 	"github.com/mengelbart/mrtp/cmdmain"
-	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/moq"
 	"github.com/quic-go/quic-go"
@@ -19,15 +18,16 @@ func init() {
 	cmdmain.RegisterSubCmd("moq-sub", func() cmdmain.SubCmd { return new(MoQSub) })
 }
 
-type MoQSub struct{}
+type MoQSub struct {
+	localAddr  string
+	remoteAddr string
+}
 
 // Exec implements cmdmain.SubCmd.
 func (m *MoQSub) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("moq-pub", flag.ExitOnError)
-	flags.RegisterInto(fs, []flags.FlagName{
-		flags.RemoteAddrFlag,
-		flags.LocalAddrFlag,
-	}...)
+	fs.StringVar(&m.localAddr, "local", "127.0.0.1", "Local address")
+	fs.StringVar(&m.remoteAddr, "remote", "127.0.0.1", "Remote address")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a MoQT subscriber
 
@@ -44,7 +44,7 @@ Flags:
 	var transport *moq.Transport
 	// TODO: Add flag to select server/client
 	if true {
-		c, err := quictransport.OpenClientConn(context.TODO(), flags.RemoteAddr, &quic.Config{
+		c, err := quictransport.OpenClientConn(context.TODO(), m.remoteAddr, &quic.Config{
 			EnableDatagrams: true,
 		}, []string{"moq-00"})
 		if err != nil {
