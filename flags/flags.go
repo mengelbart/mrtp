@@ -30,10 +30,6 @@ const (
 	DataChannelFlowIDFlag  FlagName = "dc-flow-id"
 	NadaFeedbackFlowIDFlag FlagName = "nada-feedback-flow-id"
 
-	RoQServerFlag  FlagName = "roq-server"
-	RoQClientFlag  FlagName = "roq-client"
-	RoQMappingFlag FlagName = "roq-mapping"
-
 	GstCCFBFlag FlagName = "gst-ccfb"
 
 	CodecFlag FlagName = "codec"
@@ -73,10 +69,6 @@ var (
 	RTCPSendFlowID     = uint(2)
 	DataChannelFlowID  = uint(3)
 	NadaFeedbackFlowID = uint(4)
-
-	RoQServer  = false
-	RoQClient  = false
-	RoQMapping = uint(0)
 
 	DataChannel  = false
 	DcSourceFile = ""
@@ -139,11 +131,6 @@ var flags = map[FlagName]flagVar{
 	RTCPSendFlowIDFlag:     uintVar(&RTCPSendFlowID, RTCPSendFlowIDFlag, &RTCPSendFlowID, "RTP Flow ID when using RTP over QUIC"),
 	DataChannelFlowIDFlag:  uintVar(&DataChannelFlowID, DataChannelFlowIDFlag, &DataChannelFlowID, "Data Channel Flow ID when using quic data channels"),
 	NadaFeedbackFlowIDFlag: uintVar(&NadaFeedbackFlowID, NadaFeedbackFlowIDFlag, &NadaFeedbackFlowID, "NADA Feedback Flow ID when using NADA or GCC with QUIC"),
-
-	// RoQ Flags
-	RoQServerFlag:  boolVar(&RoQServer, RoQServerFlag, &RoQServer, "Use RoQ server transport."),
-	RoQClientFlag:  boolVar(&RoQClient, RoQClientFlag, &RoQClient, "Use RoQ client transport."),
-	RoQMappingFlag: uintVar(&RoQMapping, RoQMappingFlag, &RoQMapping, "RTP mapping to QUIC. 0: datagrams, 1: stream per packet, 2: single stream"),
 
 	// Data Channel Flags
 	DataChannelFlag:           boolVar(&DataChannel, DataChannelFlag, &DataChannel, "Send/Receive data with data channels"),

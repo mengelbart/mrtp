@@ -81,6 +81,9 @@ var (
 type Send struct {
 	localAddr  string
 	remoteAddr string
+	roqMapping uint
+	roqServer  bool
+	roqClient  bool
 }
 
 func (s *Send) Help() string {
@@ -91,6 +94,9 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
+	fs.UintVar(&s.roqMapping, "roq-mapping", 0, "RTP mapping to QUIC. 0: datagrams, 1: stream per packet, 2: single stream")
+	fs.BoolVar(&s.roqServer, "roq-server", false, "Use RoQ server transport")
+	fs.BoolVar(&s.roqClient, "roq-client", false, "Use RoQ client transport")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -99,9 +105,6 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RTPFlowIDFlag,
 		flags.RTCPRecvFlowIDFlag,
 		flags.RTCPSendFlowIDFlag,
-		flags.RoQServerFlag,
-		flags.RoQClientFlag,
-		flags.RoQMappingFlag,
 		flags.TraceRTPSendFlag,
 		flags.CCgccFlag,
 		flags.CCnadaFlag,
@@ -149,14 +152,14 @@ Flags:
 		os.Exit(1)
 	}
 
-	if flags.RoQMapping > 2 {
-		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2.\n", flags.RoQMappingFlag)
+	if s.roqMapping > 2 {
+		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2.\n", s.roqMapping)
 		fs.Usage()
 		os.Exit(1)
 	}
 
-	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || flags.LogQuic || flags.RoQMapping != 0) && (!flags.RoQServer && !flags.RoQClient) {
-		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, flags.LogQuicFlag, flags.RoQMappingFlag)
+	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || flags.LogQuic || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
+		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, flags.LogQuicFlag, s.roqMapping)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -167,7 +170,7 @@ Flags:
 		os.Exit(1)
 	}
 
-	if flags.DataChannel && (!flags.RoQServer && !flags.RoQClient) {
+	if flags.DataChannel && (!s.roqServer && !s.roqClient) {
 		fmt.Fprintf(os.Stderr, "Flag -%v only valid for RoQ\n", flags.DataChannelFlag)
 		fs.Usage()
 		os.Exit(1)
@@ -194,7 +197,7 @@ Flags:
 			return fmt.Errorf("invalid port number: %v", p)
 		}
 	}
-	if flags.RoQClient && flags.RoQServer {
+	if s.roqClient && s.roqServer {
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
@@ -218,9 +221,9 @@ Flags:
 		sender.SetTargetRateEncoder = mediaBa.SetBitrate
 	}
 
-	if flags.RoQServer || flags.RoQClient {
+	if s.roqServer || s.roqClient {
 		quicOptions := []quictransport.Option{
-			quictransport.WithRole(quictransport.Role(flags.RoQServer)),
+			quictransport.WithRole(quictransport.Role(s.roqServer)),
 			quictransport.SetQuicCC(int(flags.QuicCC)),
 			quictransport.SetLocalAddress(s.localAddr, flags.RTPPort), // TODO: which port to use?
 			quictransport.SetRemoteAddress(s.remoteAddr, flags.RTPPort),
@@ -305,7 +308,7 @@ Flags:
 			return nil
 		}
 
-		rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendMode(flags.RoQMapping), flags.TraceRTPSend)
+		rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendMode(s.roqMapping), flags.TraceRTPSend)
 		if err != nil {
 			return err
 		}
@@ -316,7 +319,7 @@ Flags:
 			return err
 		}
 
-		rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendFlowID), roq.SendMode(flags.RoQMapping), false)
+		rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendFlowID), roq.SendMode(s.roqMapping), false)
 		if err != nil {
 			return err
 		}
