@@ -2,7 +2,6 @@ package subcmd
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -77,10 +76,6 @@ Flags:
 		fmt.Fprintf(os.Stderr, "error: unknown extra arguments: %v\n", flag.Args()[1:])
 		fs.Usage()
 		os.Exit(1)
-	}
-
-	if flags.SinkType == uint(gstreamer.Filesink) && len(flags.SinkLocation) == 0 {
-		return errors.New("file-sink requires a location to be set via the -sink-location flag")
 	}
 
 	quicOptions := []quictransport.Option{

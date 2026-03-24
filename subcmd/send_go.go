@@ -29,10 +29,11 @@ func (s *SendGo) Help() string {
 }
 
 type SendGo struct {
-	localAddr  string
-	remoteAddr string
-	roqMapping uint
-	roqServer  bool
+	localAddr      string
+	remoteAddr     string
+	roqMapping     uint
+	roqServer      bool
+	sourceLocation string
 }
 
 // Exec implements cmdmain.SubCmd.
@@ -42,6 +43,7 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
 	fs.UintVar(&s.roqMapping, "roq-mapping", 0, "RTP mapping to QUIC. 0: datagrams, 1: stream per packet, 2: single stream")
 	fs.BoolVar(&s.roqServer, "roq-server", false, "Usr RoQ server transport")
+	fs.StringVar(&s.sourceLocation, "source-location", "", "Location for filesource")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -59,7 +61,6 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 		flags.DataChannelFileFlag,
 		flags.DataChannelStartDelayFlag,
 		flags.DataChannelChunkFlag,
-		flags.SourceLocationFlag,
 		flags.CodecFlag,
 	}...)
 
@@ -204,7 +205,7 @@ Flags:
 		return err
 	})
 
-	file, err := os.Open(flags.SourceLocation)
+	file, err := os.Open(s.sourceLocation)
 	if err != nil {
 		return err
 	}

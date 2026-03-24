@@ -32,10 +32,6 @@ const (
 
 	CodecFlag FlagName = "codec"
 
-	SinkTypeFlag       FlagName = "sink-type"
-	SinkLocationFlag   FlagName = "sink-location"
-	SourceLocationFlag FlagName = "source-location"
-
 	TraceRTPRecvFlag FlagName = "trace-rtp-recv"
 	TraceRTPSendFlag FlagName = "trace-rtp-send"
 
@@ -74,10 +70,6 @@ var (
 	DcChunks     = false
 
 	Codec = mrtp.H264.String()
-
-	SinkType       = uint(0) // Corresponds to autovideosink
-	SinkLocation   = ""
-	SourceLocation = "videotestsrc"
 
 	TraceRTPRecv = false
 	TraceRTPSend = false
@@ -135,11 +127,6 @@ var flags = map[FlagName]flagVar{
 	DataChannelChunkFlag:      boolVar(&DcChunks, DataChannelChunkFlag, &DcChunks, "Send chunks on datachannel"),
 
 	CodecFlag: stringVar(&Codec, CodecFlag, &Codec, "Codec to use (H264, VP8)"),
-
-	// IO Flags
-	SinkTypeFlag:       uintVar(&SinkType, SinkTypeFlag, &SinkType, "Sink type (0: autovideosink, 1: filesink, requires <location> to be set, 2: fakesink)"),
-	SinkLocationFlag:   stringVar(&SinkLocation, SinkLocationFlag, &SinkLocation, "Location for filesink (if <sink-type> is 1 (filesink))"),
-	SourceLocationFlag: stringVar(&SourceLocation, SourceLocationFlag, &SourceLocation, "Location for filesource (or videotestsrc to generate a testsource)"),
 
 	// tracing flags
 	TraceRTPRecvFlag: boolVar(&TraceRTPRecv, TraceRTPRecvFlag, &TraceRTPRecv, "Log incoming RTP packets"),

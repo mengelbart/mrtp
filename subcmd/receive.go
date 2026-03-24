@@ -34,12 +34,15 @@ type StreamSinkFactory interface {
 }
 
 type gstreamerVideoStreamSinkFactory struct {
+	sinkType     uint
+	sinkLocation string
 }
 
 func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
+	fs.UintVar(&f.sinkType, "sink-type", uint(0), "Sink type (0: autovideosink, 1: filesink, requires <location> to be set, 2: fakesink)")
+	fs.StringVar(&f.sinkLocation, "sink-location", "", "Location for filesink (if <sink-type> is 1 (filesink))")
+
 	newFlags := []flags.FlagName{
-		flags.SinkTypeFlag,
-		flags.SinkLocationFlag,
 		flags.LogQuicFlag,
 	}
 
@@ -51,6 +54,10 @@ func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
 }
 
 func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (gstreamer.RTPSinkBin, error) {
+	if f.sinkType == uint(gstreamer.Filesink) && len(f.sinkLocation) == 0 {
+		return nil, errors.New("file-sink requires a location to be set via the -sink-location flag")
+	}
+
 	codec, error := mrtp.NewCodec(flags.Codec)
 	if error != nil {
 		return nil, error
@@ -59,8 +66,8 @@ func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (g
 	return gstreamer.NewStreamSink(
 		name,
 		gstreamer.StreamSinkCodec(codec),
-		gstreamer.StreamSinkType(gstreamer.SinkType(flags.SinkType)),
-		gstreamer.StreamSinkLocation(flags.SinkLocation),
+		gstreamer.StreamSinkType(gstreamer.SinkType(f.sinkType)),
+		gstreamer.StreamSinkLocation(f.sinkLocation),
 		gstreamer.StreamSinkPayloadType(pt),
 	)
 }
@@ -141,10 +148,6 @@ Flags:
 		fmt.Fprintf(os.Stderr, "Flag -%v, -%v, -%v and -%v only valid for RoQ\n", flags.DataChannelFlag, flags.LogQuicFlag, flags.NadaFeedbackFlag, "roq-mapping")
 		fs.Usage()
 		os.Exit(1)
-	}
-
-	if flags.SinkType == uint(gstreamer.Filesink) && len(flags.SinkLocation) == 0 {
-		return errors.New("file-sink requires a location to be set via the -sink-location flag")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
