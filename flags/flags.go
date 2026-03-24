@@ -33,9 +33,6 @@ const (
 	DataChannelFlowIDFlag  FlagName = "dc-flow-id"
 	NadaFeedbackFlowIDFlag FlagName = "nada-feedback-flow-id"
 
-	CertFlag FlagName = "cert"
-	KeyFlag  FlagName = "key"
-
 	RoQServerFlag  FlagName = "roq-server"
 	RoQClientFlag  FlagName = "roq-client"
 	RoQMappingFlag FlagName = "roq-mapping"
@@ -72,10 +69,6 @@ var (
 	HTTPAddr = "127.0.0.1:8080"
 
 	HTTPSAddr = "127.0.0.1:4443"
-
-	Cert = "localhost.pem"
-
-	Key = "localhost-key.pem"
 
 	// RTP Receive Port
 	RTPPort      = uint(5000)
@@ -158,10 +151,6 @@ var flags = map[FlagName]flagVar{
 	RTCPSendFlowIDFlag:     uintVar(&RTCPSendFlowID, RTCPSendFlowIDFlag, &RTCPSendFlowID, "RTP Flow ID when using RTP over QUIC"),
 	DataChannelFlowIDFlag:  uintVar(&DataChannelFlowID, DataChannelFlowIDFlag, &DataChannelFlowID, "Data Channel Flow ID when using quic data channels"),
 	NadaFeedbackFlowIDFlag: uintVar(&NadaFeedbackFlowID, NadaFeedbackFlowIDFlag, &NadaFeedbackFlowID, "NADA Feedback Flow ID when using NADA or GCC with QUIC"),
-
-	// TLS Certificate
-	CertFlag: stringVar(&Cert, CertFlag, &Cert, "TLS Certificate"),
-	KeyFlag:  stringVar(&Key, KeyFlag, &Key, "TLS Certificate key"),
 
 	// RoQ Flags
 	RoQServerFlag:  boolVar(&RoQServer, RoQServerFlag, &RoQServer, "Use RoQ server transport."),
