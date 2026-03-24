@@ -46,7 +46,6 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
 		flags.RTPFlowIDFlag,
-		flags.GstCCFBFlag,
 		flags.TraceRTPRecvFlag,
 		flags.NadaFeedbackFlag,
 		flags.DataChannelFlag,
