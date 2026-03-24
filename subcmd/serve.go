@@ -17,7 +17,10 @@ func init() {
 	cmdmain.RegisterSubCmd("serve", func() cmdmain.SubCmd { return new(Serve) })
 }
 
-type Serve struct{}
+type Serve struct {
+	cert string
+	key  string
+}
 
 // Help implements cmdmain.SubCmd.
 func (s *Serve) Help() string {
@@ -26,11 +29,12 @@ func (s *Serve) Help() string {
 
 func (s *Serve) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	fs.StringVar(&s.cert, "cert", "localhost.pem", "TLS Certificate")
+	fs.StringVar(&s.key, "key", "localhost-key.pem", "TLS Certificate Key")
+
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.HTTPAddrFlag,
 		flags.HTTPSAddrFlag,
-		flags.CertFlag,
-		flags.KeyFlag,
 	}...)
 
 	fs.Usage = func() {
@@ -66,8 +70,8 @@ Flags:
 		http.H2Address(flags.HTTPSAddr),
 		http.H3Address(flags.HTTPSAddr),
 		http.Handle(mux),
-		http.CertificateFile(flags.Cert),
-		http.CertificateKeyFile(flags.Key),
+		http.CertificateFile(s.cert),
+		http.CertificateKeyFile(s.key),
 		http.RequestLogger(slog.Default()),
 	)
 	if err != nil {
