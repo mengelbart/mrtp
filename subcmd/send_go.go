@@ -31,6 +31,8 @@ func (s *SendGo) Help() string {
 type SendGo struct {
 	localAddr  string
 	remoteAddr string
+	roqMapping uint
+	roqServer  bool
 }
 
 // Exec implements cmdmain.SubCmd.
@@ -38,11 +40,12 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("send-go", flag.ExitOnError)
 	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
+	fs.UintVar(&s.roqMapping, "roq-mapping", 0, "RTP mapping to QUIC. 0: datagrams, 1: stream per packet, 2: single stream")
+	fs.BoolVar(&s.roqServer, "roq-server", false, "Usr RoQ server transport")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
 		flags.RTPFlowIDFlag,
-		flags.RoQMappingFlag,
 		flags.TraceRTPSendFlag,
 		flags.CCgccFlag,
 		flags.CCnadaFlag,
@@ -57,8 +60,6 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 		flags.DataChannelStartDelayFlag,
 		flags.DataChannelChunkFlag,
 		flags.SourceLocationFlag,
-		flags.RoQServerFlag,
-		flags.RoQClientFlag,
 		flags.CodecFlag,
 	}...)
 
@@ -91,8 +92,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if flags.RoQMapping > 2 {
-		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2.\n", flags.RoQMappingFlag)
+	if s.roqMapping > 2 {
+		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2.\n", s.roqMapping)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -116,7 +117,7 @@ Flags:
 	}
 
 	quicOptions := []quictransport.Option{
-		quictransport.WithRole(quictransport.Role(flags.RoQServer)),
+		quictransport.WithRole(quictransport.Role(s.roqServer)),
 		quictransport.SetQuicCC(int(flags.QuicCC)),
 		quictransport.SetLocalAddress(s.localAddr, flags.RTPPort), // TODO: which port to use?
 		quictransport.SetRemoteAddress(s.remoteAddr, flags.RTPPort),
@@ -183,7 +184,7 @@ Flags:
 		go dataSource.Run(ctx)
 	}
 
-	rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendMode(flags.RoQMapping), flags.TraceRTPSend)
+	rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendMode(s.roqMapping), flags.TraceRTPSend)
 	if err != nil {
 		return err
 	}

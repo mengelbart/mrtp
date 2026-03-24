@@ -27,8 +27,10 @@ func init() {
 type ReceiveGo struct {
 	localAddr  string
 	remoteAddr string
-	receiver   *gstreamer.RTPBin
-	sink       gstreamer.RTPSinkBin
+	roqServer  bool
+
+	receiver *gstreamer.RTPBin
+	sink     gstreamer.RTPSinkBin
 }
 
 func (r *ReceiveGo) Help() string {
@@ -39,11 +41,11 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("receive-go", flag.ExitOnError)
 	fs.StringVar(&r.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
+	fs.BoolVar(&r.roqServer, "roq-server", false, "Use RoQ server transport.")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
 		flags.RTPFlowIDFlag,
-		flags.RoQMappingFlag,
 		flags.GstCCFBFlag,
 		flags.TraceRTPRecvFlag,
 		flags.NadaFeedbackFlag,
@@ -51,8 +53,6 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
 		flags.LogQuicFlag,
-		flags.RoQServerFlag,
-		flags.RoQClientFlag,
 		flags.CodecFlag,
 	}...)
 
@@ -80,18 +80,12 @@ Flags:
 		os.Exit(1)
 	}
 
-	if flags.RoQMapping > 2 {
-		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2\n", flags.RoQMappingFlag)
-		fs.Usage()
-		os.Exit(1)
-	}
-
 	if flags.SinkType == uint(gstreamer.Filesink) && len(flags.SinkLocation) == 0 {
 		return errors.New("file-sink requires a location to be set via the -sink-location flag")
 	}
 
 	quicOptions := []quictransport.Option{
-		quictransport.WithRole(quictransport.Role(flags.RoQServer)),
+		quictransport.WithRole(quictransport.Role(r.roqServer)),
 		quictransport.SetLocalAddress(r.localAddr, flags.RTPPort), // TODO: which port to use?
 		quictransport.SetRemoteAddress(r.remoteAddr, flags.RTPPort),
 	}
