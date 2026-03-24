@@ -39,10 +39,13 @@ type StreamSourceFactory interface {
 }
 
 type gstreamerVideoStreamSourceFactory struct {
+	sourceLocation string
 }
 
 func (f *gstreamerVideoStreamSourceFactory) ConfigureFlags(fs *flag.FlagSet) {
-	newFlags := []flags.FlagName{flags.SourceLocationFlag}
+	fs.StringVar(&f.sourceLocation, "source-location", "", "Location for filesource (or videotestsrc to generate a testsource)")
+
+	newFlags := []flags.FlagName{}
 
 	// check if codec flag is already registered - relevant for webrtc subcmd
 	if fs.Lookup(string(flags.CodecFlag)) == nil {
@@ -59,13 +62,13 @@ func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstre
 
 	streamSourceOpts := []gstreamer.StreamSourceOption{gstreamer.StreamSourceCodec(codec)}
 
-	if flags.SourceLocation != "videotestsrc" {
+	if f.sourceLocation != "videotestsrc" {
 		// check if file exists
-		if _, err := os.Stat(flags.SourceLocation); errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("file does not exist: %v", flags.SourceLocation)
+		if _, err := os.Stat(f.sourceLocation); errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("file does not exist: %v", f.sourceLocation)
 		}
 
-		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(flags.SourceLocation))
+		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(f.sourceLocation))
 		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
 	}
 	return gstreamer.NewStreamSource(name, streamSourceOpts...)
