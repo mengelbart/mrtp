@@ -8,7 +8,6 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/mengelbart/mrtp/cmdmain"
-	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/internal/http"
 	"github.com/mengelbart/mrtp/internal/web"
 )
@@ -18,8 +17,10 @@ func init() {
 }
 
 type Serve struct {
-	cert string
-	key  string
+	cert      string
+	key       string
+	httpAddr  string
+	httpsAddr string
 }
 
 // Help implements cmdmain.SubCmd.
@@ -31,11 +32,8 @@ func (s *Serve) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	fs.StringVar(&s.cert, "cert", "localhost.pem", "TLS Certificate")
 	fs.StringVar(&s.key, "key", "localhost-key.pem", "TLS Certificate Key")
-
-	flags.RegisterInto(fs, []flags.FlagName{
-		flags.HTTPAddrFlag,
-		flags.HTTPSAddrFlag,
-	}...)
+	fs.StringVar(&s.httpAddr, "http-addr", "127.0.0.1:8080", "HTTP Server address")
+	fs.StringVar(&s.httpsAddr, "https-addr", "127.0.0.1:4443", "HTTPS Server address")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a frontend web server
@@ -66,9 +64,9 @@ Flags:
 	}
 
 	server, err := http.NewServer(
-		http.H1Address(flags.HTTPAddr),
-		http.H2Address(flags.HTTPSAddr),
-		http.H3Address(flags.HTTPSAddr),
+		http.H1Address(s.httpAddr),
+		http.H2Address(s.httpsAddr),
+		http.H3Address(s.httpsAddr),
 		http.Handle(mux),
 		http.CertificateFile(s.cert),
 		http.CertificateKeyFile(s.key),

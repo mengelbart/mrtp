@@ -20,9 +20,6 @@ type FlagName string
 
 // flag keys
 const (
-	HTTPAddrFlag  FlagName = "http-address"
-	HTTPSAddrFlag FlagName = "https-address"
-
 	RTPPortFlag      FlagName = "rtp-port"
 	RTCPRecvPortFlag FlagName = "rtcp-recv-porto"
 	RTCPSendPortFlag FlagName = "rtcp-send-porto"
@@ -65,11 +62,6 @@ const (
 
 // Flag vars
 var (
-	// HTTP Server
-	HTTPAddr = "127.0.0.1:8080"
-
-	HTTPSAddr = "127.0.0.1:4443"
-
 	// RTP Receive Port
 	RTPPort      = uint(5000)
 	RTCPSendPort = uint(5001)
@@ -137,10 +129,6 @@ func boolVar(p *bool, name FlagName, defaultValue *bool, usage string) func(*fla
 }
 
 var flags = map[FlagName]flagVar{
-	// Address related flags
-	HTTPAddrFlag:  stringVar(&HTTPAddr, HTTPAddrFlag, &HTTPAddr, "HTTP Server address"),
-	HTTPSAddrFlag: stringVar(&HTTPSAddr, HTTPSAddrFlag, &HTTPSAddr, "HTTPS Server address"),
-
 	RTPPortFlag:      uintVar(&RTPPort, RTPPortFlag, &RTPPort, "UDP Port number for outgoing RTP stream"),
 	RTCPRecvPortFlag: uintVar(&RTCPRecvPort, RTCPRecvPortFlag, &RTCPRecvPort, "UDP port for incoming RTCP stream"),
 	RTCPSendPortFlag: uintVar(&RTCPSendPort, RTCPSendPortFlag, &RTCPSendPort, "UDP port for outgoing RTCP stream"),
