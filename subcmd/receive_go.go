@@ -29,6 +29,7 @@ type ReceiveGo struct {
 	remoteAddr string
 	roqServer  bool
 	codec      string
+	qlog       bool
 
 	receiver *gstreamer.RTPBin
 	sink     gstreamer.RTPSinkBin
@@ -44,6 +45,7 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
 	fs.BoolVar(&r.roqServer, "roq-server", false, "Use RoQ server transport.")
 	fs.StringVar(&r.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
+	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -53,7 +55,6 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
-		flags.LogQuicFlag,
 	}...)
 
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
@@ -91,7 +92,7 @@ Flags:
 		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)))
 	}
 
-	if flags.LogQuic {
+	if r.qlog {
 		quicOptions = append(quicOptions, quictransport.EnableQLogs("./receiver.qlog"))
 	}
 

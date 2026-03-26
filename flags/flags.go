@@ -38,7 +38,6 @@ const (
 
 	QuicCCFlag    FlagName = "quic-cc"
 	QuicPacerFlag FlagName = "quic-pacer"
-	LogQuicFlag   FlagName = "log-quic"
 
 	DataChannelFlag           FlagName = "dc"
 	DataChannelFileFlag       FlagName = "dc-source"
@@ -78,8 +77,6 @@ var (
 
 	QuicCC    = uint(0)
 	QuicPacer = uint(0)
-
-	LogQuic = false
 )
 
 type flagVar func(*flag.FlagSet)
@@ -133,7 +130,6 @@ var flags = map[FlagName]flagVar{
 	// QUIC flags
 	QuicCCFlag:    uintVar(&QuicCC, QuicCCFlag, &QuicCC, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer"),
 	QuicPacerFlag: uintVar(&QuicPacer, QuicPacerFlag, &QuicPacer, "Which quic pacer to use. 0: default, 1: rate based pacer"),
-	LogQuicFlag:   boolVar(&LogQuic, LogQuicFlag, &LogQuic, "Log quic internal events"),
 }
 
 func RegisterInto(fs *flag.FlagSet, names ...FlagName) {

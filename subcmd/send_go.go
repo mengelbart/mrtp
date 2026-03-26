@@ -36,6 +36,7 @@ type SendGo struct {
 	roqServer      bool
 	sourceLocation string
 	codec          string
+	qlog           bool
 }
 
 // Exec implements cmdmain.SubCmd.
@@ -47,6 +48,7 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs.BoolVar(&s.roqServer, "roq-server", false, "Usr RoQ server transport")
 	fs.StringVar(&s.sourceLocation, "source-location", "", "Location for filesource")
 	fs.StringVar(&s.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
+	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -57,7 +59,6 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 		flags.MaxTragetRateFlag,
 		flags.QuicCCFlag,
 		flags.QuicPacerFlag,
-		flags.LogQuicFlag,
 		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
@@ -135,7 +136,7 @@ Flags:
 	if flags.CCgcc {
 		quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
 	}
-	if flags.LogQuic {
+	if s.qlog {
 		quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
 	}
 

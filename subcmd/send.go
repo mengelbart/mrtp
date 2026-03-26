@@ -84,6 +84,7 @@ type Send struct {
 	roqMapping uint
 	roqServer  bool
 	roqClient  bool
+	qlog       bool
 }
 
 func (s *Send) Help() string {
@@ -97,6 +98,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.UintVar(&s.roqMapping, "roq-mapping", 0, "RTP mapping to QUIC. 0: datagrams, 1: stream per packet, 2: single stream")
 	fs.BoolVar(&s.roqServer, "roq-server", false, "Use RoQ server transport")
 	fs.BoolVar(&s.roqClient, "roq-client", false, "Use RoQ client transport")
+	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -111,7 +113,6 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.MaxTragetRateFlag,
 		flags.QuicCCFlag,
 		flags.QuicPacerFlag,
-		flags.LogQuicFlag,
 		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
@@ -158,8 +159,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || flags.LogQuic || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
-		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, flags.LogQuicFlag, s.roqMapping)
+	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || s.qlog || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
+		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, s.qlog, s.roqMapping)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -238,7 +239,7 @@ Flags:
 		if flags.CCgcc {
 			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
 		}
-		if flags.LogQuic {
+		if s.qlog {
 			quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
 		}
 

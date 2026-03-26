@@ -23,6 +23,7 @@ func init() {
 type ReceiveData struct {
 	localAddr  string
 	remoteAddr string
+	qlog       bool
 }
 
 func (r *ReceiveData) Help() string {
@@ -33,10 +34,10 @@ func (r *ReceiveData) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("receive-data", flag.ExitOnError)
 	fs.StringVar(&r.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
+	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.NadaFeedbackFlag,
-		flags.LogQuicFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
 	}...)
@@ -68,7 +69,7 @@ Flags:
 		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)))
 	}
 
-	if flags.LogQuic {
+	if r.qlog {
 		quicOptions = append(quicOptions, quictransport.EnableQLogs("./receiver.qlog"))
 	}
 
