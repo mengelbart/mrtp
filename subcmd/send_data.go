@@ -29,6 +29,7 @@ func init() {
 type SendData struct {
 	localAddr  string
 	remoteAddr string
+	qlog       bool
 }
 
 func (s *SendData) Help() string {
@@ -39,13 +40,13 @@ func (s *SendData) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("send-data", flag.ExitOnError)
 	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
+	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.QuicCCFlag,
 		flags.CCnadaFlag,
 		flags.CCgccFlag,
 		flags.MaxTragetRateFlag,
-		flags.LogQuicFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
 	}...)
@@ -89,7 +90,7 @@ Flags:
 		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
 	}
 
-	if flags.LogQuic {
+	if s.qlog {
 		quicTOptions = append(quicTOptions, quictransport.EnableQLogs("./sender.qlog"))
 	}
 
