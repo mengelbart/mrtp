@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
@@ -27,6 +28,7 @@ type ReceiveGo struct {
 	localAddr  string
 	remoteAddr string
 	roqServer  bool
+	codec      string
 
 	receiver *gstreamer.RTPBin
 	sink     gstreamer.RTPSinkBin
@@ -41,6 +43,7 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs.StringVar(&r.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
 	fs.BoolVar(&r.roqServer, "roq-server", false, "Use RoQ server transport.")
+	fs.StringVar(&r.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -51,7 +54,6 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
 		flags.LogQuicFlag,
-		flags.CodecFlag,
 	}...)
 
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
@@ -148,7 +150,7 @@ Flags:
 		return err
 	}
 
-	codecTyp, err := codec.CodecTypeFromString(flags.Codec)
+	codecTyp, err := codec.CodecTypeFromString(r.codec)
 	if err != nil {
 		return err
 	}

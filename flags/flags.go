@@ -12,8 +12,6 @@ package flags
 import (
 	"flag"
 	"fmt"
-
-	"github.com/mengelbart/mrtp"
 )
 
 type FlagName string
@@ -29,8 +27,6 @@ const (
 	RTCPSendFlowIDFlag     FlagName = "rtcp-send-flow-id"
 	DataChannelFlowIDFlag  FlagName = "dc-flow-id"
 	NadaFeedbackFlowIDFlag FlagName = "nada-feedback-flow-id"
-
-	CodecFlag FlagName = "codec"
 
 	TraceRTPRecvFlag FlagName = "trace-rtp-recv"
 	TraceRTPSendFlag FlagName = "trace-rtp-send"
@@ -68,8 +64,6 @@ var (
 	DcSourceFile = ""
 	DcStartDelay = uint(0)
 	DcChunks     = false
-
-	Codec = mrtp.H264.String()
 
 	TraceRTPRecv = false
 	TraceRTPSend = false
@@ -125,8 +119,6 @@ var flags = map[FlagName]flagVar{
 	DataChannelFileFlag:       stringVar(&DcSourceFile, DataChannelFileFlag, &DcSourceFile, "File to be sent. If empty, random data will be sent."),
 	DataChannelStartDelayFlag: uintVar(&DcStartDelay, DataChannelStartDelayFlag, &DcStartDelay, "Start delay in seconds before data channel source starts sending data."),
 	DataChannelChunkFlag:      boolVar(&DcChunks, DataChannelChunkFlag, &DcChunks, "Send chunks on datachannel"),
-
-	CodecFlag: stringVar(&Codec, CodecFlag, &Codec, "Codec to use (H264, VP8)"),
 
 	// tracing flags
 	TraceRTPRecvFlag: boolVar(&TraceRTPRecv, TraceRTPRecvFlag, &TraceRTPRecv, "Log incoming RTP packets"),

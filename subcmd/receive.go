@@ -36,20 +36,22 @@ type StreamSinkFactory interface {
 type gstreamerVideoStreamSinkFactory struct {
 	sinkType     uint
 	sinkLocation string
+	codec        string
 }
 
 func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
 	fs.UintVar(&f.sinkType, "sink-type", uint(0), "Sink type (0: autovideosink, 1: filesink, requires <location> to be set, 2: fakesink)")
 	fs.StringVar(&f.sinkLocation, "sink-location", "", "Location for filesink (if <sink-type> is 1 (filesink))")
 
+	// check if codec flag is already registered - relevant for webrtc subcmd
+	if fs.Lookup("codec") == nil {
+		fs.StringVar(&f.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
+	}
+
 	newFlags := []flags.FlagName{
 		flags.LogQuicFlag,
 	}
 
-	// check if codec flag is already registered - relevant for webrtc subcmd
-	if fs.Lookup(string(flags.CodecFlag)) == nil {
-		newFlags = append(newFlags, flags.CodecFlag)
-	}
 	flags.RegisterInto(fs, newFlags...)
 }
 
@@ -58,7 +60,7 @@ func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (g
 		return nil, errors.New("file-sink requires a location to be set via the -sink-location flag")
 	}
 
-	codec, error := mrtp.NewCodec(flags.Codec)
+	codec, error := mrtp.NewCodec(f.codec)
 	if error != nil {
 		return nil, error
 	}

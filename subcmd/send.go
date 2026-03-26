@@ -40,22 +40,19 @@ type StreamSourceFactory interface {
 
 type gstreamerVideoStreamSourceFactory struct {
 	sourceLocation string
+	codec          string
 }
 
 func (f *gstreamerVideoStreamSourceFactory) ConfigureFlags(fs *flag.FlagSet) {
 	fs.StringVar(&f.sourceLocation, "source-location", "", "Location for filesource (or videotestsrc to generate a testsource)")
-
-	newFlags := []flags.FlagName{}
-
 	// check if codec flag is already registered - relevant for webrtc subcmd
-	if fs.Lookup(string(flags.CodecFlag)) == nil {
-		newFlags = append(newFlags, flags.CodecFlag)
+	if fs.Lookup("codec") == nil {
+		fs.StringVar(&f.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
 	}
-	flags.RegisterInto(fs, newFlags...)
 }
 
 func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstreamer.RTPSourceBin, error) {
-	codec, error := mrtp.NewCodec(flags.Codec)
+	codec, error := mrtp.NewCodec(f.codec)
 	if error != nil {
 		return nil, error
 	}
