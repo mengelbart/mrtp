@@ -21,9 +21,10 @@ func init() {
 
 // ReceiveData is a command to run a receiver pipeline for data channels.
 type ReceiveData struct {
-	localAddr  string
-	remoteAddr string
-	qlog       bool
+	localAddr    string
+	remoteAddr   string
+	qlog         bool
+	nadaFeedback bool
 }
 
 func (r *ReceiveData) Help() string {
@@ -35,9 +36,9 @@ func (r *ReceiveData) Exec(cmd string, args []string) error {
 	fs.StringVar(&r.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
 	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
+	fs.BoolVar(&r.nadaFeedback, "nada-feedback", false, "Send NADA feedback")
 
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.NadaFeedbackFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
 	}...)
@@ -64,7 +65,7 @@ Flags:
 		quictransport.SetRemoteAddress(r.remoteAddr, 8080),
 	}
 
-	if flags.NadaFeedback {
+	if r.nadaFeedback {
 		feedbackDelta := time.Duration(20 * time.Millisecond)
 		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)))
 	}
