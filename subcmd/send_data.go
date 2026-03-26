@@ -30,6 +30,7 @@ type SendData struct {
 	localAddr  string
 	remoteAddr string
 	qlog       bool
+	quicCC     uint
 }
 
 func (s *SendData) Help() string {
@@ -41,9 +42,9 @@ func (s *SendData) Exec(cmd string, args []string) error {
 	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
 	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
+	fs.UintVar(&s.quicCC, "quic-cc", 0, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer")
 
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.QuicCCFlag,
 		flags.CCnadaFlag,
 		flags.CCgccFlag,
 		flags.MaxTragetRateFlag,
@@ -76,7 +77,7 @@ Flags:
 
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
-		quictransport.SetQuicCC(int(flags.QuicCC)),
+		quictransport.SetQuicCC(int(s.quicCC)),
 		quictransport.SetLocalAddress(s.localAddr, 8080),
 		quictransport.SetRemoteAddress(s.remoteAddr, 8080),
 	}
