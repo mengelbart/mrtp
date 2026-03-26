@@ -85,6 +85,7 @@ type Send struct {
 	roqServer  bool
 	roqClient  bool
 	qlog       bool
+	quicPacer  uint
 }
 
 func (s *Send) Help() string {
@@ -99,6 +100,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.BoolVar(&s.roqServer, "roq-server", false, "Use RoQ server transport")
 	fs.BoolVar(&s.roqClient, "roq-client", false, "Use RoQ client transport")
 	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
+	fs.UintVar(&s.quicPacer, "quic-pacer", 0, "Which quic pacer to use. 0: default, 1: rate based pacer")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -112,7 +114,6 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.CCnadaFlag,
 		flags.MaxTragetRateFlag,
 		flags.QuicCCFlag,
-		flags.QuicPacerFlag,
 		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
@@ -147,8 +148,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if flags.QuicPacer > 1 {
-		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0 or 1.\n", flags.QuicPacerFlag)
+	if s.quicPacer > 1 {
+		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0 or 1.\n", s.quicPacer)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -159,14 +160,14 @@ Flags:
 		os.Exit(1)
 	}
 
-	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || flags.QuicPacer != 0 || s.qlog || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
+	if (flags.CCnada || flags.CCgcc || flags.QuicCC != 0 || s.quicPacer != 0 || s.qlog || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
 		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, flags.QuicCCFlag, s.qlog, s.roqMapping)
 		fs.Usage()
 		os.Exit(1)
 	}
 
-	if flags.QuicPacer == 1 && (!flags.CCnada && !flags.CCgcc) {
-		fmt.Fprintf(os.Stderr, "Flag -%v can only be used with NADA or GCC\n", flags.QuicPacerFlag)
+	if s.quicPacer == 1 && (!flags.CCnada && !flags.CCgcc) {
+		fmt.Fprintf(os.Stderr, "Flag -%v can only be used with NADA or GCC\n", s.quicPacer)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -177,7 +178,7 @@ Flags:
 		os.Exit(1)
 	}
 
-	if flags.DataChannel && (flags.QuicCC == 1 || (flags.QuicCC == 2 && flags.QuicPacer != 1)) {
+	if flags.DataChannel && (flags.QuicCC == 1 || (flags.QuicCC == 2 && s.quicPacer != 1)) {
 		fmt.Fprintf(os.Stderr, "Flag -%v only allowed if Reno as CC or rate based pacer. NoCC option allways invalid\n", flags.DataChannelFlag)
 		fs.Usage()
 		os.Exit(1)
@@ -228,7 +229,7 @@ Flags:
 			quictransport.SetQuicCC(int(flags.QuicCC)),
 			quictransport.SetLocalAddress(s.localAddr, flags.RTPPort), // TODO: which port to use?
 			quictransport.SetRemoteAddress(s.remoteAddr, flags.RTPPort),
-			quictransport.WithPacer(int(flags.QuicPacer)),
+			quictransport.WithPacer(int(s.quicPacer)),
 		}
 
 		if flags.CCnada {
