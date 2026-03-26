@@ -25,11 +25,12 @@ func init() {
 }
 
 type ReceiveGo struct {
-	localAddr  string
-	remoteAddr string
-	roqServer  bool
-	codec      string
-	qlog       bool
+	localAddr    string
+	remoteAddr   string
+	roqServer    bool
+	codec        string
+	qlog         bool
+	nadaFeedback bool
 
 	receiver *gstreamer.RTPBin
 	sink     gstreamer.RTPSinkBin
@@ -46,12 +47,12 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs.BoolVar(&r.roqServer, "roq-server", false, "Use RoQ server transport.")
 	fs.StringVar(&r.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
 	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
+	fs.BoolVar(&r.nadaFeedback, "nada-feedback", false, "Send NADA feedback")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
 		flags.RTPFlowIDFlag,
 		flags.TraceRTPRecvFlag,
-		flags.NadaFeedbackFlag,
 		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
@@ -87,7 +88,7 @@ Flags:
 		quictransport.SetRemoteAddress(r.remoteAddr, flags.RTPPort),
 	}
 
-	if flags.NadaFeedback {
+	if r.nadaFeedback {
 		feedbackDelta := time.Duration(20 * time.Millisecond)
 		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)))
 	}

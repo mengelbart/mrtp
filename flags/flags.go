@@ -34,7 +34,6 @@ const (
 	CCnadaFlag        FlagName = "nada"
 	CCgccFlag         FlagName = "pion-gcc"
 	MaxTragetRateFlag FlagName = "max-target-rate"
-	NadaFeedbackFlag  FlagName = "nada-feedback"
 
 	DataChannelFlag           FlagName = "dc"
 	DataChannelFileFlag       FlagName = "dc-source"
@@ -66,8 +65,6 @@ var (
 
 	CCnada = false
 	CCgcc  = false
-
-	NadaFeedback = false
 
 	// MaxTargetRate is the max target rate in bits per second
 	MaxTargetRate = uint(3_000_000) // 3 Mbps
@@ -119,7 +116,6 @@ var flags = map[FlagName]flagVar{
 	CCnadaFlag:        boolVar(&CCnada, CCnadaFlag, &CCnada, "Enable NADA congestion control"),
 	CCgccFlag:         boolVar(&CCgcc, CCgccFlag, &CCgcc, "Enable GCC congestion control"),
 	MaxTragetRateFlag: uintVar(&MaxTargetRate, MaxTragetRateFlag, &MaxTargetRate, "Set the maximum target rate in bits per second of the congestion controler"),
-	NadaFeedbackFlag:  boolVar(&NadaFeedback, NadaFeedbackFlag, &NadaFeedback, "Send NADA feedback"),
 }
 
 func RegisterInto(fs *flag.FlagSet, names ...FlagName) {
