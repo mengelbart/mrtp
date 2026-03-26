@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/flags"
@@ -34,6 +35,7 @@ type SendGo struct {
 	roqMapping     uint
 	roqServer      bool
 	sourceLocation string
+	codec          string
 }
 
 // Exec implements cmdmain.SubCmd.
@@ -44,6 +46,7 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs.UintVar(&s.roqMapping, "roq-mapping", 0, "RTP mapping to QUIC. 0: datagrams, 1: stream per packet, 2: single stream")
 	fs.BoolVar(&s.roqServer, "roq-server", false, "Usr RoQ server transport")
 	fs.StringVar(&s.sourceLocation, "source-location", "", "Location for filesource")
+	fs.StringVar(&s.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -61,7 +64,6 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 		flags.DataChannelFileFlag,
 		flags.DataChannelStartDelayFlag,
 		flags.DataChannelChunkFlag,
-		flags.CodecFlag,
 	}...)
 
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
@@ -217,7 +219,7 @@ Flags:
 	}
 
 	i := fileSrc.GetInfo()
-	codecTyp, err := codec.CodecTypeFromString(flags.Codec)
+	codecTyp, err := codec.CodecTypeFromString(s.codec)
 	if err != nil {
 		return err
 	}
