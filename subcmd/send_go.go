@@ -38,6 +38,7 @@ type SendGo struct {
 	codec          string
 	qlog           bool
 	quicPacer      uint
+	quicCC         uint
 }
 
 // Exec implements cmdmain.SubCmd.
@@ -51,6 +52,7 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs.StringVar(&s.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
 	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
 	fs.UintVar(&s.quicPacer, "quic-pacer", 0, "Which quic pacer to use. 0: default, 1: rate based pacer")
+	fs.UintVar(&s.quicCC, "quic-cc", 0, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -59,7 +61,6 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 		flags.CCgccFlag,
 		flags.CCnadaFlag,
 		flags.MaxTragetRateFlag,
-		flags.QuicCCFlag,
 		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
@@ -85,8 +86,8 @@ Flags:
 
 	ctx := context.Background()
 
-	if flags.QuicCC > 2 {
-		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2.\n", flags.QuicCCFlag)
+	if s.quicCC > 2 {
+		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2.\n", s.quicCC)
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -109,7 +110,7 @@ Flags:
 		os.Exit(1)
 	}
 
-	if flags.DataChannel && (flags.QuicCC == 1 || (flags.QuicCC == 2 && s.quicPacer != 1)) {
+	if flags.DataChannel && (s.quicCC == 1 || (s.quicCC == 2 && s.quicPacer != 1)) {
 		fmt.Fprintf(os.Stderr, "Flag -%v only allowed if Reno as CC or rate based pacer. NoCC option allways invalid\n", flags.DataChannelFlag)
 		fs.Usage()
 		os.Exit(1)
@@ -123,7 +124,7 @@ Flags:
 
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(s.roqServer)),
-		quictransport.SetQuicCC(int(flags.QuicCC)),
+		quictransport.SetQuicCC(int(s.quicCC)),
 		quictransport.SetLocalAddress(s.localAddr, flags.RTPPort), // TODO: which port to use?
 		quictransport.SetRemoteAddress(s.remoteAddr, flags.RTPPort),
 		quictransport.WithPacer(int(s.quicPacer)),
