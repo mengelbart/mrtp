@@ -31,6 +31,7 @@ type ReceiveGo struct {
 	codec        string
 	qlog         bool
 	nadaFeedback bool
+	traceRTP     bool
 
 	receiver *gstreamer.RTPBin
 	sink     gstreamer.RTPSinkBin
@@ -48,11 +49,11 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs.StringVar(&r.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
 	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
 	fs.BoolVar(&r.nadaFeedback, "nada-feedback", false, "Send NADA feedback")
+	fs.BoolVar(&r.traceRTP, "trace-rtp-recv", false, "Log incoming RTP packets")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
 		flags.RTPFlowIDFlag,
-		flags.TraceRTPRecvFlag,
 		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
@@ -147,7 +148,7 @@ Flags:
 		go dataSink.Run()
 	}
 
-	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPFlowID), flags.TraceRTPRecv)
+	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPFlowID), r.traceRTP)
 	if err != nil {
 		return err
 	}
