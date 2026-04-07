@@ -10,7 +10,6 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
-	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/gstreamer"
@@ -37,6 +36,8 @@ type ReceiveGo struct {
 	dataChannelFlowID uint
 	udpPort           uint
 	rtpFlowID         uint
+	rtcpSendFlowID    uint
+	rtcpRecvFlowID    uint
 
 	receiver *gstreamer.RTPBin
 	sink     gstreamer.RTPSinkBin
@@ -60,6 +61,8 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs.UintVar(&r.dataChannelFlowID, "dc-flow-id", 3, "QUIC Flow ID to use for sending/receiving data with data channels")
 	fs.UintVar(&r.udpPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
 	fs.UintVar(&r.rtpFlowID, "rtp-flow-id", 0, "RTP Flow ID when using RTP over QUIC")
+	fs.UintVar(&r.rtcpSendFlowID, "rtcp-send-flow-id", 1, "RTCP Sender Flow ID when using RTP over QUIC")
+	fs.UintVar(&r.rtcpRecvFlowID, "rtcp-recv-flow-id", 2, "RTCP Receiver Flow ID when using RTP over QUIC")
 
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
 
@@ -118,7 +121,7 @@ Flags:
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(r.rtpFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
+		if flowID == uint64(r.rtpFlowID) || flowID == uint64(r.rtcpRecvFlowID) || flowID == uint64(r.rtcpSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
 		}

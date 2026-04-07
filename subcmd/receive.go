@@ -12,7 +12,6 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
-	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
@@ -86,9 +85,11 @@ type Receive struct {
 	feedbackFlowID    uint
 	dataChannelFlowID uint
 	udpPort           uint
-	rtpFlowID         uint
 	rtcpSendPort      uint
 	rtcpRecvPort      uint
+	rtpFlowID         uint
+	rtcpSendFlowID    uint
+	rtcpRecvFlowID    uint
 }
 
 func (r *Receive) Help() string {
@@ -113,14 +114,8 @@ func (r *Receive) Exec(cmd string, args []string) error {
 	fs.UintVar(&r.rtpFlowID, "rtp-flow-id", 0, "RTP Flow ID when using RTP over QUIC")
 	fs.UintVar(&r.rtcpSendPort, "rtcp-send-porto", 5002, "UDP port for outgoing RTCP stream")
 	fs.UintVar(&r.rtcpRecvPort, "rtcp-recv-porto", 5001, "UDP port for incoming RTCP stream")
-
-	// swap default values
-	flags.SwapRTCPDefaults()
-
-	flags.RegisterInto(fs, []flags.FlagName{
-		flags.RTCPRecvFlowIDFlag,
-		flags.RTCPSendFlowIDFlag,
-	}...)
+	fs.UintVar(&r.rtcpSendFlowID, "rtcp-send-flow-id", 1, "RTCP Sender Flow ID when using RTP over QUIC")
+	fs.UintVar(&r.rtcpRecvFlowID, "rtcp-recv-flow-id", 2, "RTCP Receiver Flow ID when using RTP over QUIC")
 
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
 
@@ -229,7 +224,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(r.rtpFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
+		if flowID == uint64(r.rtpFlowID) || flowID == uint64(r.rtcpRecvFlowID) || flowID == uint64(r.rtcpSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
 		}
@@ -272,7 +267,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 		return err
 	}
 
-	rtcpSink, err := roqTransport.NewSendFlow(uint64(flags.RTCPSendFlowID), roq.SendMode(r.roqMapping), false)
+	rtcpSink, err := roqTransport.NewSendFlow(uint64(r.rtcpSendFlowID), roq.SendMode(r.roqMapping), false)
 	if err != nil {
 		return err
 	}
@@ -280,7 +275,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 		return err
 	}
 
-	rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTCPRecvFlowID), false)
+	rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(r.rtcpRecvFlowID), false)
 	if err != nil {
 		return err
 	}
