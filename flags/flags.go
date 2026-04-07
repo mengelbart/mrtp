@@ -31,10 +31,6 @@ const (
 	TraceRTPRecvFlag FlagName = "trace-rtp-recv"
 	TraceRTPSendFlag FlagName = "trace-rtp-send"
 
-	CCnadaFlag        FlagName = "nada"
-	CCgccFlag         FlagName = "pion-gcc"
-	MaxTragetRateFlag FlagName = "max-target-rate"
-
 	DataChannelFlag           FlagName = "dc"
 	DataChannelFileFlag       FlagName = "dc-source"
 	DataChannelStartDelayFlag FlagName = "dc-start-delay"
@@ -62,12 +58,6 @@ var (
 
 	TraceRTPRecv = false
 	TraceRTPSend = false
-
-	CCnada = false
-	CCgcc  = false
-
-	// MaxTargetRate is the max target rate in bits per second
-	MaxTargetRate = uint(3_000_000) // 3 Mbps
 )
 
 type flagVar func(*flag.FlagSet)
@@ -111,11 +101,6 @@ var flags = map[FlagName]flagVar{
 	// tracing flags
 	TraceRTPRecvFlag: boolVar(&TraceRTPRecv, TraceRTPRecvFlag, &TraceRTPRecv, "Log incoming RTP packets"),
 	TraceRTPSendFlag: boolVar(&TraceRTPSend, TraceRTPSendFlag, &TraceRTPSend, "Log outgoing RTP packets"),
-
-	// CC flags
-	CCnadaFlag:        boolVar(&CCnada, CCnadaFlag, &CCnada, "Enable NADA congestion control"),
-	CCgccFlag:         boolVar(&CCgcc, CCgccFlag, &CCgcc, "Enable GCC congestion control"),
-	MaxTragetRateFlag: uintVar(&MaxTargetRate, MaxTragetRateFlag, &MaxTargetRate, "Set the maximum target rate in bits per second of the congestion controler"),
 }
 
 func RegisterInto(fs *flag.FlagSet, names ...FlagName) {
