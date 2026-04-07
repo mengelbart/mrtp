@@ -18,19 +18,12 @@ type FlagName string
 
 // flag keys
 const (
-	RTCPRecvPortFlag FlagName = "rtcp-recv-porto"
-	RTCPSendPortFlag FlagName = "rtcp-send-porto"
-
 	RTCPRecvFlowIDFlag FlagName = "rtcp-recv-flow-id"
 	RTCPSendFlowIDFlag FlagName = "rtcp-send-flow-id"
 )
 
 // Flag vars
 var (
-	// RTP Receive Port
-	RTCPSendPort = uint(5001)
-	RTCPRecvPort = uint(5002)
-
 	// Flow IDs for RoQ and datachannels
 	RTCPRecvFlowID = uint(1)
 	RTCPSendFlowID = uint(2)
@@ -45,9 +38,6 @@ func uintVar(p *uint, name FlagName, defaultValue *uint, usage string) func(*fla
 }
 
 var flags = map[FlagName]flagVar{
-	RTCPRecvPortFlag: uintVar(&RTCPRecvPort, RTCPRecvPortFlag, &RTCPRecvPort, "UDP port for incoming RTCP stream"),
-	RTCPSendPortFlag: uintVar(&RTCPSendPort, RTCPSendPortFlag, &RTCPSendPort, "UDP port for outgoing RTCP stream"),
-
 	// flow ID flags
 	RTCPRecvFlowIDFlag: uintVar(&RTCPRecvFlowID, RTCPRecvFlowIDFlag, &RTCPRecvFlowID, "RTP Flow ID when using RTP over QUIC"),
 	RTCPSendFlowIDFlag: uintVar(&RTCPSendFlowID, RTCPSendFlowIDFlag, &RTCPSendFlowID, "RTP Flow ID when using RTP over QUIC"),
@@ -72,6 +62,5 @@ func RegisterInto(fs *flag.FlagSet, names ...FlagName) {
 // SwapRTCPDefaults swaps the default values for RTCP ports and flow IDs.
 // This needs to be done for one side, as these ports and flow IDs are asymmetric.
 func SwapRTCPDefaults() {
-	RTCPSendPort, RTCPRecvPort = RTCPRecvPort, RTCPSendPort
 	RTCPRecvFlowID, RTCPSendFlowID = RTCPSendFlowID, RTCPRecvFlowID
 }
