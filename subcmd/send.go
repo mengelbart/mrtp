@@ -91,6 +91,10 @@ type Send struct {
 	gcc           bool
 	maxTargetRate uint
 	traceRTP      bool
+	datachannel   bool
+	dcSourceFile  string
+	dcStartDelay  uint
+	dcChunks      bool
 }
 
 func (s *Send) Help() string {
@@ -111,6 +115,10 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
 	fs.BoolVar(&s.traceRTP, "trace-rtp-send", false, "Log outgoing RTP packets")
+	fs.BoolVar(&s.datachannel, "dc", false, "Send/Receive data with data channels")
+	fs.StringVar(&s.dcSourceFile, "dc-source", "", "File to be sent. If empty, random data will be sent.")
+	fs.UintVar(&s.dcStartDelay, "dc-start-delay", 0, "Start delay in seconds before data channel source starts sending data.")
+	fs.BoolVar(&s.dcChunks, "dc-chunks", false, "Send chunks on datachannel")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -119,12 +127,8 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RTPFlowIDFlag,
 		flags.RTCPRecvFlowIDFlag,
 		flags.RTCPSendFlowIDFlag,
-		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
-		flags.DataChannelFileFlag,
-		flags.DataChannelStartDelayFlag,
-		flags.DataChannelChunkFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 	fs.UintVar(&dcPercatage, "dc-tr-share", 30, "Percentage of target rate to be used for data channel (RoQ only)")
@@ -177,14 +181,14 @@ Flags:
 		os.Exit(1)
 	}
 
-	if flags.DataChannel && (!s.roqServer && !s.roqClient) {
-		fmt.Fprintf(os.Stderr, "Flag -%v only valid for RoQ\n", flags.DataChannelFlag)
+	if s.datachannel && (!s.roqServer && !s.roqClient) {
+		fmt.Fprintf(os.Stderr, "Flag -%v only valid for RoQ\n", "dc")
 		fs.Usage()
 		os.Exit(1)
 	}
 
-	if flags.DataChannel && (s.quicCC == 1 || (s.quicCC == 2 && s.quicPacer != 1)) {
-		fmt.Fprintf(os.Stderr, "Flag -%v only allowed if Reno as CC or rate based pacer. NoCC option allways invalid\n", flags.DataChannelFlag)
+	if s.datachannel && (s.quicCC == 1 || (s.quicCC == 2 && s.quicPacer != 1)) {
+		fmt.Fprintf(os.Stderr, "Flag -%v only allowed if Reno as CC or rate based pacer. NoCC option allways invalid\n", "dc")
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -274,7 +278,7 @@ Flags:
 				roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 				return
 			}
-			if flags.DataChannel && dcTransport != nil {
+			if s.datachannel && dcTransport != nil {
 				dcTransport.ReadStream(context.Background(), rs, flowID)
 				return
 			}
@@ -285,13 +289,13 @@ Flags:
 
 		// open dc connection
 		var dataSource *data.DataBin
-		if flags.DataChannel {
+		if s.datachannel {
 			dcSender, err := dcTransport.NewDataChannelSender(uint64(flags.DataChannelFlowID), 0, true)
 			if err != nil {
 				return err
 			}
 
-			dataSource, err = createDataSource(dcSender, flags.DcSourceFile, flags.DcStartDelay, false, flags.DcChunks)
+			dataSource, err = createDataSource(dcSender, s.dcSourceFile, s.dcStartDelay, false, s.dcChunks)
 			if err != nil {
 				return err
 			}
@@ -304,7 +308,7 @@ Flags:
 			slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
 			mediaTargetRate := ratebps
-			if flags.DataChannel && dataSource != nil && dataSource.Running() {
+			if s.datachannel && dataSource != nil && dataSource.Running() {
 				mediaTargetRate = ratebps * (100 - dcPercatage) / 100
 			}
 			err := mediaBa.SetBitrate(mediaTargetRate)
