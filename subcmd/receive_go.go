@@ -35,6 +35,8 @@ type ReceiveGo struct {
 	datachannel       bool
 	feedbackFlowID    uint
 	dataChannelFlowID uint
+	udpPort           uint
+	rtpFlowID         uint
 
 	receiver *gstreamer.RTPBin
 	sink     gstreamer.RTPSinkBin
@@ -56,11 +58,8 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs.BoolVar(&r.datachannel, "dc", false, "Send/Receive data with data channels")
 	fs.UintVar(&r.feedbackFlowID, "feedback-flow-id", 4, "QUIC Flow ID to use for sending RTCP feedback (NADA or GCC) or receiving it in case of NADA feedback")
 	fs.UintVar(&r.dataChannelFlowID, "dc-flow-id", 3, "QUIC Flow ID to use for sending/receiving data with data channels")
-
-	flags.RegisterInto(fs, []flags.FlagName{
-		flags.RTPPortFlag,
-		flags.RTPFlowIDFlag,
-	}...)
+	fs.UintVar(&r.udpPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
+	fs.UintVar(&r.rtpFlowID, "rtp-flow-id", 0, "RTP Flow ID when using RTP over QUIC")
 
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
 
@@ -88,8 +87,8 @@ Flags:
 
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(r.roqServer)),
-		quictransport.SetLocalAddress(r.localAddr, flags.RTPPort), // TODO: which port to use?
-		quictransport.SetRemoteAddress(r.remoteAddr, flags.RTPPort),
+		quictransport.SetLocalAddress(r.localAddr, r.udpPort),
+		quictransport.SetRemoteAddress(r.remoteAddr, r.udpPort),
 	}
 
 	if r.nadaFeedback {
@@ -119,7 +118,7 @@ Flags:
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(flags.RTPFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
+		if flowID == uint64(r.rtpFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
 		}
@@ -151,7 +150,7 @@ Flags:
 		go dataSink.Run()
 	}
 
-	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPFlowID), r.traceRTP)
+	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(r.rtpFlowID), r.traceRTP)
 	if err != nil {
 		return err
 	}
