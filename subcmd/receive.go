@@ -71,18 +71,20 @@ func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (g
 var DefaultStreamSinkFactory StreamSinkFactory = &gstreamerVideoStreamSinkFactory{}
 
 type Receive struct {
-	localAddr    string
-	remoteAddr   string
-	receiver     *gstreamer.RTPBin
-	sink         gstreamer.RTPSinkBin
-	roqMapping   uint
-	roqServer    bool
-	roqClient    bool
-	gstCCFB      bool
-	qlog         bool
-	nadaFeedback bool
-	traceRTP     bool
-	datachannel  bool
+	localAddr         string
+	remoteAddr        string
+	receiver          *gstreamer.RTPBin
+	sink              gstreamer.RTPSinkBin
+	roqMapping        uint
+	roqServer         bool
+	roqClient         bool
+	gstCCFB           bool
+	qlog              bool
+	nadaFeedback      bool
+	traceRTP          bool
+	datachannel       bool
+	feedbackFlowID    uint
+	dataChannelFlowID uint
 }
 
 func (r *Receive) Help() string {
@@ -101,6 +103,8 @@ func (r *Receive) Exec(cmd string, args []string) error {
 	fs.BoolVar(&r.nadaFeedback, "nada-feedback", false, "Send NADA feedback")
 	fs.BoolVar(&r.traceRTP, "trace-rtp-recv", false, "Log incoming RTP packets")
 	fs.BoolVar(&r.datachannel, "dc", false, "Send/Receive data with data channels")
+	fs.UintVar(&r.feedbackFlowID, "nada-feedback-flow-id", 4, "NADA Feedback Flow ID when using NADA or GCC with QUIC")
+	fs.UintVar(&r.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 
 	// swap default values
 	flags.SwapRTCPDefaults()
@@ -112,8 +116,6 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.RTPFlowIDFlag,
 		flags.RTCPRecvFlowIDFlag,
 		flags.RTCPSendFlowIDFlag,
-		flags.NadaFeedbackFlowIDFlag,
-		flags.DataChannelFlowIDFlag,
 	}...)
 
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
@@ -198,7 +200,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 
 	if r.nadaFeedback {
 		feedbackDelta := time.Duration(20 * time.Millisecond)
-		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)))
+		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(r.feedbackFlowID)))
 	}
 
 	if r.qlog {
@@ -242,7 +244,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 	if r.datachannel {
 		// setup data channel receiver
 		// quic transports has to be started before
-		dcReceiver, err := dcTransport.AddDataChannelReceiver(uint64(flags.DataChannelFlowID))
+		dcReceiver, err := dcTransport.AddDataChannelReceiver(uint64(r.dataChannelFlowID))
 		if err != nil {
 			return err
 		}

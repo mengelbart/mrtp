@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp/data"
-	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/netsim"
 	"github.com/quic-go/quic-go"
@@ -97,7 +96,7 @@ func createSender(ctx context.Context, conn net.PacketConn) (*quictransport.Tran
 		quictransport.WithPacer(1), // rate-bassed pacer
 		quictransport.SetRemoteAddress("10.0.0.1", 8080),
 		quictransport.SetNetConn(conn),
-		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20), uint64(flags.NadaFeedbackFlowID)),
+		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20), uint64(nadaFeedbackFlowID)),
 		quictransport.EnableQLogs("./sender.qlog"),
 	}
 
@@ -109,7 +108,7 @@ func createReceiver(ctx context.Context, conn net.PacketConn) (*quictransport.Tr
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleServer)),
 		quictransport.SetNetConn(conn),
-		quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)),
+		quictransport.EnableNADAfeedback(feedbackDelta, uint64(nadaFeedbackFlowID)),
 		quictransport.EnableQLogs("./receiver.qlog"),
 	}
 
@@ -132,7 +131,7 @@ func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Tran
 	quicConn.StartHandlers()
 
 	// blocks until we get OpenChannelOk
-	sender, err := dcTransport.NewDataChannelSender(uint64(flags.DataChannelFlowID), 0, true)
+	sender, err := dcTransport.NewDataChannelSender(uint64(dataChannelFlowID), 0, true)
 	assert.NoError(t, err)
 
 	opts := []data.DataBinOption{
@@ -162,7 +161,7 @@ func runDcReceiver(t *testing.T, wg *sync.WaitGroup, quicConn *quictransport.Tra
 	quicConn.StartHandlers()
 
 	wg.Go(func() {
-		receiver, err := dcTransport.AddDataChannelReceiver(uint64(flags.DataChannelFlowID))
+		receiver, err := dcTransport.AddDataChannelReceiver(uint64(dataChannelFlowID))
 		assert.NoError(t, err)
 		assert.NotNil(t, receiver)
 

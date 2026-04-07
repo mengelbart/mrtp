@@ -79,22 +79,24 @@ var (
 )
 
 type Send struct {
-	localAddr     string
-	remoteAddr    string
-	roqMapping    uint
-	roqServer     bool
-	roqClient     bool
-	qlog          bool
-	quicPacer     uint
-	quicCC        uint
-	nada          bool
-	gcc           bool
-	maxTargetRate uint
-	traceRTP      bool
-	datachannel   bool
-	dcSourceFile  string
-	dcStartDelay  uint
-	dcChunks      bool
+	localAddr         string
+	remoteAddr        string
+	roqMapping        uint
+	roqServer         bool
+	roqClient         bool
+	qlog              bool
+	quicPacer         uint
+	quicCC            uint
+	nada              bool
+	gcc               bool
+	maxTargetRate     uint
+	traceRTP          bool
+	datachannel       bool
+	dcSourceFile      string
+	dcStartDelay      uint
+	dcChunks          bool
+	feedbackFlowID    uint
+	dataChannelFlowID uint
 }
 
 func (s *Send) Help() string {
@@ -119,6 +121,8 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.StringVar(&s.dcSourceFile, "dc-source", "", "File to be sent. If empty, random data will be sent.")
 	fs.UintVar(&s.dcStartDelay, "dc-start-delay", 0, "Start delay in seconds before data channel source starts sending data.")
 	fs.BoolVar(&s.dcChunks, "dc-chunks", false, "Send chunks on datachannel")
+	fs.UintVar(&s.feedbackFlowID, "nada-feedback-flow-id", 4, "NADA Feedback Flow ID when using NADA or GCC with QUIC")
+	fs.UintVar(&s.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -127,8 +131,6 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RTPFlowIDFlag,
 		flags.RTCPRecvFlowIDFlag,
 		flags.RTCPSendFlowIDFlag,
-		flags.NadaFeedbackFlowIDFlag,
-		flags.DataChannelFlowIDFlag,
 	}...)
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 	fs.UintVar(&dcPercatage, "dc-tr-share", 30, "Percentage of target rate to be used for data channel (RoQ only)")
@@ -243,11 +245,11 @@ Flags:
 
 		if s.nada {
 			feedbackDelta := uint64(20)
-			quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 250_000, s.maxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
+			quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 250_000, s.maxTargetRate, uint(feedbackDelta), uint64(s.feedbackFlowID)))
 		}
 
 		if s.gcc {
-			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(s.maxTargetRate), uint64(flags.NadaFeedbackFlowID)))
+			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(s.maxTargetRate), uint64(s.feedbackFlowID)))
 		}
 		if s.qlog {
 			quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
@@ -290,7 +292,7 @@ Flags:
 		// open dc connection
 		var dataSource *data.DataBin
 		if s.datachannel {
-			dcSender, err := dcTransport.NewDataChannelSender(uint64(flags.DataChannelFlowID), 0, true)
+			dcSender, err := dcTransport.NewDataChannelSender(uint64(s.dataChannelFlowID), 0, true)
 			if err != nil {
 				return err
 			}

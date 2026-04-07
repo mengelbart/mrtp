@@ -119,7 +119,7 @@ func createH264Sender(ctx context.Context, conn net.PacketConn) (*quictransport.
 		quictransport.WithPacer(1), // rate-bassed pacer
 		quictransport.SetRemoteAddress("10.0.0.1", 8080),
 		quictransport.SetNetConn(conn),
-		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20), uint64(flags.NadaFeedbackFlowID)),
+		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20), uint64(nadaFeedbackFlowID)),
 		quictransport.EnableQLogs("./sender.qlog"),
 	}
 

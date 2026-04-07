@@ -22,11 +22,9 @@ const (
 	RTCPRecvPortFlag FlagName = "rtcp-recv-porto"
 	RTCPSendPortFlag FlagName = "rtcp-send-porto"
 
-	RTPFlowIDFlag          FlagName = "rtp-flow-id"
-	RTCPRecvFlowIDFlag     FlagName = "rtcp-recv-flow-id"
-	RTCPSendFlowIDFlag     FlagName = "rtcp-send-flow-id"
-	DataChannelFlowIDFlag  FlagName = "dc-flow-id"
-	NadaFeedbackFlowIDFlag FlagName = "nada-feedback-flow-id"
+	RTPFlowIDFlag      FlagName = "rtp-flow-id"
+	RTCPRecvFlowIDFlag FlagName = "rtcp-recv-flow-id"
+	RTCPSendFlowIDFlag FlagName = "rtcp-send-flow-id"
 )
 
 // Flag vars
@@ -37,30 +35,16 @@ var (
 	RTCPRecvPort = uint(5002)
 
 	// Flow IDs for RoQ and datachannels
-	RTPFlowID          = uint(0)
-	RTCPRecvFlowID     = uint(1)
-	RTCPSendFlowID     = uint(2)
-	DataChannelFlowID  = uint(3)
-	NadaFeedbackFlowID = uint(4)
+	RTPFlowID      = uint(0)
+	RTCPRecvFlowID = uint(1)
+	RTCPSendFlowID = uint(2)
 )
 
 type flagVar func(*flag.FlagSet)
 
-func stringVar(p *string, name FlagName, defaultValue *string, usage string) func(*flag.FlagSet) {
-	return func(fs *flag.FlagSet) {
-		fs.StringVar(p, string(name), *defaultValue, usage)
-	}
-}
-
 func uintVar(p *uint, name FlagName, defaultValue *uint, usage string) func(*flag.FlagSet) {
 	return func(fs *flag.FlagSet) {
 		fs.UintVar(p, string(name), *defaultValue, usage)
-	}
-}
-
-func boolVar(p *bool, name FlagName, defaultValue *bool, usage string) func(*flag.FlagSet) {
-	return func(fs *flag.FlagSet) {
-		fs.BoolVar(p, string(name), *defaultValue, usage)
 	}
 }
 
@@ -70,11 +54,9 @@ var flags = map[FlagName]flagVar{
 	RTCPSendPortFlag: uintVar(&RTCPSendPort, RTCPSendPortFlag, &RTCPSendPort, "UDP port for outgoing RTCP stream"),
 
 	// flow ID flags
-	RTPFlowIDFlag:          uintVar(&RTPFlowID, RTPFlowIDFlag, &RTPFlowID, "RTP Flow ID when using RTP over QUIC"),
-	RTCPRecvFlowIDFlag:     uintVar(&RTCPRecvFlowID, RTCPRecvFlowIDFlag, &RTCPRecvFlowID, "RTP Flow ID when using RTP over QUIC"),
-	RTCPSendFlowIDFlag:     uintVar(&RTCPSendFlowID, RTCPSendFlowIDFlag, &RTCPSendFlowID, "RTP Flow ID when using RTP over QUIC"),
-	DataChannelFlowIDFlag:  uintVar(&DataChannelFlowID, DataChannelFlowIDFlag, &DataChannelFlowID, "Data Channel Flow ID when using quic data channels"),
-	NadaFeedbackFlowIDFlag: uintVar(&NadaFeedbackFlowID, NadaFeedbackFlowIDFlag, &NadaFeedbackFlowID, "NADA Feedback Flow ID when using NADA or GCC with QUIC"),
+	RTPFlowIDFlag:      uintVar(&RTPFlowID, RTPFlowIDFlag, &RTPFlowID, "RTP Flow ID when using RTP over QUIC"),
+	RTCPRecvFlowIDFlag: uintVar(&RTCPRecvFlowID, RTCPRecvFlowIDFlag, &RTCPRecvFlowID, "RTP Flow ID when using RTP over QUIC"),
+	RTCPSendFlowIDFlag: uintVar(&RTCPSendFlowID, RTCPSendFlowIDFlag, &RTCPSendFlowID, "RTP Flow ID when using RTP over QUIC"),
 }
 
 func RegisterInto(fs *flag.FlagSet, names ...FlagName) {

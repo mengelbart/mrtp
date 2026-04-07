@@ -10,6 +10,11 @@ import (
 	"github.com/mengelbart/netsim"
 )
 
+const (
+	nadaFeedbackFlowID = 4
+	dataChannelFlowID  = 3
+)
+
 type pathFactory func() []netsim.Node
 
 func pathFactoryFunc(delay time.Duration, bandwidth float64, burst, queueSize int, headDrop bool) pathFactory {

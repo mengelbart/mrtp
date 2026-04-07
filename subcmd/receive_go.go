@@ -25,14 +25,16 @@ func init() {
 }
 
 type ReceiveGo struct {
-	localAddr    string
-	remoteAddr   string
-	roqServer    bool
-	codec        string
-	qlog         bool
-	nadaFeedback bool
-	traceRTP     bool
-	datachannel  bool
+	localAddr         string
+	remoteAddr        string
+	roqServer         bool
+	codec             string
+	qlog              bool
+	nadaFeedback      bool
+	traceRTP          bool
+	datachannel       bool
+	feedbackFlowID    uint
+	dataChannelFlowID uint
 
 	receiver *gstreamer.RTPBin
 	sink     gstreamer.RTPSinkBin
@@ -52,12 +54,12 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs.BoolVar(&r.nadaFeedback, "nada-feedback", false, "Send NADA feedback")
 	fs.BoolVar(&r.traceRTP, "trace-rtp-recv", false, "Log incoming RTP packets")
 	fs.BoolVar(&r.datachannel, "dc", false, "Send/Receive data with data channels")
+	fs.UintVar(&r.feedbackFlowID, "feedback-flow-id", 4, "QUIC Flow ID to use for sending RTCP feedback (NADA or GCC) or receiving it in case of NADA feedback")
+	fs.UintVar(&r.dataChannelFlowID, "dc-flow-id", 3, "QUIC Flow ID to use for sending/receiving data with data channels")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
 		flags.RTPFlowIDFlag,
-		flags.NadaFeedbackFlowIDFlag,
-		flags.DataChannelFlowIDFlag,
 	}...)
 
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
@@ -92,7 +94,7 @@ Flags:
 
 	if r.nadaFeedback {
 		feedbackDelta := time.Duration(20 * time.Millisecond)
-		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)))
+		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(r.feedbackFlowID)))
 	}
 
 	if r.qlog {
@@ -136,7 +138,7 @@ Flags:
 	if r.datachannel {
 		// setup data channel receiver
 		// quic transports has to be started before
-		dcReceiver, err := dcTransport.AddDataChannelReceiver(uint64(flags.DataChannelFlowID))
+		dcReceiver, err := dcTransport.AddDataChannelReceiver(uint64(r.dataChannelFlowID))
 		if err != nil {
 			return err
 		}

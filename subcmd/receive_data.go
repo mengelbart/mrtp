@@ -10,7 +10,6 @@ import (
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
-	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/quic-go/quic-go"
 )
@@ -21,10 +20,12 @@ func init() {
 
 // ReceiveData is a command to run a receiver pipeline for data channels.
 type ReceiveData struct {
-	localAddr    string
-	remoteAddr   string
-	qlog         bool
-	nadaFeedback bool
+	localAddr         string
+	remoteAddr        string
+	qlog              bool
+	nadaFeedback      bool
+	feedbackFlowID    uint
+	dataChannelFlowID uint
 }
 
 func (r *ReceiveData) Help() string {
@@ -37,11 +38,8 @@ func (r *ReceiveData) Exec(cmd string, args []string) error {
 	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
 	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
 	fs.BoolVar(&r.nadaFeedback, "nada-feedback", false, "Send NADA feedback")
-
-	flags.RegisterInto(fs, []flags.FlagName{
-		flags.NadaFeedbackFlowIDFlag,
-		flags.DataChannelFlowIDFlag,
-	}...)
+	fs.UintVar(&r.feedbackFlowID, "nada-feedback-flow-id", 4, "NADA Feedback Flow ID when using NADA or GCC with QUIC")
+	fs.UintVar(&r.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `%v
@@ -67,7 +65,7 @@ Flags:
 
 	if r.nadaFeedback {
 		feedbackDelta := time.Duration(20 * time.Millisecond)
-		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(flags.NadaFeedbackFlowID)))
+		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(r.feedbackFlowID)))
 	}
 
 	if r.qlog {
@@ -102,7 +100,7 @@ Flags:
 }
 
 func (r *ReceiveData) startDataChannelReceiver(dcTransport *datachannels.Transport) error {
-	receiver, err := dcTransport.AddDataChannelReceiver(uint64(flags.DataChannelFlowID))
+	receiver, err := dcTransport.AddDataChannelReceiver(uint64(r.dataChannelFlowID))
 	if err != nil {
 		return err
 	}
