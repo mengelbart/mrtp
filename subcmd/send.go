@@ -99,6 +99,8 @@ type Send struct {
 	dataChannelFlowID uint
 	udpPort           uint
 	rtpFlowID         uint
+	rtcpSendPort      uint
+	rtcpRecvPort      uint
 }
 
 func (s *Send) Help() string {
@@ -127,10 +129,10 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.UintVar(&s.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 	fs.UintVar(&s.udpPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
 	fs.UintVar(&s.rtpFlowID, "rtp-flow-id", 0, "RTP Flow ID when using RTP over QUIC")
+	fs.UintVar(&s.rtcpSendPort, "rtcp-send-porto", 5001, "UDP port for outgoing RTCP stream")
+	fs.UintVar(&s.rtcpRecvPort, "rtcp-recv-porto", 5002, "UDP port for incoming RTCP stream")
 
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.RTCPSendPortFlag,
-		flags.RTCPRecvPortFlag,
 		flags.RTCPRecvFlowIDFlag,
 		flags.RTCPSendFlowIDFlag,
 	}...)
@@ -204,8 +206,8 @@ Flags:
 	}
 
 	for _, p := range []uint{
-		flags.RTCPRecvPort,
-		flags.RTCPSendPort,
+		s.rtcpRecvPort,
+		s.rtcpSendPort,
 		s.udpPort,
 	} {
 		if p > math.MaxUint32 {
@@ -362,7 +364,7 @@ Flags:
 			return err
 		}
 
-		rtcpSink, err := gstreamer.NewUDPSink(s.remoteAddr, uint32(flags.RTCPSendPort))
+		rtcpSink, err := gstreamer.NewUDPSink(s.remoteAddr, uint32(s.rtcpSendPort))
 		if err != nil {
 			return err
 		}
@@ -370,7 +372,7 @@ Flags:
 			return err
 		}
 
-		rtcpSrc, err := gstreamer.NewUDPSrc(s.localAddr, uint32(flags.RTCPRecvPort))
+		rtcpSrc, err := gstreamer.NewUDPSrc(s.localAddr, uint32(s.rtcpRecvPort))
 		if err != nil {
 			return err
 		}
