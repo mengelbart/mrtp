@@ -79,14 +79,17 @@ var (
 )
 
 type Send struct {
-	localAddr  string
-	remoteAddr string
-	roqMapping uint
-	roqServer  bool
-	roqClient  bool
-	qlog       bool
-	quicPacer  uint
-	quicCC     uint
+	localAddr     string
+	remoteAddr    string
+	roqMapping    uint
+	roqServer     bool
+	roqClient     bool
+	qlog          bool
+	quicPacer     uint
+	quicCC        uint
+	nada          bool
+	gcc           bool
+	maxTargetRate uint
 }
 
 func (s *Send) Help() string {
@@ -103,6 +106,9 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
 	fs.UintVar(&s.quicPacer, "quic-pacer", 0, "Which quic pacer to use. 0: default, 1: rate based pacer")
 	fs.UintVar(&s.quicCC, "quic-cc", 0, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer")
+	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
+	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
+	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
@@ -112,9 +118,6 @@ func (s *Send) Exec(cmd string, args []string) error {
 		flags.RTCPRecvFlowIDFlag,
 		flags.RTCPSendFlowIDFlag,
 		flags.TraceRTPSendFlag,
-		flags.CCgccFlag,
-		flags.CCnadaFlag,
-		flags.MaxTragetRateFlag,
 		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
@@ -161,13 +164,13 @@ Flags:
 		os.Exit(1)
 	}
 
-	if (flags.CCnada || flags.CCgcc || s.quicCC != 0 || s.quicPacer != 0 || s.qlog || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
-		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v, -%v and -%v are only valid for RoQ\n", flags.CCnadaFlag, flags.CCgccFlag, s.quicCC, s.qlog, s.roqMapping)
+	if (s.nada || s.gcc || s.quicCC != 0 || s.quicPacer != 0 || s.qlog || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
+		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v, -%v and -%v are only valid for RoQ\n", "nada", "pion-gcc", s.quicCC, s.qlog, s.roqMapping)
 		fs.Usage()
 		os.Exit(1)
 	}
 
-	if s.quicPacer == 1 && (!flags.CCnada && !flags.CCgcc) {
+	if s.quicPacer == 1 && (!s.nada && !s.gcc) {
 		fmt.Fprintf(os.Stderr, "Flag -%v can only be used with NADA or GCC\n", s.quicPacer)
 		fs.Usage()
 		os.Exit(1)
@@ -211,7 +214,7 @@ Flags:
 
 	rtpBinOpts := []gstreamer.RTPBinOption{}
 	if gstSCReAM {
-		rtpBinOpts = append(rtpBinOpts, gstreamer.EnableSCReAM(750, 250, flags.MaxTargetRate/1000))
+		rtpBinOpts = append(rtpBinOpts, gstreamer.EnableSCReAM(750, 250, s.maxTargetRate/1000))
 	}
 
 	sender, err := gstreamer.NewRTPBin(rtpBinOpts...)
@@ -233,13 +236,13 @@ Flags:
 			quictransport.WithPacer(int(s.quicPacer)),
 		}
 
-		if flags.CCnada {
+		if s.nada {
 			feedbackDelta := uint64(20)
-			quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 250_000, flags.MaxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
+			quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 250_000, s.maxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
 		}
 
-		if flags.CCgcc {
-			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
+		if s.gcc {
+			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(s.maxTargetRate), uint64(flags.NadaFeedbackFlowID)))
 		}
 		if s.qlog {
 			quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))

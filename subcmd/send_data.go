@@ -27,10 +27,13 @@ func init() {
 
 // SendData is a command to run a receiver pipeline for data channels.
 type SendData struct {
-	localAddr  string
-	remoteAddr string
-	qlog       bool
-	quicCC     uint
+	localAddr     string
+	remoteAddr    string
+	qlog          bool
+	quicCC        uint
+	nada          bool
+	gcc           bool
+	maxTargetRate uint
 }
 
 func (s *SendData) Help() string {
@@ -43,11 +46,11 @@ func (s *SendData) Exec(cmd string, args []string) error {
 	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
 	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
 	fs.UintVar(&s.quicCC, "quic-cc", 0, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer")
+	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
+	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
+	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
 
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.CCnadaFlag,
-		flags.CCgccFlag,
-		flags.MaxTragetRateFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
 	}...)
@@ -68,7 +71,7 @@ Flags:
 	}
 	fs.Parse(args)
 
-	if (flags.CCnada || flags.CCgcc) && rateLimit > 0 {
+	if (s.nada || s.gcc) && rateLimit > 0 {
 		return fmt.Errorf("cannot use fixed rate limit with NADA or GCC")
 	}
 
@@ -82,13 +85,13 @@ Flags:
 		quictransport.SetRemoteAddress(s.remoteAddr, 8080),
 	}
 
-	if flags.CCnada {
+	if s.nada {
 		feedbackDelta := uint64(20)
-		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, flags.MaxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
+		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, s.maxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
 	}
 
-	if flags.CCgcc {
-		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(flags.MaxTargetRate), uint64(flags.NadaFeedbackFlowID)))
+	if s.gcc {
+		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(s.maxTargetRate), uint64(flags.NadaFeedbackFlowID)))
 	}
 
 	if s.qlog {
@@ -127,7 +130,7 @@ Flags:
 
 	go source.Run(ctx)
 
-	if flags.CCgcc || flags.CCnada {
+	if s.gcc || s.nada {
 		// rate is controlled by cc
 		quicConn.SetSourceTargetRate = func(ratebps uint) error {
 			// log "combined" target rate even if we do not split it. Makes plotting easier
