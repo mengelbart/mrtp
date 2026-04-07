@@ -12,7 +12,6 @@ import (
 
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
-	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/quic-go/quic-go"
 )
@@ -27,13 +26,15 @@ func init() {
 
 // SendData is a command to run a receiver pipeline for data channels.
 type SendData struct {
-	localAddr     string
-	remoteAddr    string
-	qlog          bool
-	quicCC        uint
-	nada          bool
-	gcc           bool
-	maxTargetRate uint
+	localAddr         string
+	remoteAddr        string
+	qlog              bool
+	quicCC            uint
+	nada              bool
+	gcc               bool
+	maxTargetRate     uint
+	feedbackFlowID    uint
+	dataChannelFlowID uint
 }
 
 func (s *SendData) Help() string {
@@ -49,11 +50,8 @@ func (s *SendData) Exec(cmd string, args []string) error {
 	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
 	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
-
-	flags.RegisterInto(fs, []flags.FlagName{
-		flags.NadaFeedbackFlowIDFlag,
-		flags.DataChannelFlowIDFlag,
-	}...)
+	fs.UintVar(&s.feedbackFlowID, "nada-feedback-flow-id", 4, "NADA Feedback Flow ID when using NADA or GCC with QUIC")
+	fs.UintVar(&s.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 
 	sourceFile := fs.String("source-file", "", "File to be sent. If empty, random data will be sent.")
 	fs.UintVar(&rateLimit, "fixed-rate-limit", 0, "Rate limit in bits per second. 0 means no limit.")
@@ -87,11 +85,11 @@ Flags:
 
 	if s.nada {
 		feedbackDelta := uint64(20)
-		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, s.maxTargetRate, uint(feedbackDelta), uint64(flags.NadaFeedbackFlowID)))
+		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, s.maxTargetRate, uint(feedbackDelta), uint64(s.feedbackFlowID)))
 	}
 
 	if s.gcc {
-		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(s.maxTargetRate), uint64(flags.NadaFeedbackFlowID)))
+		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(s.maxTargetRate), uint64(s.feedbackFlowID)))
 	}
 
 	if s.qlog {
@@ -118,7 +116,7 @@ Flags:
 	quicConn.StartHandlers()
 
 	// blocks until we get OpenChannelOk
-	sender, err := dcTransport.NewDataChannelSender(uint64(flags.DataChannelFlowID), 0, true)
+	sender, err := dcTransport.NewDataChannelSender(uint64(s.dataChannelFlowID), 0, true)
 	if err != nil {
 		return err
 	}
