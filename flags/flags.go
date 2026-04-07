@@ -27,11 +27,6 @@ const (
 	RTCPSendFlowIDFlag     FlagName = "rtcp-send-flow-id"
 	DataChannelFlowIDFlag  FlagName = "dc-flow-id"
 	NadaFeedbackFlowIDFlag FlagName = "nada-feedback-flow-id"
-
-	DataChannelFlag           FlagName = "dc"
-	DataChannelFileFlag       FlagName = "dc-source"
-	DataChannelStartDelayFlag FlagName = "dc-start-delay"
-	DataChannelChunkFlag      FlagName = "dc-chunks"
 )
 
 // Flag vars
@@ -47,11 +42,6 @@ var (
 	RTCPSendFlowID     = uint(2)
 	DataChannelFlowID  = uint(3)
 	NadaFeedbackFlowID = uint(4)
-
-	DataChannel  = false
-	DcSourceFile = ""
-	DcStartDelay = uint(0)
-	DcChunks     = false
 )
 
 type flagVar func(*flag.FlagSet)
@@ -85,12 +75,6 @@ var flags = map[FlagName]flagVar{
 	RTCPSendFlowIDFlag:     uintVar(&RTCPSendFlowID, RTCPSendFlowIDFlag, &RTCPSendFlowID, "RTP Flow ID when using RTP over QUIC"),
 	DataChannelFlowIDFlag:  uintVar(&DataChannelFlowID, DataChannelFlowIDFlag, &DataChannelFlowID, "Data Channel Flow ID when using quic data channels"),
 	NadaFeedbackFlowIDFlag: uintVar(&NadaFeedbackFlowID, NadaFeedbackFlowIDFlag, &NadaFeedbackFlowID, "NADA Feedback Flow ID when using NADA or GCC with QUIC"),
-
-	// Data Channel Flags
-	DataChannelFlag:           boolVar(&DataChannel, DataChannelFlag, &DataChannel, "Send/Receive data with data channels"),
-	DataChannelFileFlag:       stringVar(&DcSourceFile, DataChannelFileFlag, &DcSourceFile, "File to be sent. If empty, random data will be sent."),
-	DataChannelStartDelayFlag: uintVar(&DcStartDelay, DataChannelStartDelayFlag, &DcStartDelay, "Start delay in seconds before data channel source starts sending data."),
-	DataChannelChunkFlag:      boolVar(&DcChunks, DataChannelChunkFlag, &DcChunks, "Send chunks on datachannel"),
 }
 
 func RegisterInto(fs *flag.FlagSet, names ...FlagName) {

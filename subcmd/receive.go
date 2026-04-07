@@ -82,6 +82,7 @@ type Receive struct {
 	qlog         bool
 	nadaFeedback bool
 	traceRTP     bool
+	datachannel  bool
 }
 
 func (r *Receive) Help() string {
@@ -99,6 +100,7 @@ func (r *Receive) Exec(cmd string, args []string) error {
 	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
 	fs.BoolVar(&r.nadaFeedback, "nada-feedback", false, "Send NADA feedback")
 	fs.BoolVar(&r.traceRTP, "trace-rtp-recv", false, "Log incoming RTP packets")
+	fs.BoolVar(&r.datachannel, "dc", false, "Send/Receive data with data channels")
 
 	// swap default values
 	flags.SwapRTCPDefaults()
@@ -110,7 +112,6 @@ func (r *Receive) Exec(cmd string, args []string) error {
 		flags.RTPFlowIDFlag,
 		flags.RTCPRecvFlowIDFlag,
 		flags.RTCPSendFlowIDFlag,
-		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
 	}...)
@@ -144,8 +145,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if (flags.DataChannel || r.qlog || r.nadaFeedback || r.roqMapping != 0) && !(r.roqServer || r.roqClient) {
-		fmt.Fprintf(os.Stderr, "Flag -%v, -%v, -%v and -%v only valid for RoQ\n", flags.DataChannelFlag, r.qlog, "nada-feedback", "roq-mapping")
+	if (r.datachannel || r.qlog || r.nadaFeedback || r.roqMapping != 0) && !(r.roqServer || r.roqClient) {
+		fmt.Fprintf(os.Stderr, "Flag -%v, -%v, -%v and -%v only valid for RoQ\n", "dc", r.qlog, "nada-feedback", "roq-mapping")
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -227,7 +228,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 			return
 		}
 
-		if flags.DataChannel {
+		if r.datachannel {
 			dcTransport.ReadStream(context.Background(), rs, flowID)
 			return
 		}
@@ -238,9 +239,9 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 	// start handler
 	quicConn.StartHandlers()
 
-	if flags.DataChannel {
+	if r.datachannel {
 		// setup data channel receiver
-		// quic tranpsorts has to be started before
+		// quic transports has to be started before
 		dcReceiver, err := dcTransport.AddDataChannelReceiver(uint64(flags.DataChannelFlowID))
 		if err != nil {
 			return err

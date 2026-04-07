@@ -32,6 +32,7 @@ type ReceiveGo struct {
 	qlog         bool
 	nadaFeedback bool
 	traceRTP     bool
+	datachannel  bool
 
 	receiver *gstreamer.RTPBin
 	sink     gstreamer.RTPSinkBin
@@ -50,11 +51,11 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
 	fs.BoolVar(&r.nadaFeedback, "nada-feedback", false, "Send NADA feedback")
 	fs.BoolVar(&r.traceRTP, "trace-rtp-recv", false, "Log incoming RTP packets")
+	fs.BoolVar(&r.datachannel, "dc", false, "Send/Receive data with data channels")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
 		flags.RTPFlowIDFlag,
-		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
 	}...)
@@ -121,7 +122,7 @@ Flags:
 			return
 		}
 
-		if flags.DataChannel {
+		if r.datachannel {
 			dcTransport.ReadStream(context.Background(), rs, flowID)
 			return
 		}
@@ -132,9 +133,9 @@ Flags:
 	// start handler
 	quicConn.StartHandlers()
 
-	if flags.DataChannel {
+	if r.datachannel {
 		// setup data channel receiver
-		// quic tranpsorts has to be started before
+		// quic transports has to be started before
 		dcReceiver, err := dcTransport.AddDataChannelReceiver(uint64(flags.DataChannelFlowID))
 		if err != nil {
 			return err
