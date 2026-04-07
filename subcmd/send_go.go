@@ -42,6 +42,7 @@ type SendGo struct {
 	nada           bool
 	gcc            bool
 	maxTargetRate  uint
+	traceRTP       bool
 }
 
 // Exec implements cmdmain.SubCmd.
@@ -59,11 +60,11 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
 	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
+	fs.BoolVar(&s.traceRTP, "trace-rtp-send", false, "Log outgoing RTP packets")
 
 	flags.RegisterInto(fs, []flags.FlagName{
 		flags.RTPPortFlag,
 		flags.RTPFlowIDFlag,
-		flags.TraceRTPSendFlag,
 		flags.DataChannelFlag,
 		flags.NadaFeedbackFlowIDFlag,
 		flags.DataChannelFlowIDFlag,
@@ -193,7 +194,7 @@ Flags:
 		go dataSource.Run(ctx)
 	}
 
-	rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendMode(s.roqMapping), flags.TraceRTPSend)
+	rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendMode(s.roqMapping), s.traceRTP)
 	if err != nil {
 		return err
 	}

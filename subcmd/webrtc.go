@@ -42,12 +42,14 @@ type WebRTCCodecParameters struct {
 var WebRTCExtraCodecs = []WebRTCCodecParameters{}
 
 type WebRTC struct {
-	localAddr     string
-	remoteAddr    string
-	gstCCFB       bool
-	nada          bool
-	gcc           bool
-	maxTargetRate uint
+	localAddr        string
+	remoteAddr       string
+	gstCCFB          bool
+	nada             bool
+	gcc              bool
+	maxTargetRate    uint
+	traceOutgoingRTP bool
+	traceIncomingRTP bool
 }
 
 // Help implements cmdmain.SubCmd.
@@ -63,10 +65,10 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 	fs.BoolVar(&w.nada, "nada", false, "Enable NADA congestion control")
 	fs.BoolVar(&w.gcc, "pion-gcc", false, "Enable GCC congestion control")
 	fs.UintVar(&w.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
+	fs.BoolVar(&w.traceOutgoingRTP, "trace-rtp-send", false, "Log outgoing RTP packets")
+	fs.BoolVar(&w.traceIncomingRTP, "trace-rtp-recv", false, "Log incoming RTP packets")
 
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.TraceRTPRecvFlag,
-		flags.TraceRTPSendFlag,
 		flags.DataChannelFlag,
 		flags.DataChannelFileFlag,
 		flags.DataChannelStartDelayFlag,
@@ -134,10 +136,10 @@ Usage:
 		}),
 	}
 
-	if flags.TraceRTPRecv {
+	if w.traceIncomingRTP {
 		webrtcOptions = append(webrtcOptions, webrtc.EnableRTPRecvTraceLogging())
 	}
-	if flags.TraceRTPSend {
+	if w.traceOutgoingRTP {
 		webrtcOptions = append(webrtcOptions, webrtc.EnableRTPSendTraceLogging())
 	}
 	if pionCCFB {

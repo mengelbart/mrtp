@@ -28,9 +28,6 @@ const (
 	DataChannelFlowIDFlag  FlagName = "dc-flow-id"
 	NadaFeedbackFlowIDFlag FlagName = "nada-feedback-flow-id"
 
-	TraceRTPRecvFlag FlagName = "trace-rtp-recv"
-	TraceRTPSendFlag FlagName = "trace-rtp-send"
-
 	DataChannelFlag           FlagName = "dc"
 	DataChannelFileFlag       FlagName = "dc-source"
 	DataChannelStartDelayFlag FlagName = "dc-start-delay"
@@ -55,9 +52,6 @@ var (
 	DcSourceFile = ""
 	DcStartDelay = uint(0)
 	DcChunks     = false
-
-	TraceRTPRecv = false
-	TraceRTPSend = false
 )
 
 type flagVar func(*flag.FlagSet)
@@ -97,10 +91,6 @@ var flags = map[FlagName]flagVar{
 	DataChannelFileFlag:       stringVar(&DcSourceFile, DataChannelFileFlag, &DcSourceFile, "File to be sent. If empty, random data will be sent."),
 	DataChannelStartDelayFlag: uintVar(&DcStartDelay, DataChannelStartDelayFlag, &DcStartDelay, "Start delay in seconds before data channel source starts sending data."),
 	DataChannelChunkFlag:      boolVar(&DcChunks, DataChannelChunkFlag, &DcChunks, "Send chunks on datachannel"),
-
-	// tracing flags
-	TraceRTPRecvFlag: boolVar(&TraceRTPRecv, TraceRTPRecvFlag, &TraceRTPRecv, "Log incoming RTP packets"),
-	TraceRTPSendFlag: boolVar(&TraceRTPSend, TraceRTPSendFlag, &TraceRTPSend, "Log outgoing RTP packets"),
 }
 
 func RegisterInto(fs *flag.FlagSet, names ...FlagName) {
