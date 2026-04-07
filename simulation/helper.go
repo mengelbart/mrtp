@@ -12,6 +12,8 @@ import (
 
 const (
 	rtpFlowID          = 0
+	rtcpRecvFlowID     = 1
+	rtcpSendFlowID     = 2
 	dataChannelFlowID  = 3
 	nadaFeedbackFlowID = 4
 )

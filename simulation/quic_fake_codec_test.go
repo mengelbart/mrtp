@@ -11,7 +11,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/mengelbart/mrtp/flags"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/internal/quictransport"
@@ -119,7 +118,7 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(rtpFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
+		if flowID == uint64(rtpFlowID) || flowID == uint64(rtcpRecvFlowID) || flowID == uint64(rtcpSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
 		}
@@ -199,7 +198,7 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(rtpFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
+		if flowID == uint64(rtpFlowID) || flowID == uint64(rtcpRecvFlowID) || flowID == uint64(rtcpSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
 		}
