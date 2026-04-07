@@ -119,7 +119,7 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(flags.RTPFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
+		if flowID == uint64(rtpFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
 		}
@@ -128,7 +128,7 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 	}
 	quicConn.StartHandlers()
 
-	rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendModeSingleStream, false)
+	rtpSink, err := roqTransport.NewSendFlow(uint64(rtpFlowID), roq.SendModeSingleStream, false)
 	if err != nil {
 		return err
 	}
@@ -199,7 +199,7 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(flags.RTPFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
+		if flowID == uint64(rtpFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
 		}
@@ -210,7 +210,7 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	// start handler
 	quicConn.StartHandlers()
 
-	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPFlowID), false)
+	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(rtpFlowID), false)
 	if err != nil {
 		return err
 	}

@@ -18,11 +18,9 @@ type FlagName string
 
 // flag keys
 const (
-	RTPPortFlag      FlagName = "rtp-port"
 	RTCPRecvPortFlag FlagName = "rtcp-recv-porto"
 	RTCPSendPortFlag FlagName = "rtcp-send-porto"
 
-	RTPFlowIDFlag      FlagName = "rtp-flow-id"
 	RTCPRecvFlowIDFlag FlagName = "rtcp-recv-flow-id"
 	RTCPSendFlowIDFlag FlagName = "rtcp-send-flow-id"
 )
@@ -30,12 +28,10 @@ const (
 // Flag vars
 var (
 	// RTP Receive Port
-	RTPPort      = uint(5000)
 	RTCPSendPort = uint(5001)
 	RTCPRecvPort = uint(5002)
 
 	// Flow IDs for RoQ and datachannels
-	RTPFlowID      = uint(0)
 	RTCPRecvFlowID = uint(1)
 	RTCPSendFlowID = uint(2)
 )
@@ -49,12 +45,10 @@ func uintVar(p *uint, name FlagName, defaultValue *uint, usage string) func(*fla
 }
 
 var flags = map[FlagName]flagVar{
-	RTPPortFlag:      uintVar(&RTPPort, RTPPortFlag, &RTPPort, "UDP Port number for outgoing RTP stream"),
 	RTCPRecvPortFlag: uintVar(&RTCPRecvPort, RTCPRecvPortFlag, &RTCPRecvPort, "UDP port for incoming RTCP stream"),
 	RTCPSendPortFlag: uintVar(&RTCPSendPort, RTCPSendPortFlag, &RTCPSendPort, "UDP port for outgoing RTCP stream"),
 
 	// flow ID flags
-	RTPFlowIDFlag:      uintVar(&RTPFlowID, RTPFlowIDFlag, &RTPFlowID, "RTP Flow ID when using RTP over QUIC"),
 	RTCPRecvFlowIDFlag: uintVar(&RTCPRecvFlowID, RTCPRecvFlowIDFlag, &RTCPRecvFlowID, "RTP Flow ID when using RTP over QUIC"),
 	RTCPSendFlowIDFlag: uintVar(&RTCPSendFlowID, RTCPSendFlowIDFlag, &RTCPSendFlowID, "RTP Flow ID when using RTP over QUIC"),
 }

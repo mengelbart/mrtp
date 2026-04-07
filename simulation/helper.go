@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	nadaFeedbackFlowID = 4
+	rtpFlowID          = 0
 	dataChannelFlowID  = 3
+	nadaFeedbackFlowID = 4
 )
 
 type pathFactory func() []netsim.Node

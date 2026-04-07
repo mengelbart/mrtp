@@ -49,6 +49,8 @@ type SendGo struct {
 	dcChunks          bool
 	feedbackFlowID    uint
 	dataChannelFlowID uint
+	udpPort           uint
+	rtpFlowID         uint
 }
 
 // Exec implements cmdmain.SubCmd.
@@ -73,12 +75,8 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs.BoolVar(&s.dcChunks, "dc-chunks", false, "Send chunks on datachannel")
 	fs.UintVar(&s.feedbackFlowID, "nada-feedback-flow-id", 4, "NADA Feedback Flow ID when using NADA or GCC with QUIC")
 	fs.UintVar(&s.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
-
-	flags.RegisterInto(fs, []flags.FlagName{
-		flags.RTPPortFlag,
-		flags.RTPFlowIDFlag,
-	}...)
-
+	fs.UintVar(&s.udpPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
+	fs.UintVar(&s.rtpFlowID, "rtp-flow-id", 0, "RTP Flow ID when using RTP over QUIC")
 	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
 
 	fs.Usage = func() {
@@ -135,8 +133,8 @@ Flags:
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(s.roqServer)),
 		quictransport.SetQuicCC(int(s.quicCC)),
-		quictransport.SetLocalAddress(s.localAddr, flags.RTPPort), // TODO: which port to use?
-		quictransport.SetRemoteAddress(s.remoteAddr, flags.RTPPort),
+		quictransport.SetLocalAddress(s.localAddr, s.udpPort),
+		quictransport.SetRemoteAddress(s.remoteAddr, s.udpPort),
 		quictransport.WithPacer(int(s.quicPacer)),
 	}
 
@@ -171,7 +169,7 @@ Flags:
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(flags.RTPFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
+		if flowID == uint64(s.rtpFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
 		}
@@ -200,7 +198,7 @@ Flags:
 		go dataSource.Run(ctx)
 	}
 
-	rtpSink, err := roqTransport.NewSendFlow(uint64(flags.RTPFlowID), roq.SendMode(s.roqMapping), s.traceRTP)
+	rtpSink, err := roqTransport.NewSendFlow(uint64(s.rtpFlowID), roq.SendMode(s.roqMapping), s.traceRTP)
 	if err != nil {
 		return err
 	}

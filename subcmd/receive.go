@@ -85,6 +85,8 @@ type Receive struct {
 	datachannel       bool
 	feedbackFlowID    uint
 	dataChannelFlowID uint
+	udpPort           uint
+	rtpFlowID         uint
 }
 
 func (r *Receive) Help() string {
@@ -105,15 +107,15 @@ func (r *Receive) Exec(cmd string, args []string) error {
 	fs.BoolVar(&r.datachannel, "dc", false, "Send/Receive data with data channels")
 	fs.UintVar(&r.feedbackFlowID, "nada-feedback-flow-id", 4, "NADA Feedback Flow ID when using NADA or GCC with QUIC")
 	fs.UintVar(&r.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
+	fs.UintVar(&r.udpPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
+	fs.UintVar(&r.rtpFlowID, "rtp-flow-id", 0, "RTP Flow ID when using RTP over QUIC")
 
 	// swap default values
 	flags.SwapRTCPDefaults()
 
 	flags.RegisterInto(fs, []flags.FlagName{
-		flags.RTPPortFlag,
 		flags.RTCPSendPortFlag,
 		flags.RTCPRecvPortFlag,
-		flags.RTPFlowIDFlag,
 		flags.RTCPRecvFlowIDFlag,
 		flags.RTCPSendFlowIDFlag,
 	}...)
@@ -159,7 +161,7 @@ Flags:
 	for _, p := range []uint{
 		flags.RTCPRecvPort,
 		flags.RTCPSendPort,
-		flags.RTPPort,
+		r.udpPort,
 	} {
 		if p > math.MaxUint32 {
 			return fmt.Errorf("invalid port number: %v", p)
@@ -194,8 +196,8 @@ Flags:
 func (r *Receive) setupRoQ(ctx context.Context) error {
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(r.roqServer)),
-		quictransport.SetLocalAddress(r.localAddr, flags.RTPPort), // TODO: which port to use?
-		quictransport.SetRemoteAddress(r.remoteAddr, flags.RTPPort),
+		quictransport.SetLocalAddress(r.localAddr, r.udpPort),
+		quictransport.SetRemoteAddress(r.remoteAddr, r.udpPort),
 	}
 
 	if r.nadaFeedback {
@@ -225,7 +227,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 		roqTransport.HandleDatagram(dgram)
 	}
 	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(flags.RTPFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
+		if flowID == uint64(r.rtpFlowID) || flowID == uint64(flags.RTCPRecvFlowID) || flowID == uint64(flags.RTCPSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
 		}
@@ -257,7 +259,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 		go dataSink.Run()
 	}
 
-	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(flags.RTPFlowID), r.traceRTP)
+	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(r.rtpFlowID), r.traceRTP)
 	if err != nil {
 		return err
 	}
@@ -289,7 +291,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 func (r *Receive) setupUDP() error {
 	rtpSrc, err := gstreamer.NewUDPSrc(
 		r.localAddr,
-		uint32(flags.RTPPort),
+		uint32(r.udpPort),
 		gstreamer.EnabelUDPSrcPadProbe(r.traceRTP),
 		gstreamer.SetReceiveBufferSize(UDPRecvBufferSize),
 	)
