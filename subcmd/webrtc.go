@@ -26,10 +26,6 @@ var (
 	pionReadCCFB   bool
 	sendVideoTrack bool
 	pacing         bool
-	datachannel    bool
-	dcSourceFile   string
-	dcStartDelay   uint
-	dcChunks       bool
 )
 
 func init() {
