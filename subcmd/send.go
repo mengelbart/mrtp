@@ -156,31 +156,31 @@ Flags:
 	defer cancel()
 
 	if s.quicCC > 2 {
-		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2.\n", s.quicCC)
+		fmt.Fprintf(os.Stderr, "Invalid -quic-cc value %v, must be 0, 1 or 2.\n", s.quicCC)
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if s.quicPacer > 1 {
-		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0 or 1.\n", s.quicPacer)
+		fmt.Fprintf(os.Stderr, "Invalid -quic-pacer value %v, must be 0 or 1.\n", s.quicPacer)
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if s.roqMapping > 2 {
-		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2.\n", s.roqMapping)
+		fmt.Fprintf(os.Stderr, "Invalid -roq-mapping value %v, must be 0, 1 or 2.\n", s.roqMapping)
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if (s.nada || s.gcc || s.quicCC != 0 || s.quicPacer != 0 || s.qlog || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
-		fmt.Fprintf(os.Stderr, "Flags -nada, -pion-gcc, -quic-cc, -quic-pacing, -log-quic and -roq-mapping are only valid for RoQ\n")
+		fmt.Fprintf(os.Stderr, "Flags -nada, -pion-gcc, -quic-cc, -quic-pacer, -log-quic and -roq-mapping are only valid for RoQ\n")
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if s.quicPacer == 1 && (!s.nada && !s.gcc) {
-		fmt.Fprintf(os.Stderr, "Flag -%v can only be used with NADA or GCC\n", s.quicPacer)
+		fmt.Fprintf(os.Stderr, "Flag -quic-pacer can only be used with NADA or GCC\n")
 		fs.Usage()
 		os.Exit(1)
 	}
