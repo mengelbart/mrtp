@@ -92,11 +92,9 @@ func TestQUICdc(t *testing.T) {
 func createSender(ctx context.Context, conn net.PacketConn) (*quictransport.Transport, error) {
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
-		quictransport.SetQuicCC(0), // reno
-		quictransport.WithPacer(1), // rate-bassed pacer
 		quictransport.SetRemoteAddress("10.0.0.1", 8080),
 		quictransport.SetNetConn(conn),
-		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20), uint64(nadaFeedbackFlowID)),
+		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20)),
 		quictransport.EnableQLogs("./sender.qlog"),
 	}
 
@@ -104,11 +102,9 @@ func createSender(ctx context.Context, conn net.PacketConn) (*quictransport.Tran
 }
 
 func createReceiver(ctx context.Context, conn net.PacketConn) (*quictransport.Transport, error) {
-	feedbackDelta := time.Duration(20 * time.Millisecond)
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleServer)),
 		quictransport.SetNetConn(conn),
-		quictransport.EnableNADAfeedback(feedbackDelta, uint64(nadaFeedbackFlowID)),
 		quictransport.EnableQLogs("./receiver.qlog"),
 	}
 

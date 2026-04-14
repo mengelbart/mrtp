@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
@@ -23,8 +22,6 @@ type ReceiveData struct {
 	localAddr         string
 	remoteAddr        string
 	qlog              bool
-	nadaFeedback      bool
-	feedbackFlowID    uint
 	dataChannelFlowID uint
 }
 
@@ -37,8 +34,6 @@ func (r *ReceiveData) Exec(cmd string, args []string) error {
 	fs.StringVar(&r.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
 	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
-	fs.BoolVar(&r.nadaFeedback, "nada-feedback", false, "Send NADA feedback")
-	fs.UintVar(&r.feedbackFlowID, "nada-feedback-flow-id", 4, "NADA Feedback Flow ID when using NADA or GCC with QUIC")
 	fs.UintVar(&r.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 
 	fs.Usage = func() {
@@ -61,11 +56,6 @@ Flags:
 		quictransport.WithRole(quictransport.Role(quictransport.RoleServer)),
 		quictransport.SetLocalAddress(r.localAddr, 8080),
 		quictransport.SetRemoteAddress(r.remoteAddr, 8080),
-	}
-
-	if r.nadaFeedback {
-		feedbackDelta := time.Duration(20 * time.Millisecond)
-		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(r.feedbackFlowID)))
 	}
 
 	if r.qlog {

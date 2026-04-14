@@ -114,11 +114,9 @@ func TestQUICh264(t *testing.T) {
 func createH264Sender(ctx context.Context, conn net.PacketConn) (*quictransport.Transport, error) {
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
-		quictransport.SetQuicCC(0), // reno
-		quictransport.WithPacer(1), // rate-bassed pacer
 		quictransport.SetRemoteAddress("10.0.0.1", 8080),
 		quictransport.SetNetConn(conn),
-		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20), uint64(nadaFeedbackFlowID)),
+		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20)),
 		quictransport.EnableQLogs("./sender.qlog"),
 	}
 

@@ -24,29 +24,26 @@ type Option func(*Transport) error
 // Opens a quic datachannel connection over it for the feedback.
 // Only works with application data that use quicdc or roq format.
 type Transport struct {
-	ctx                   context.Context
-	netConn               net.PacketConn
-	quicTransport         *quic.Transport
-	quicConn              *quic.Conn
-	role                  Role
-	localAddress          string
-	remoteAddress         string
-	feedbackChannelFlowID uint64
+	ctx           context.Context
+	netConn       net.PacketConn
+	quicTransport *quic.Transport
+	quicConn      *quic.Conn
+	role          Role
+	localAddress  string
+	remoteAddress string
 
 	running atomic.Bool
 
 	dcTransport *datachannels.Transport
 
-	nada          *nada.SenderOnly
-	bwe           *gcc.SendSideController
-	feedbackDelta time.Duration
+	nada *nada.SenderOnly
+	bwe  *gcc.SendSideController
 
 	lastRTT         *RTT
 	lostPackets     chan nada.Acknowledgment
 	sentPackets     sync.Map
 	receivedPackets chan nada.Acknowledgment
 
-	sendNadaFeedback bool
 	// quicCC           quic.CCType
 	// pacerType        quic.PacerType
 	qlogFile string
@@ -56,10 +53,8 @@ type Transport struct {
 	HandleDatagram      func(flowID uint64, datagram []byte)
 }
 
-func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint, feedbackChannelFlowID uint64) Option {
+func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint) Option {
 	return func(t *Transport) error {
-		t.feedbackChannelFlowID = feedbackChannelFlowID
-
 		nadaConfig := nada.Config{
 			MinRate:                  uint64(minRate),
 			MaxRate:                  uint64(maxRate),
@@ -76,13 +71,12 @@ func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint, feedback
 	}
 }
 
-func EnableGCC(initRate, minRate, maxRate int, feedbackChannelFlowID uint64) Option {
+func EnableGCC(initRate, minRate, maxRate int) Option {
 	return func(t *Transport) error {
 		// TODO: add pion logger
 		var err error
 		t.bwe, err = gcc.NewSendSideController(initRate, minRate, maxRate)
 		t.lostPackets = make(chan nada.Acknowledgment, 1000)
-		t.feedbackChannelFlowID = feedbackChannelFlowID
 		return err
 	}
 }
@@ -97,27 +91,6 @@ func WithRole(r Role) Option {
 func SetNetConn(net net.PacketConn) Option {
 	return func(t *Transport) error {
 		t.netConn = net
-		return nil
-	}
-}
-
-func SetQuicCC(quicCC int) Option {
-	return func(t *Transport) error {
-		if quicCC < 0 || quicCC > 2 {
-			return errors.New("invalid quic CC value, must be 0, 1 or 2")
-		}
-
-		// t.quicCC = quic.CCType(quicCC)
-		return nil
-	}
-}
-
-func EnableNADAfeedback(feedbackDelta time.Duration, feedbackChannelFlowID uint64) Option {
-	return func(t *Transport) error {
-		t.feedbackChannelFlowID = feedbackChannelFlowID
-		t.sendNadaFeedback = true
-		t.receivedPackets = make(chan nada.Acknowledgment, 1000)
-		t.feedbackDelta = feedbackDelta
 		return nil
 	}
 }
@@ -139,17 +112,6 @@ func SetRemoteAddress(address string, port uint) Option {
 func EnableQLogs(qlogFile string) Option {
 	return func(t *Transport) error {
 		t.qlogFile = qlogFile
-		return nil
-	}
-}
-
-func WithPacer(pacerType int) Option {
-	return func(t *Transport) error {
-		if pacerType < 0 || pacerType > 1 {
-			return errors.New("invalid quic pacer value, must be 0 or 1")
-		}
-
-		// t.pacerType = quic.PacerType(pacerType)
 		return nil
 	}
 }
@@ -182,15 +144,6 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 	addSentPacket := func(ack nada.Acknowledgment) {
 		t.sentPackets.Store(ack.SeqNr, ack)
 	}
-	addReceivedPacket := func(ack nada.Acknowledgment) {
-		select {
-		case t.receivedPackets <- ack:
-			// Successfully added
-		default:
-			// quic-go drops the packet if tracer takes too long: "dos_prevention"
-			slog.Info("quictransport packet dropped", "reason", "tracer buffered channel full")
-		}
-	}
 
 	if t.role == RoleServer {
 		quicConfig := &quic.Config{
@@ -204,9 +157,6 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 			Tracer: func(ctx context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
 				if t.nada != nil || t.bwe != nil {
 					return senderTracers(ctx, isClient, connID, addLostPacket, addSentPacket, t.lastRTT, t.qlogFile)
-				}
-				if t.sendNadaFeedback {
-					return receiveTracer(ctx, isClient, connID, addReceivedPacket, t.qlogFile)
 				}
 				return createQlogTracer(ctx, isClient, connID, t.qlogFile)
 			},
@@ -234,9 +184,6 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 				if t.nada != nil || t.bwe != nil {
 					return senderTracers(ctx, isClient, connID, addLostPacket, addSentPacket, t.lastRTT, t.qlogFile)
 				}
-				if t.sendNadaFeedback {
-					return receiveTracer(ctx, isClient, connID, addReceivedPacket, t.qlogFile)
-				}
 				return createQlogTracer(ctx, isClient, connID, t.qlogFile)
 			},
 		}
@@ -257,14 +204,6 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 	// open datachannel connection for feedback
 	if err := t.openDataChannelConn(); err != nil {
 		return nil, err
-	}
-
-	if t.nada != nil || t.bwe != nil {
-		go t.feedbackReceiver()
-	}
-
-	if t.sendNadaFeedback {
-		go t.sendFeedback()
 	}
 
 	return t, nil
@@ -301,8 +240,6 @@ func (t *Transport) GetQuicDataChannel() *datachannels.Transport {
 }
 
 func (t *Transport) receiveUniStreams() {
-	haveFeedbackChannel := t.nada != nil || t.bwe != nil || t.sendNadaFeedback
-
 	for t.running.Load() {
 		rs, err := t.quicConn.AcceptUniStream(t.ctx)
 		if err != nil {
@@ -320,16 +257,6 @@ func (t *Transport) receiveUniStreams() {
 				continue
 			}
 			panic(err)
-		}
-
-		if haveFeedbackChannel && flowID == t.feedbackChannelFlowID {
-			// register feedback channel with dc transport
-			err := t.dcTransport.ReadStream(t.ctx, rs, flowID)
-			if err != nil {
-				panic(err)
-			}
-
-			continue
 		}
 
 		go func() {
@@ -368,126 +295,4 @@ func (t *Transport) openDataChannelConn() error {
 	}
 
 	return nil
-}
-
-// sendFeedback regularly sends the nada/gcc feedback.
-// Splits it into several datagrams if the size is too large.
-func (t *Transport) sendFeedback() {
-	const maxEventsPerDatagram = 100
-
-	sendFlow, err := t.dcTransport.NewDataChannelSender(t.feedbackChannelFlowID, 0, false)
-	if err != nil {
-		slog.Error("Error in sendFeedback:", "error", err)
-		return
-	}
-
-	ticker := time.NewTicker(t.feedbackDelta)
-	defer ticker.Stop()
-
-	for t.running.Load() {
-		select {
-		case <-t.ctx.Done():
-			return
-		case <-ticker.C:
-		}
-		lenChan := len(t.receivedPackets)
-
-		// If small enough, send as-is
-		if lenChan <= maxEventsPerDatagram {
-			data, err := Marshal(t.receivedPackets, lenChan)
-			if err != nil {
-				panic(err)
-			}
-			_, err = sendFlow.Write(data)
-			if err != nil {
-				slog.Error("Error in sendFeedback:", "error", err)
-				return
-			}
-
-			continue
-		}
-
-		// Split into batches
-		for i := 0; i < lenChan; i += maxEventsPerDatagram {
-			segmentSize := min(lenChan-i, maxEventsPerDatagram)
-
-			data, err := Marshal(t.receivedPackets, segmentSize)
-			if err != nil {
-				slog.Error("Error in sendFeedback:", "error", err)
-				return
-			}
-
-			_, err = sendFlow.Write(data)
-			if err != nil {
-				slog.Error("Error in sendFeedback:", "error", err)
-				return
-			}
-		}
-	}
-}
-
-func (t *Transport) feedbackReceiver() {
-	feedbackFlow, err := t.dcTransport.AddDataChannelReceiver(t.feedbackChannelFlowID)
-	if err != nil {
-		panic(err)
-	}
-
-	buf := make([]byte, 4096)
-	for t.running.Load() {
-		// get feedback from receiver
-		n, err := feedbackFlow.Read(buf)
-		if err != nil {
-			slog.Error("Error in feedbackReceiver:", "error", err)
-			return
-		}
-
-		acks, err := UnmarshalFeedback(buf[:n])
-		if err != nil {
-			panic(err)
-		}
-
-		// add sent timestamps and sizes
-		for i := range acks {
-			if sentPacket, ok := t.sentPackets.Load(acks[i].SeqNr); ok {
-				acks[i].Departure = sentPacket.(nada.Acknowledgment).Departure
-				acks[i].SizeBit = sentPacket.(nada.Acknowledgment).SizeBit
-
-				t.sentPackets.Delete(acks[i].SeqNr)
-			} else {
-				panic("should not happen: sent packet event not found")
-			}
-		}
-
-		// append losses/nacks
-		lossCount := len(t.lostPackets)
-		for range lossCount {
-			nack := <-t.lostPackets
-			acks = append(acks, nack)
-		}
-
-		// register feedback with cc
-		var targetRate uint
-		if t.nada != nil {
-			targetRate = uint(t.nada.OnAcks(t.lastRTT.lastRtt, acks))
-		}
-		if t.bwe != nil {
-			for _, pe := range acks {
-				if pe.Arrived {
-					t.bwe.OnAck(pe.SeqNr, int(pe.SizeBit/8), pe.Departure, pe.Arrival)
-				} else {
-					t.bwe.OnLoss()
-				}
-			}
-			targetRate = uint(t.bwe.OnFeedback(time.Now(), t.lastRTT.lastRtt))
-		}
-
-		if t.SetSourceTargetRate != nil {
-			// rate for source
-			t.SetSourceTargetRate(targetRate)
-
-			// rate for pacer
-			// rateByte := uint(float64(targetRate) / 8)
-			// t.quicConn.SetPacerRate(rateByte)
-		}
-	}
 }
