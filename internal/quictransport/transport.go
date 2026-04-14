@@ -47,9 +47,9 @@ type Transport struct {
 	receivedPackets chan nada.Acknowledgment
 
 	sendNadaFeedback bool
-	quicCC           quic.CCType
-	pacerType        quic.PacerType
-	qlogFile         string
+	// quicCC           quic.CCType
+	// pacerType        quic.PacerType
+	qlogFile string
 
 	SetSourceTargetRate func(ratebps uint) error
 	HandleUintStream    func(flowID uint64, rs *quic.ReceiveStream)
@@ -107,7 +107,7 @@ func SetQuicCC(quicCC int) Option {
 			return errors.New("invalid quic CC value, must be 0, 1 or 2")
 		}
 
-		t.quicCC = quic.CCType(quicCC)
+		// t.quicCC = quic.CCType(quicCC)
 		return nil
 	}
 }
@@ -149,7 +149,7 @@ func WithPacer(pacerType int) Option {
 			return errors.New("invalid quic pacer value, must be 0 or 1")
 		}
 
-		t.pacerType = quic.PacerType(pacerType)
+		// t.pacerType = quic.PacerType(pacerType)
 		return nil
 	}
 }
@@ -198,9 +198,9 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 			InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			MaxIncomingUniStreams:          quicvarint.Max,
-			CcType:                         t.quicCC,
-			PacerType:                      t.pacerType,
-			UsePriorityQueue:               true,
+			// CcType:                         t.quicCC,
+			// PacerType:                      t.pacerType,
+			// UsePriorityQueue:               true,
 			Tracer: func(ctx context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
 				if t.nada != nil || t.bwe != nil {
 					return senderTracers(ctx, isClient, connID, addLostPacket, addSentPacket, t.lastRTT, t.qlogFile)
@@ -227,9 +227,9 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 			InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			MaxIncomingUniStreams:          quicvarint.Max,
-			CcType:                         t.quicCC,
-			PacerType:                      t.pacerType,
-			UsePriorityQueue:               true,
+			// CcType:                         t.quicCC,
+			// PacerType:                      t.pacerType,
+			// UsePriorityQueue:               true,
 			Tracer: func(ctx context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
 				if t.nada != nil || t.bwe != nil {
 					return senderTracers(ctx, isClient, connID, addLostPacket, addSentPacket, t.lastRTT, t.qlogFile)
@@ -486,8 +486,8 @@ func (t *Transport) feedbackReceiver() {
 			t.SetSourceTargetRate(targetRate)
 
 			// rate for pacer
-			rateByte := uint(float64(targetRate) / 8)
-			t.quicConn.SetPacerRate(rateByte)
+			// rateByte := uint(float64(targetRate) / 8)
+			// t.quicConn.SetPacerRate(rateByte)
 		}
 	}
 }
