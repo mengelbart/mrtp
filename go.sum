@@ -1,7 +1,5 @@
 github.com/Willi-42/go-nada v0.0.0-20250918135705-6a600030be0b h1:0yhrbZ3OV/j40hUuSVUiXkEJyVSA41GhZ5X2UeZWWOc=
 github.com/Willi-42/go-nada v0.0.0-20250918135705-6a600030be0b/go.mod h1:phbthXW20k81T2WY4cqUD5rWX3sPkXaN2aglf4YO/JM=
-github.com/Willi-42/quic-go v0.8.1 h1:YRIqgCnbx5DYDkSszPgT4envHD6SVrLtasXUQuafFm0=
-github.com/Willi-42/quic-go v0.8.1/go.mod h1:upnsH4Ju1YkqpLXC305eW3yDZ4NfnNbmQRCMWS58IKU=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -33,10 +31,12 @@ github.com/mengelbart/netsim v0.0.0-20260313101905-3800aab93f5e h1:HS8L4KEofXe2I
 github.com/mengelbart/netsim v0.0.0-20260313101905-3800aab93f5e/go.mod h1:l4544r1z7bzWI8WzbdjrU+aHUFPunLzj2OKyeFVOg/I=
 github.com/mengelbart/qlog v0.1.0 h1:8cDMuCMcKtzkPXUU5FF7OBwqKiy+De0GKvIvNawifoA=
 github.com/mengelbart/qlog v0.1.0/go.mod h1:nIlGcUugkfDu41B8LKdAwjHQ1NxAF54D9hS2EDOlVyk=
+github.com/mengelbart/quic-go v0.7.1-0.20260415150203-68116a5fdacc h1:Wc/s34rl+Gb3/CZ8qd78yCIhvH3IwwFKgRkT+7rmsWc=
+github.com/mengelbart/quic-go v0.7.1-0.20260415150203-68116a5fdacc/go.mod h1:5vG+t8W9b0dkdBVwNBbgGI3xfu5sBYdCepgih+s1yxw=
 github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6 h1:Cyix8k5mbv9ttLPzUw2ARuTN9koTIhC+Iyve6zXjRC0=
 github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6/go.mod h1:M9XURUQ2cyWxdROyS089cs3J02jnkoGECcbCUZT/UJs=
-github.com/mengelbart/roq v0.3.1-0.20251205153041-761658450d93 h1:otQ1NkDTDGXKTyyYaoHibhLQG+qaYE/kv5Zd6MMuZ3o=
-github.com/mengelbart/roq v0.3.1-0.20251205153041-761658450d93/go.mod h1:5H3OA8wZAv24QiftH9Qe96iruEP5ghx2+8MT5EAO6Iw=
+github.com/mengelbart/roq v0.3.1-0.20260414065730-7ea2404891a8 h1:a73ddjo3k3NZvu32KfPdyE+xf1y80glYGHUK67Geuyc=
+github.com/mengelbart/roq v0.3.1-0.20260414065730-7ea2404891a8/go.mod h1:2hYy6UcRrbvvlpJS3s6pMceC6sYmILsdDo5RkNMjN1s=
 github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241 h1:Ajaio921fnNza2OjPEBABQ0wf9brLJIy4MRLIkm2ubs=
 github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241/go.mod h1:m69ePnJwKo/gWrDPku9gWRcnw6pRyDiQQPxWsQnO9/o=
 github.com/onsi/ginkgo/v2 v2.22.1 h1:QW7tbJAUDyVDVOM5dFa7qaybo+CRfR7bemlQUN6Z8aM=

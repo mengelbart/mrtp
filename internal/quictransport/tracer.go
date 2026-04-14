@@ -82,8 +82,8 @@ func senderTracers(
 }
 
 func createQlogTracer(ctx context.Context, isClient bool, connID quic.ConnectionID, qlogFile string) qlogwriter.Trace {
-	if qlogFile != "" {
-		return qlog.DefaultConnectionTracerWithName(ctx, isClient, connID, qlogFile)
-	}
+	// if qlogFile != "" {
+	// 	return qlog.DefaultConnectionTracerWithName(ctx, isClient, connID, qlogFile)
+	// }
 	return qlog.DefaultConnectionTracer(ctx, isClient, connID)
 }

@@ -11,7 +11,7 @@ require (
 	github.com/mengelbart/netsim v0.0.0-20260313101905-3800aab93f5e
 	github.com/mengelbart/qlog v0.1.0
 	github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6
-	github.com/mengelbart/roq v0.3.1-0.20251205153041-761658450d93
+	github.com/mengelbart/roq v0.3.1-0.20260414065730-7ea2404891a8
 	github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241
 	github.com/pion/bwe v0.0.0-20260218143828-d4996fd96f96
 	github.com/pion/interceptor v0.1.44
@@ -21,7 +21,7 @@ require (
 	github.com/pion/sdp/v2 v2.4.0
 	github.com/pion/transport/v4 v4.0.1
 	github.com/pion/webrtc/v4 v4.2.3
-	github.com/quic-go/quic-go v0.57.1
+	github.com/quic-go/quic-go v0.59.0
 	github.com/stretchr/testify v1.11.1
 	github.com/wlynxg/anet v0.0.5
 	golang.org/x/sync v0.16.0
@@ -54,4 +54,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/quic-go/quic-go v0.57.1 => github.com/Willi-42/quic-go v0.8.1
+replace github.com/quic-go/quic-go v0.59.0 => github.com/mengelbart/quic-go v0.7.1-0.20260415150203-68116a5fdacc
