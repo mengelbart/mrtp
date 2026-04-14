@@ -41,11 +41,7 @@ type gstreamerVideoStreamSinkFactory struct {
 func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
 	fs.UintVar(&f.sinkType, "sink-type", uint(0), "Sink type (0: autovideosink, 1: filesink, requires <location> to be set, 2: fakesink)")
 	fs.StringVar(&f.sinkLocation, "sink-location", "", "Location for filesink (if <sink-type> is 1 (filesink))")
-
-	// check if codec flag is already registered - relevant for webrtc subcmd
-	if fs.Lookup("codec") == nil {
-		fs.StringVar(&f.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
-	}
+	fs.StringVar(&f.codec, "sink-codec", mrtp.H264.String(), "Codec to use for decoder (H264, VP8)")
 }
 
 func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (gstreamer.RTPSinkBin, error) {
