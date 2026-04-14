@@ -219,7 +219,7 @@ Flags:
 			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(s.maxTargetRate)))
 		}
 		if s.qlog {
-			quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
+			quicOptions = append(quicOptions, quictransport.EnableQLogs("sender"))
 		}
 
 		// open quic connection

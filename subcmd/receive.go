@@ -191,7 +191,7 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 	}
 
 	if r.qlog {
-		quicOptions = append(quicOptions, quictransport.EnableQLogs("./receiver.qlog"))
+		quicOptions = append(quicOptions, quictransport.EnableQLogs("receiver"))
 	}
 
 	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicOptions...)
