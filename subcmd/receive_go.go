@@ -29,10 +29,8 @@ type ReceiveGo struct {
 	roqServer         bool
 	codec             string
 	qlog              bool
-	nadaFeedback      bool
 	traceRTP          bool
 	datachannel       bool
-	feedbackFlowID    uint
 	dataChannelFlowID uint
 	udpPort           uint
 	rtpFlowID         uint
@@ -54,11 +52,8 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs.BoolVar(&r.roqServer, "roq-server", false, "Use RoQ server transport.")
 	fs.StringVar(&r.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
 	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
-	fs.BoolVar(&r.nadaFeedback, "nada-feedback", false, "Send NADA feedback")
 	fs.BoolVar(&r.traceRTP, "trace-rtp-recv", false, "Log incoming RTP packets")
 	fs.BoolVar(&r.datachannel, "dc", false, "Send/Receive data with data channels")
-	fs.UintVar(&r.feedbackFlowID, "nada-feedback-flow-id", 4, "QUIC Flow ID to use for sending RTCP feedback (NADA or GCC) or receiving it in case of NADA feedback")
-	fs.UintVar(&r.feedbackFlowID, "feedback-flow-id", 4, "Deprecated alias for -nada-feedback-flow-id")
 	fs.UintVar(&r.dataChannelFlowID, "dc-flow-id", 3, "QUIC Flow ID to use for sending/receiving data with data channels")
 	fs.UintVar(&r.udpPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
 	fs.UintVar(&r.rtpFlowID, "rtp-flow-id", 0, "RTP Flow ID when using RTP over QUIC")
@@ -93,11 +88,6 @@ Flags:
 		quictransport.WithRole(quictransport.Role(r.roqServer)),
 		quictransport.SetLocalAddress(r.localAddr, r.udpPort),
 		quictransport.SetRemoteAddress(r.remoteAddr, r.udpPort),
-	}
-
-	if r.nadaFeedback {
-		feedbackDelta := time.Duration(20 * time.Millisecond)
-		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(r.feedbackFlowID)))
 	}
 
 	if r.qlog {

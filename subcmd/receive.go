@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"time"
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
@@ -78,7 +77,6 @@ type Receive struct {
 	nadaFeedback      bool
 	traceRTP          bool
 	datachannel       bool
-	feedbackFlowID    uint
 	dataChannelFlowID uint
 	udpPort           uint
 	rtcpSendPort      uint
@@ -104,7 +102,6 @@ func (r *Receive) Exec(cmd string, args []string) error {
 	fs.BoolVar(&r.nadaFeedback, "nada-feedback", false, "Send NADA feedback")
 	fs.BoolVar(&r.traceRTP, "trace-rtp-recv", false, "Log incoming RTP packets")
 	fs.BoolVar(&r.datachannel, "dc", false, "Send/Receive data with data channels")
-	fs.UintVar(&r.feedbackFlowID, "nada-feedback-flow-id", 4, "NADA Feedback Flow ID when using NADA or GCC with QUIC")
 	fs.UintVar(&r.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 	fs.UintVar(&r.udpPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
 	fs.UintVar(&r.rtpFlowID, "rtp-flow-id", 0, "RTP Flow ID when using RTP over QUIC")
@@ -191,11 +188,6 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 		quictransport.WithRole(quictransport.Role(r.roqServer)),
 		quictransport.SetLocalAddress(r.localAddr, r.udpPort),
 		quictransport.SetRemoteAddress(r.remoteAddr, r.udpPort),
-	}
-
-	if r.nadaFeedback {
-		feedbackDelta := time.Duration(20 * time.Millisecond)
-		quicOptions = append(quicOptions, quictransport.EnableNADAfeedback(feedbackDelta, uint64(r.feedbackFlowID)))
 	}
 
 	if r.qlog {

@@ -29,11 +29,9 @@ type SendData struct {
 	localAddr         string
 	remoteAddr        string
 	qlog              bool
-	quicCC            uint
 	nada              bool
 	gcc               bool
 	maxTargetRate     uint
-	feedbackFlowID    uint
 	dataChannelFlowID uint
 }
 
@@ -46,11 +44,9 @@ func (s *SendData) Exec(cmd string, args []string) error {
 	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
 	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
-	fs.UintVar(&s.quicCC, "quic-cc", 0, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer")
 	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
 	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
-	fs.UintVar(&s.feedbackFlowID, "nada-feedback-flow-id", 4, "NADA Feedback Flow ID when using NADA or GCC with QUIC")
 	fs.UintVar(&s.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 
 	sourceFile := fs.String("source-file", "", "File to be sent. If empty, random data will be sent.")
@@ -78,18 +74,17 @@ Flags:
 
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
-		quictransport.SetQuicCC(int(s.quicCC)),
 		quictransport.SetLocalAddress(s.localAddr, 8080),
 		quictransport.SetRemoteAddress(s.remoteAddr, 8080),
 	}
 
 	if s.nada {
 		feedbackDelta := uint64(20)
-		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, s.maxTargetRate, uint(feedbackDelta), uint64(s.feedbackFlowID)))
+		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, s.maxTargetRate, uint(feedbackDelta)))
 	}
 
 	if s.gcc {
-		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(s.maxTargetRate), uint64(s.feedbackFlowID)))
+		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(s.maxTargetRate)))
 	}
 
 	if s.qlog {

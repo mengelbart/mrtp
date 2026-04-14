@@ -55,16 +55,6 @@ func catchRTTandLossEvent(event qlogwriter.Event, rtt *RTT, onLossEventFunc OnLo
 	}
 }
 
-func receiveTracer(ctx context.Context, isClient bool, connID quic.ConnectionID, recvCallback ReceivedCallback, qlogFile string) qlogwriter.Trace {
-	tsTracer := func(event qlogwriter.Event) {
-		catchRecvEvent(event, recvCallback)
-	}
-
-	qlogTracer := createQlogTracer(ctx, isClient, connID, qlogFile)
-
-	return newTracer(qlogTracer, tsTracer)
-}
-
 func senderTracers(
 	ctx context.Context, isClient bool, connID quic.ConnectionID,
 	onLossEvent OnLossEventFunc,

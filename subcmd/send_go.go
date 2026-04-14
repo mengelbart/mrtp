@@ -36,8 +36,6 @@ type SendGo struct {
 	sourceLocation    string
 	codec             string
 	qlog              bool
-	quicPacer         uint
-	quicCC            uint
 	nada              bool
 	gcc               bool
 	maxTargetRate     uint
@@ -46,7 +44,6 @@ type SendGo struct {
 	dcSourceFile      string
 	dcStartDelay      uint
 	dcChunks          bool
-	feedbackFlowID    uint
 	dataChannelFlowID uint
 	udpPort           uint
 	rtpFlowID         uint
@@ -64,8 +61,6 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs.StringVar(&s.sourceLocation, "source-location", "", "Location for filesource")
 	fs.StringVar(&s.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
 	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
-	fs.UintVar(&s.quicPacer, "quic-pacer", 0, "Which quic pacer to use. 0: default, 1: rate based pacer")
-	fs.UintVar(&s.quicCC, "quic-cc", 0, "Which quic CC to use. 0: Reno, 1: no CC and no pacer, 2: only pacer")
 	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
 	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
@@ -74,7 +69,6 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs.StringVar(&s.dcSourceFile, "dc-source", "", "File to be sent. If empty, random data will be sent.")
 	fs.UintVar(&s.dcStartDelay, "dc-start-delay", 0, "Start delay in seconds before data channel source starts sending data.")
 	fs.BoolVar(&s.dcChunks, "dc-chunks", false, "Send chunks on datachannel")
-	fs.UintVar(&s.feedbackFlowID, "nada-feedback-flow-id", 4, "NADA Feedback Flow ID when using NADA or GCC with QUIC")
 	fs.UintVar(&s.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 	fs.UintVar(&s.udpPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
 	fs.UintVar(&s.rtpFlowID, "rtp-flow-id", 0, "RTP Flow ID when using RTP over QUIC")
@@ -97,32 +91,8 @@ Flags:
 
 	ctx := context.Background()
 
-	if s.quicCC > 2 {
-		fmt.Fprintf(os.Stderr, "Invalid -quic-cc value %v, must be 0, 1 or 2.\n", s.quicCC)
-		fs.Usage()
-		os.Exit(1)
-	}
-
-	if s.quicPacer > 1 {
-		fmt.Fprintf(os.Stderr, "Invalid -quic-pacer value %v, must be 0 or 1.\n", s.quicPacer)
-		fs.Usage()
-		os.Exit(1)
-	}
-
 	if s.roqMapping > 2 {
 		fmt.Fprintf(os.Stderr, "Invalid -roq-mapping value %v, must be 0, 1 or 2.\n", s.roqMapping)
-		fs.Usage()
-		os.Exit(1)
-	}
-
-	if s.quicPacer == 1 && (!s.nada && !s.gcc) {
-		fmt.Fprintf(os.Stderr, "Flag -quic-pacer can only be used with NADA or GCC (got %v)\n", s.quicPacer)
-		fs.Usage()
-		os.Exit(1)
-	}
-
-	if s.datachannel && (s.quicCC == 1 || (s.quicCC == 2 && s.quicPacer != 1)) {
-		fmt.Fprintf(os.Stderr, "Flag -%v only allowed if Reno as CC or rate based pacer. NoCC option allways invalid\n", "-dc")
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -135,19 +105,17 @@ Flags:
 
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(s.roqServer)),
-		quictransport.SetQuicCC(int(s.quicCC)),
 		quictransport.SetLocalAddress(s.localAddr, s.udpPort),
 		quictransport.SetRemoteAddress(s.remoteAddr, s.udpPort),
-		quictransport.WithPacer(int(s.quicPacer)),
 	}
 
 	if s.nada {
 		feedbackDelta := uint64(20)
-		quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 250_000, s.maxTargetRate, uint(feedbackDelta), uint64(s.feedbackFlowID)))
+		quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 250_000, s.maxTargetRate, uint(feedbackDelta)))
 	}
 
 	if s.gcc {
-		quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(s.maxTargetRate), uint64(s.feedbackFlowID)))
+		quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(s.maxTargetRate)))
 	}
 	if s.qlog {
 		quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
