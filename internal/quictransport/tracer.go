@@ -1,79 +1,148 @@
 package quictransport
 
 import (
+	"bufio"
 	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"log/slog"
+	"os"
+	"strings"
 	"time"
 
-	"github.com/Willi-42/go-nada/nada"
-	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/qlog"
 	"github.com/quic-go/quic-go/qlogwriter"
 )
 
-type ReceivedCallback func(nada.Acknowledgment)
-type OnLossEventFunc func(nada.Acknowledgment)
-
-type RTT struct {
-	lastRtt time.Duration
+type tracerFactory struct {
+	qlogFileName string
 }
 
-func catchRecvEvent(event qlogwriter.Event, tsCallback ReceivedCallback) {
+func (f *tracerFactory) newTracer(ctx context.Context, isClient bool, connID qlogwriter.ConnectionID) qlogwriter.Trace {
+	var qfs *qlogwriter.FileSeq
+	if len(f.qlogFileName) > 0 {
+		qfs = qlogTracer(isClient, connID, f.qlogFileName, nil)
+	}
+	return &tracer{
+		qlogFileSeq: qfs,
+	}
+}
+
+type multiplexedRecorder struct {
+	recorders []qlogwriter.Recorder
+}
+
+func (r *multiplexedRecorder) RecordEvent(event qlogwriter.Event) {
+	for _, recorder := range r.recorders {
+		recorder.RecordEvent(event)
+	}
+}
+
+func (r *multiplexedRecorder) Close() error {
+	var errs []error
+	for _, recorder := range r.recorders {
+		if err := recorder.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+type tracer struct {
+	qlogFileSeq *qlogwriter.FileSeq
+}
+
+func (t *tracer) AddProducer() qlogwriter.Recorder {
+	recorders := []qlogwriter.Recorder{}
+	if t.qlogFileSeq != nil {
+		recorders = append(recorders, t.qlogFileSeq.AddProducer())
+	}
+	recorders = append(recorders, &traceWriter{t: t})
+	return &multiplexedRecorder{recorders: recorders}
+}
+
+func (t *tracer) SupportsSchemas(schema string) bool {
+	return true
+}
+
+func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
+	// TODO: Listen for relevant events
 	switch e := event.(type) {
 	case qlog.PacketReceived:
-		if e.Header.PacketType != qlog.PacketType1RTT {
-			return
-		}
-
-		packet := nada.Acknowledgment{
-			SeqNr:   uint64(e.Header.PacketNumber),
-			Marked:  false, // TODO
-			Arrival: time.Now(),
-			Arrived: true,
-		}
-
-		// give the information back to the callback for the CC.
-		tsCallback(packet)
-	}
-}
-
-func catchRTTandLossEvent(event qlogwriter.Event, rtt *RTT, onLossEventFunc OnLossEventFunc, onPacketSentFunc OnLossEventFunc) {
-	switch e := event.(type) {
-	case qlog.MetricsUpdated:
-		rtt.lastRtt = e.LatestRTT
-	case qlog.PacketLost:
-		if onLossEventFunc != nil {
-			onLossEventFunc(nada.Acknowledgment{SeqNr: uint64(e.Header.PacketNumber), Departure: time.Now()})
+		for _, frame := range e.Frames {
+			switch f := frame.Frame.(type) {
+			case *qlog.AckFrame:
+				slog.Info("received ack frame", "ack_ranges", f.AckRanges, "receive_timestamps", f.ReceiveTimestamps)
+			}
 		}
 	case qlog.PacketSent:
-		if onPacketSentFunc != nil {
-			onPacketSentFunc(nada.Acknowledgment{
-				SeqNr:     uint64(e.Header.PacketNumber),
-				Departure: time.Now(),
-				SizeBit:   uint64(e.Raw.Length) * 8,
-			})
+		for _, frame := range e.Frames {
+			switch f := frame.Frame.(type) {
+			case *qlog.AckFrame:
+				slog.Info("sent ack frame", "ack_ranges", f.AckRanges, "receive_timestamps", f.ReceiveTimestamps)
+			}
 		}
 	}
 }
 
-func senderTracers(
-	ctx context.Context, isClient bool, connID quic.ConnectionID,
-	onLossEvent OnLossEventFunc,
-	onPacketSentFunc OnLossEventFunc,
-	lastRtt *RTT,
-	qlogFile string,
-) qlogwriter.Trace {
-	rttLossTracer := func(event qlogwriter.Event) {
-		catchRTTandLossEvent(event, lastRtt, onLossEvent, onPacketSentFunc)
-	}
-
-	qlogTracer := createQlogTracer(ctx, isClient, connID, qlogFile)
-
-	return newTracer(qlogTracer, rttLossTracer)
+type traceWriter struct {
+	t *tracer
 }
 
-func createQlogTracer(ctx context.Context, isClient bool, connID quic.ConnectionID, qlogFile string) qlogwriter.Trace {
-	// if qlogFile != "" {
-	// 	return qlog.DefaultConnectionTracerWithName(ctx, isClient, connID, qlogFile)
-	// }
-	return qlog.DefaultConnectionTracer(ctx, isClient, connID)
+func (w *traceWriter) Close() error {
+	return nil
+}
+
+func (w *traceWriter) RecordEvent(ev qlogwriter.Event) {
+	w.t.record(time.Now(), ev)
+}
+
+// Everything below is mostly copy from qlog.DefaultConnectionTracer
+
+func qlogTracer(isClient bool, connID qlogwriter.ConnectionID, label string, eventSchemas []string) *qlogwriter.FileSeq {
+	qlogDir := os.Getenv("QLOGDIR")
+	if qlogDir == "" {
+		return nil
+	}
+	if _, err := os.Stat(qlogDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(qlogDir, 0o755); err != nil {
+			log.Fatalf("failed to create qlog dir %s: %v", qlogDir, err)
+		}
+	}
+	path := fmt.Sprintf("%s/%s_%s.sqlog", strings.TrimRight(qlogDir, "/"), connID, label)
+	f, err := os.Create(path)
+	if err != nil {
+		log.Printf("Failed to create qlog file %s: %s", path, err.Error())
+		return nil
+	}
+	fileSeq := qlogwriter.NewConnectionFileSeq(
+		newBufferedWriteCloser(bufio.NewWriter(f), f),
+		isClient,
+		connID,
+		eventSchemas,
+	)
+	go fileSeq.Run()
+	return fileSeq
+}
+
+type bufferedWriteCloser struct {
+	*bufio.Writer
+	io.Closer
+}
+
+// newBufferedWriteCloser creates an io.WriteCloser from a bufio.Writer and an io.Closer
+func newBufferedWriteCloser(writer *bufio.Writer, closer io.Closer) io.WriteCloser {
+	return &bufferedWriteCloser{
+		Writer: writer,
+		Closer: closer,
+	}
+}
+
+func (h bufferedWriteCloser) Close() error {
+	if err := h.Flush(); err != nil {
+		return err
+	}
+	return h.Closer.Close()
 }

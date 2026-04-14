@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/pion/bwe/gcc"
 	"github.com/quic-go/quic-go"
-	"github.com/quic-go/quic-go/qlogwriter"
 	"github.com/quic-go/quic-go/quicvarint"
 )
 
@@ -39,13 +37,6 @@ type Transport struct {
 	nada *nada.SenderOnly
 	bwe  *gcc.SendSideController
 
-	lastRTT         *RTT
-	lostPackets     chan nada.Acknowledgment
-	sentPackets     sync.Map
-	receivedPackets chan nada.Acknowledgment
-
-	// quicCC           quic.CCType
-	// pacerType        quic.PacerType
 	qlogFile string
 
 	SetSourceTargetRate func(ratebps uint) error
@@ -66,7 +57,6 @@ func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint) Option {
 
 		nadaSo := nada.NewSenderOnly(nadaConfig)
 		t.nada = &nadaSo
-		t.lostPackets = make(chan nada.Acknowledgment, 1000)
 		return nil
 	}
 }
@@ -76,7 +66,6 @@ func EnableGCC(initRate, minRate, maxRate int) Option {
 		// TODO: add pion logger
 		var err error
 		t.bwe, err = gcc.NewSendSideController(initRate, minRate, maxRate)
-		t.lostPackets = make(chan nada.Acknowledgment, 1000)
 		return err
 	}
 }
@@ -118,12 +107,8 @@ func EnableQLogs(qlogFile string) Option {
 
 func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transport, error) {
 	t := &Transport{
-		role:            RoleServer,
-		lastRTT:         &RTT{},
-		lostPackets:     nil,
-		receivedPackets: nil,
-		qlogFile:        "",
-		ctx:             ctx,
+		role: RoleServer,
+		ctx:  ctx,
 	}
 
 	for _, opt := range opts {
@@ -132,17 +117,8 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 		}
 	}
 
-	addLostPacket := func(ack nada.Acknowledgment) {
-		select {
-		case t.lostPackets <- ack:
-			// Successfully added
-		default:
-			// quic-go drops the packet if tracer takes too long: "dos_prevention"
-			slog.Info("quictransport packet nack dropped", "reason", "tracer buffered channel full")
-		}
-	}
-	addSentPacket := func(ack nada.Acknowledgment) {
-		t.sentPackets.Store(ack.SeqNr, ack)
+	tracer := &tracerFactory{
+		qlogFileName: t.qlogFile,
 	}
 
 	if t.role == RoleServer {
@@ -151,15 +127,7 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 			InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			MaxIncomingUniStreams:          quicvarint.Max,
-			// CcType:                         t.quicCC,
-			// PacerType:                      t.pacerType,
-			// UsePriorityQueue:               true,
-			Tracer: func(ctx context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
-				if t.nada != nil || t.bwe != nil {
-					return senderTracers(ctx, isClient, connID, addLostPacket, addSentPacket, t.lastRTT, t.qlogFile)
-				}
-				return createQlogTracer(ctx, isClient, connID, t.qlogFile)
-			},
+			Tracer:                         tracer.newTracer,
 		}
 
 		var err error
@@ -177,15 +145,7 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 			InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			MaxIncomingUniStreams:          quicvarint.Max,
-			// CcType:                         t.quicCC,
-			// PacerType:                      t.pacerType,
-			// UsePriorityQueue:               true,
-			Tracer: func(ctx context.Context, isClient bool, connID quic.ConnectionID) qlogwriter.Trace {
-				if t.nada != nil || t.bwe != nil {
-					return senderTracers(ctx, isClient, connID, addLostPacket, addSentPacket, t.lastRTT, t.qlogFile)
-				}
-				return createQlogTracer(ctx, isClient, connID, t.qlogFile)
-			},
+			Tracer:                         tracer.newTracer,
 		}
 
 		var err error
@@ -201,16 +161,11 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 
 	t.running.Store(true)
 
-	// open datachannel connection for feedback
-	if err := t.openDataChannelConn(); err != nil {
-		return nil, err
-	}
-
 	return t, nil
 }
 
 func (t *Transport) GetRTT() time.Duration {
-	return t.lastRTT.lastRtt
+	return t.quicConn.ConnectionStats().LatestRTT
 }
 
 func (t *Transport) StartHandlers() {
@@ -285,14 +240,4 @@ func (t *Transport) receiveDatagrams() {
 			t.HandleDatagram(flowID, dgram)
 		}
 	}
-}
-
-func (t *Transport) openDataChannelConn() error {
-	var err error
-	t.dcTransport, err = datachannels.New(t.quicConn)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
