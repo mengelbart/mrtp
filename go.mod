@@ -13,7 +13,7 @@ require (
 	github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6
 	github.com/mengelbart/roq v0.3.1-0.20251205153041-761658450d93
 	github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241
-	github.com/pion/bwe v0.0.0-20260405224450-7446851117bd
+	github.com/pion/bwe v0.0.0-20260218143828-d4996fd96f96
 	github.com/pion/interceptor v0.1.44
 	github.com/pion/logging v0.2.5-0.20260131202752-62cbfd2e3ca2
 	github.com/pion/rtcp v1.2.16
