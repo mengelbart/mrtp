@@ -180,7 +180,7 @@ Flags:
 	}
 
 	if s.quicPacer == 1 && (!s.nada && !s.gcc) {
-		fmt.Fprintf(os.Stderr, "Flag -quic-pacer can only be used with NADA or GCC\n")
+		fmt.Fprintf(os.Stderr, "Flag -quic-pacer can only be used with NADA or GCC (got %v)\n", s.quicPacer)
 		fs.Usage()
 		os.Exit(1)
 	}
