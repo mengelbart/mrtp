@@ -122,7 +122,7 @@ Flags:
 	}
 
 	if s.datachannel && (s.quicCC == 1 || (s.quicCC == 2 && s.quicPacer != 1)) {
-		fmt.Fprintf(os.Stderr, "Flag -%v only allowed if Reno as CC or rate based pacer. NoCC option allways invalid\n", "dc")
+		fmt.Fprintf(os.Stderr, "Flag -%v only allowed if Reno as CC or rate based pacer. NoCC option allways invalid\n", "-dc")
 		fs.Usage()
 		os.Exit(1)
 	}
