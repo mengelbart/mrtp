@@ -174,7 +174,7 @@ Flags:
 	}
 
 	if (s.nada || s.gcc || s.quicCC != 0 || s.quicPacer != 0 || s.qlog || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
-		fmt.Fprintf(os.Stderr, "Flags -%v, -%v, -%v, -%v and -%v are only valid for RoQ\n", "nada", "pion-gcc", s.quicCC, s.qlog, s.roqMapping)
+		fmt.Fprintf(os.Stderr, "Flags -nada, -pion-gcc, -quic-cc, -quic-pacing, -log-quic and -roq-mapping are only valid for RoQ\n")
 		fs.Usage()
 		os.Exit(1)
 	}
