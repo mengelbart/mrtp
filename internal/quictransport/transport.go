@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -34,8 +35,13 @@ type Transport struct {
 
 	dcTransport *datachannels.Transport
 
-	nada *nada.SenderOnly
-	bwe  *gcc.SendSideController
+	nada            *nada.SenderOnly
+	bwe             *gcc.SendSideController
+	lastBWEUpdate   time.Time
+	inFlightPackets []packetFeedback
+	lowestInFlight  uint64
+	highestAcked    uint64
+	packetFeedback  []packetFeedback
 
 	qlogFile string
 
@@ -119,6 +125,7 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 
 	tracer := &tracerFactory{
 		qlogFileName: t.qlogFile,
+		transport:    t,
 	}
 
 	if t.role == RoleServer {
@@ -240,4 +247,161 @@ func (t *Transport) receiveDatagrams() {
 			t.HandleDatagram(flowID, dgram)
 		}
 	}
+}
+
+type packetFeedback struct {
+	seqNr     uint64
+	size      uint64
+	arrived   bool
+	departure time.Time
+	arrival   time.Time
+}
+
+func (t *Transport) packetSent(ts time.Time, seqNr uint64, size int) {
+	idx, ok := slices.BinarySearchFunc(t.inFlightPackets, seqNr, func(a packetFeedback, b uint64) int {
+		return int(a.seqNr - b)
+	})
+	if !ok {
+		t.inFlightPackets = slices.Insert(t.inFlightPackets, idx, packetFeedback{
+			seqNr:     seqNr,
+			size:      uint64(size),
+			arrived:   false,
+			departure: ts,
+			arrival:   time.Time{},
+		})
+	}
+}
+
+func (t *Transport) packetLost(ts time.Time, seqNr uint64) {
+	if seqNr < t.lowestInFlight {
+		return
+	}
+	idx, ok := slices.BinarySearchFunc(t.inFlightPackets, seqNr, func(a packetFeedback, b uint64) int {
+		return int(a.seqNr - b)
+	})
+	if !ok {
+		// lost packet that was already dropped from inflight list, nothing to do
+		return
+	}
+	feedback := t.inFlightPackets[idx]
+	t.inFlightPackets = slices.Delete(t.inFlightPackets, idx, idx+1)
+
+	idx, ok = slices.BinarySearchFunc(t.packetFeedback, seqNr, func(a packetFeedback, b uint64) int {
+		return int(a.seqNr - b)
+	})
+	if ok {
+		t.packetFeedback[idx].arrived = false
+	} else {
+		t.packetFeedback = slices.Insert(t.packetFeedback, idx, feedback)
+	}
+	t.updateCongestionControl(ts)
+}
+
+func (t *Transport) packetAcked(ts time.Time, seqNr uint64, arrival time.Time) {
+	if seqNr > t.highestAcked {
+		t.highestAcked = seqNr
+	}
+	if seqNr < t.lowestInFlight {
+		return
+	}
+	idx, ok := slices.BinarySearchFunc(t.inFlightPackets, seqNr, func(a packetFeedback, b uint64) int {
+		return int(a.seqNr - b)
+	})
+	if !ok {
+		// Acked packet that was already dropped from inflight list, nothing to do
+		return
+	}
+	feedback := t.inFlightPackets[idx]
+	feedback.arrived = true
+	feedback.arrival = arrival
+	t.inFlightPackets = slices.Delete(t.inFlightPackets, idx, idx+1)
+
+	idx, ok = slices.BinarySearchFunc(t.packetFeedback, seqNr, func(a packetFeedback, b uint64) int {
+		return int(a.seqNr - b)
+	})
+	if ok {
+		t.packetFeedback[idx].arrived = true
+		t.packetFeedback[idx].arrival = arrival
+	} else {
+		t.packetFeedback = slices.Insert(t.packetFeedback, idx, feedback)
+	}
+	t.updateCongestionControl(ts)
+}
+
+func (t *Transport) updateCongestionControl(ts time.Time) {
+	var target uint
+	if t.quicConn == nil {
+		// connection not established yet, do not update sending rate
+		return
+	}
+	if t.nada != nil {
+		target = t.updateNADA()
+	} else if t.bwe != nil {
+		target = t.updateGCC(ts)
+	}
+	if target == 0 {
+		// No congestion control update necessary
+		return
+	}
+	t.lastBWEUpdate = time.Now()
+	if err := t.SetSourceTargetRate(target); err != nil {
+		slog.Error("Error setting source target rate:", "error", err)
+	}
+	t.quicConn.SetPacingRate(uint64(target))
+}
+
+func (t *Transport) updateNADA() uint {
+	if time.Since(t.lastBWEUpdate) < 20*time.Millisecond {
+		return 0
+	}
+	acks := []nada.Acknowledgment{}
+	idx := 0
+	for i, feedback := range t.packetFeedback {
+		if feedback.seqNr > t.highestAcked {
+			idx = i
+			break
+		}
+		if feedback.seqNr < t.lowestInFlight {
+			continue
+		}
+		acks = append(acks, nada.Acknowledgment{
+			SeqNr:     feedback.seqNr,
+			SizeBit:   feedback.size * 8,
+			Departure: feedback.departure,
+			Arrival:   feedback.arrival,
+			Arrived:   feedback.arrived,
+			Marked:    false, // TODO: ECN
+		})
+	}
+	t.packetFeedback = t.packetFeedback[idx:]
+	target := t.nada.OnAcks(t.quicConn.ConnectionStats().LatestRTT, acks)
+	return uint(target)
+}
+
+func (t *Transport) updateGCC(ts time.Time) uint {
+	if time.Since(t.lastBWEUpdate) < 20*time.Millisecond {
+		return 0
+	}
+	idx := 0
+	for i, feedback := range t.packetFeedback {
+		if feedback.seqNr > t.highestAcked {
+			idx = i
+			break
+		}
+		if feedback.seqNr < t.lowestInFlight {
+			continue
+		}
+		if feedback.arrived {
+			t.bwe.OnAck(feedback.seqNr, int(feedback.size), feedback.departure, feedback.arrival)
+		} else {
+			t.bwe.OnLoss()
+		}
+	}
+	t.packetFeedback = t.packetFeedback[idx:]
+	t.lowestInFlight = t.highestAcked + 1
+	conn := t.quicConn
+	stats := conn.ConnectionStats()
+	rtt := stats.LatestRTT
+	target := t.bwe.OnFeedback(ts, rtt)
+	return uint(target)
 }

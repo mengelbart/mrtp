@@ -18,6 +18,7 @@ import (
 
 type tracerFactory struct {
 	qlogFileName string
+	transport    *Transport
 }
 
 func (f *tracerFactory) newTracer(ctx context.Context, isClient bool, connID qlogwriter.ConnectionID) qlogwriter.Trace {
@@ -27,6 +28,7 @@ func (f *tracerFactory) newTracer(ctx context.Context, isClient bool, connID qlo
 	}
 	return &tracer{
 		qlogFileSeq: qfs,
+		transport:   f.transport,
 	}
 }
 
@@ -52,6 +54,7 @@ func (r *multiplexedRecorder) Close() error {
 
 type tracer struct {
 	qlogFileSeq *qlogwriter.FileSeq
+	transport   *Transport
 }
 
 func (t *tracer) AddProducer() qlogwriter.Recorder {
@@ -75,15 +78,28 @@ func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
 			switch f := frame.Frame.(type) {
 			case *qlog.AckFrame:
 				slog.Info("received ack frame", "ack_ranges", f.AckRanges, "receive_timestamps", f.ReceiveTimestamps)
+				previous := time.Time{}
+				for _, tsRange := range f.ReceiveTimestamps {
+					for j, delta := range tsRange.TimestampDelta {
+						seqNr := uint64(f.LargestAcked()) - uint64(j)
+						delta := time.Duration(delta) * time.Microsecond
+						arrival := previous.Add(delta)
+						previous = arrival
+						t.transport.packetAcked(ts, seqNr, arrival)
+					}
+				}
 			}
 		}
 	case qlog.PacketSent:
+		t.transport.packetSent(ts, uint64(e.Header.PacketNumber), e.Raw.Length)
 		for _, frame := range e.Frames {
 			switch f := frame.Frame.(type) {
 			case *qlog.AckFrame:
 				slog.Info("sent ack frame", "ack_ranges", f.AckRanges, "receive_timestamps", f.ReceiveTimestamps)
 			}
 		}
+	case qlog.PacketLost:
+		t.transport.packetLost(ts, uint64(e.Header.PacketNumber))
 	}
 }
 
