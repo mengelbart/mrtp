@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/Willi-42/go-nada/nada"
-	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/pion/bwe/gcc"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/quicvarint"
@@ -32,8 +31,6 @@ type Transport struct {
 	remoteAddress string
 
 	running atomic.Bool
-
-	dcTransport *datachannels.Transport
 
 	nada            *nada.SenderOnly
 	bwe             *gcc.SendSideController
@@ -196,11 +193,6 @@ func (t *Transport) Close() {
 	}
 }
 
-// GetQuicDataChannel returns the datachannel connection that was opend for the feedback.
-func (t *Transport) GetQuicDataChannel() *datachannels.Transport {
-	return t.dcTransport
-}
-
 func (t *Transport) receiveUniStreams() {
 	for t.running.Load() {
 		rs, err := t.quicConn.AcceptUniStream(t.ctx)
@@ -344,8 +336,10 @@ func (t *Transport) updateCongestionControl(ts time.Time) {
 		return
 	}
 	t.lastBWEUpdate = time.Now()
-	if err := t.SetSourceTargetRate(target); err != nil {
-		slog.Error("Error setting source target rate:", "error", err)
+	if t.SetSourceTargetRate != nil {
+		if err := t.SetSourceTargetRate(target); err != nil {
+			slog.Error("Error setting source target rate:", "error", err)
+		}
 	}
 	t.quicConn.SetPacingRate(uint64(target))
 }
@@ -364,6 +358,7 @@ func (t *Transport) updateNADA() uint {
 		if feedback.seqNr < t.lowestInFlight {
 			continue
 		}
+		slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure))
 		acks = append(acks, nada.Acknowledgment{
 			SeqNr:     feedback.seqNr,
 			SizeBit:   feedback.size * 8,
@@ -391,6 +386,7 @@ func (t *Transport) updateGCC(ts time.Time) uint {
 		if feedback.seqNr < t.lowestInFlight {
 			continue
 		}
+		slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure))
 		if feedback.arrived {
 			t.bwe.OnAck(feedback.seqNr, int(feedback.size), feedback.departure, feedback.arrival)
 		} else {

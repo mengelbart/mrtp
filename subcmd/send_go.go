@@ -11,6 +11,7 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
+	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/internal/quictransport"
@@ -125,7 +126,11 @@ Flags:
 	if err != nil {
 		return err
 	}
-	dcTransport := quicConn.GetQuicDataChannel()
+
+	dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+	if err != nil {
+		return err
+	}
 
 	// open roq connection
 	roqOpt := []roq.Option{roq.EnableRoqLogs("sender.roq.qlog")}
