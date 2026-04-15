@@ -43,7 +43,7 @@ type Transport struct {
 	qlogFile string
 
 	SetSourceTargetRate func(ratebps uint) error
-	HandleUintStream    func(flowID uint64, rs *quic.ReceiveStream)
+	HandleUniStream     func(flowID uint64, rs *quic.ReceiveStream)
 	HandleDatagram      func(flowID uint64, datagram []byte)
 }
 
@@ -214,8 +214,8 @@ func (t *Transport) receiveUniStreams() {
 		}
 
 		go func() {
-			if t.HandleUintStream != nil {
-				t.HandleUintStream(flowID, rs)
+			if t.HandleUniStream != nil {
+				t.HandleUniStream(flowID, rs)
 			}
 		}()
 	}

@@ -107,7 +107,7 @@ Flags:
 	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
 		// no datagrams expected
 	}
-	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
+	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
 		err := dcTransport.ReadStream(context.Background(), rs, flowID)
 		if err != nil {
 			panic(fmt.Sprintf("forward stream with flowID: %v: %v", flowID, err))

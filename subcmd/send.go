@@ -247,7 +247,7 @@ Flags:
 			// all datagrams belong to RoQ for now
 			roqTransport.HandleDatagram(dgram)
 		}
-		quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
+		quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
 			if flowID == uint64(s.rtpFlowID) || flowID == uint64(s.rtcpRecvFlowID) || flowID == uint64(s.rtcpSendFlowID) {
 				roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 				return
