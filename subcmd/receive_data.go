@@ -67,7 +67,10 @@ Flags:
 		return err
 	}
 
-	dcTransport := quicConn.GetQuicDataChannel()
+	dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+	if err != nil {
+		return err
+	}
 
 	// start handler
 	quicConn.StartHandlers()

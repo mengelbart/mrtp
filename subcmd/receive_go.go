@@ -10,6 +10,7 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
+	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/gstreamer"
@@ -104,7 +105,10 @@ Flags:
 		return err
 	}
 
-	dcTransport := quicConn.GetQuicDataChannel()
+	dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+	if err != nil {
+		return err
+	}
 
 	// set handlers for datagrams and streams
 	// have to forward it ether to roq or dc

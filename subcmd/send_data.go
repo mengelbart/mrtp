@@ -12,6 +12,7 @@ import (
 
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
+	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/quic-go/quic-go"
 )
@@ -96,7 +97,11 @@ Flags:
 	if err != nil {
 		return err
 	}
-	dcTransport := quicConn.GetQuicDataChannel()
+
+	dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+	if err != nil {
+		return err
+	}
 
 	// set handlers for datagrams and streams
 	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {

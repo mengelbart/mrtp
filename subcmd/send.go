@@ -12,6 +12,7 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
+	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
@@ -227,7 +228,6 @@ Flags:
 		if err != nil {
 			return err
 		}
-		dcTransport := quicConn.GetQuicDataChannel()
 
 		// open roq connection
 		roqOpt := []roq.Option{roq.EnableRoqLogs("sender.roq.qlog")}
@@ -236,6 +236,11 @@ Flags:
 			return err
 		}
 		defer roqTransport.CloseLogFile()
+
+		dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+		if err != nil {
+			return err
+		}
 
 		// set handlers for datagrams and streams
 		quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
