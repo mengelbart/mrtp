@@ -71,8 +71,8 @@ func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstre
 var DefaultStreamSourceFactory StreamSourceFactory = &gstreamerVideoStreamSourceFactory{}
 
 var (
-	gstSCReAM   bool
-	dcPercatage uint
+	gstSCReAM    bool
+	dcPercentage uint
 )
 
 type Send struct {
@@ -127,7 +127,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.UintVar(&s.rtcpSendFlowID, "rtcp-send-flow-id", 2, "RTCP Sender Flow ID when using RTP over QUIC")
 	fs.UintVar(&s.rtcpRecvFlowID, "rtcp-recv-flow-id", 1, "RTCP Receiver Flow ID when using RTP over QUIC")
 	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
-	fs.UintVar(&dcPercatage, "dc-tr-share", 30, "Percentage of target rate to be used for data channel (RoQ only)")
+	fs.UintVar(&dcPercentage, "dc-tr-share", 50, "Percentage of target rate to be used for data channel (RoQ only)")
 
 	DefaultStreamSourceFactory.ConfigureFlags(fs)
 
@@ -283,7 +283,7 @@ Flags:
 
 			mediaTargetRate := ratebps
 			if s.datachannel && dataSource != nil && dataSource.Running() {
-				mediaTargetRate = ratebps * (100 - dcPercatage) / 100
+				mediaTargetRate = ratebps * (100 - dcPercentage) / 100
 			}
 			err := mediaBa.SetBitrate(mediaTargetRate)
 			if err != nil {
