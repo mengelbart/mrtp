@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp/data"
+	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/netsim"
 	"github.com/quic-go/quic-go"
@@ -112,7 +113,10 @@ func createReceiver(ctx context.Context, conn net.PacketConn) (*quictransport.Tr
 }
 
 func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Transport) error {
-	dcTransport := quicConn.GetQuicDataChannel()
+	dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+	if err != nil {
+		return err
+	}
 
 	// set handlers for datagrams and streams
 	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
@@ -151,7 +155,10 @@ func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Tran
 }
 
 func runDcReceiver(t *testing.T, wg *sync.WaitGroup, quicConn *quictransport.Transport) error {
-	dcTransport := quicConn.GetQuicDataChannel()
+	dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+	if err != nil {
+		return err
+	}
 
 	// start handler
 	quicConn.StartHandlers()
