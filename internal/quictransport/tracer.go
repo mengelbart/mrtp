@@ -29,6 +29,7 @@ func (f *tracerFactory) newTracer(ctx context.Context, isClient bool, connID qlo
 	return &tracer{
 		qlogFileSeq: qfs,
 		transport:   f.transport,
+		baseTime:    time.Now(),
 	}
 }
 
@@ -55,6 +56,7 @@ func (r *multiplexedRecorder) Close() error {
 type tracer struct {
 	qlogFileSeq *qlogwriter.FileSeq
 	transport   *Transport
+	baseTime    time.Time
 }
 
 func (t *tracer) AddProducer() qlogwriter.Recorder {
@@ -83,7 +85,13 @@ func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
 					for j, delta := range tsRange.TimestampDelta {
 						seqNr := uint64(f.LargestAcked()) - uint64(j)
 						delta := time.Duration(delta) * time.Microsecond
-						arrival := previous.Add(delta)
+						var arrival time.Time
+						if previous.IsZero() {
+							arrival = t.baseTime.Add(delta)
+						} else {
+							arrival = previous.Add(-delta)
+						}
+						slog.Info("ACK", "seqNr", seqNr, "delta", delta.Milliseconds(), "arrival", arrival)
 						previous = arrival
 						t.transport.packetAcked(ts, seqNr, arrival)
 					}
@@ -99,8 +107,9 @@ func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
 			}
 		}
 	case qlog.PacketLost:
-		t.transport.packetLost(ts, uint64(e.Header.PacketNumber))
+		t.transport.packetLost(uint64(e.Header.PacketNumber))
 	}
+	t.transport.updateCongestionControl(ts)
 }
 
 type traceWriter struct {

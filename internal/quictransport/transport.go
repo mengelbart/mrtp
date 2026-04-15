@@ -264,7 +264,7 @@ func (t *Transport) packetSent(ts time.Time, seqNr uint64, size int) {
 	}
 }
 
-func (t *Transport) packetLost(ts time.Time, seqNr uint64) {
+func (t *Transport) packetLost(seqNr uint64) {
 	if seqNr < t.lowestInFlight {
 		return
 	}
@@ -286,10 +286,10 @@ func (t *Transport) packetLost(ts time.Time, seqNr uint64) {
 	} else {
 		t.packetFeedback = slices.Insert(t.packetFeedback, idx, feedback)
 	}
-	t.updateCongestionControl(ts)
 }
 
 func (t *Transport) packetAcked(ts time.Time, seqNr uint64, arrival time.Time) {
+	slog.Info("packet acked", "seqNr", seqNr, "arrival", arrival, "rtt", arrival.Sub(ts).Milliseconds())
 	if seqNr > t.highestAcked {
 		t.highestAcked = seqNr
 	}
@@ -317,7 +317,6 @@ func (t *Transport) packetAcked(ts time.Time, seqNr uint64, arrival time.Time) {
 	} else {
 		t.packetFeedback = slices.Insert(t.packetFeedback, idx, feedback)
 	}
-	t.updateCongestionControl(ts)
 }
 
 func (t *Transport) updateCongestionControl(ts time.Time) {
@@ -358,7 +357,7 @@ func (t *Transport) updateNADA() uint {
 		if feedback.seqNr < t.lowestInFlight {
 			continue
 		}
-		slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure))
+		slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure).Milliseconds())
 		acks = append(acks, nada.Acknowledgment{
 			SeqNr:     feedback.seqNr,
 			SizeBit:   feedback.size * 8,
@@ -386,7 +385,7 @@ func (t *Transport) updateGCC(ts time.Time) uint {
 		if feedback.seqNr < t.lowestInFlight {
 			continue
 		}
-		slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure))
+		slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure).Milliseconds())
 		if feedback.arrived {
 			t.bwe.OnAck(feedback.seqNr, int(feedback.size), feedback.departure, feedback.arrival)
 		} else {
