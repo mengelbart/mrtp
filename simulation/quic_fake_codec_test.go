@@ -117,7 +117,7 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		// all datagrams belong to RoQ for now
 		roqTransport.HandleDatagram(dgram)
 	}
-	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
+	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
 		if flowID == uint64(rtpFlowID) || flowID == uint64(rtcpRecvFlowID) || flowID == uint64(rtcpSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
@@ -197,7 +197,7 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
 		roqTransport.HandleDatagram(dgram)
 	}
-	quicConn.HandleUintStream = func(flowID uint64, rs *quic.ReceiveStream) {
+	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
 		if flowID == uint64(rtpFlowID) || flowID == uint64(rtcpRecvFlowID) || flowID == uint64(rtcpSendFlowID) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
 			return
