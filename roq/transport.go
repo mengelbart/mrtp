@@ -38,7 +38,7 @@ func New(ctx context.Context, quicConn *quic.Conn, opts ...Option) (*Transport, 
 		}
 	}
 
-	conn := roq.NewQUICGoConnection(quicConn)
+	conn := NewQUICGoConnection(quicConn)
 
 	ql := (*qlog.Logger)(nil)
 
