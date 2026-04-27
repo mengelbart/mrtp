@@ -81,11 +81,11 @@ Flags:
 
 	if s.nada {
 		feedbackDelta := uint64(20)
-		quicTOptions = append(quicTOptions, quictransport.EnableNADA(750_000, 150_000, s.maxTargetRate, uint(feedbackDelta)))
+		quicTOptions = append(quicTOptions, quictransport.EnableNADA(initTargetRate, minTargetRate, s.maxTargetRate, uint(feedbackDelta)))
 	}
 
 	if s.gcc {
-		quicTOptions = append(quicTOptions, quictransport.EnableGCC(750_000, 150_000, int(s.maxTargetRate)))
+		quicTOptions = append(quicTOptions, quictransport.EnableGCC(initTargetRate, minTargetRate, int(s.maxTargetRate)))
 	}
 
 	if s.qlog {
@@ -108,7 +108,7 @@ Flags:
 		// no datagrams expected
 	}
 	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		err := dcTransport.ReadStream(context.Background(), rs, flowID)
+		err := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
 		if err != nil {
 			panic(fmt.Sprintf("forward stream with flowID: %v: %v", flowID, err))
 		}

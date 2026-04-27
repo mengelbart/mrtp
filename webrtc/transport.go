@@ -479,7 +479,7 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 			}
 		}
 		if t.pacer != nil {
-			t.pacer.SetRate(t.pc.ID(), int(tr))
+			t.pacer.SetRate(t.pc.ID(), int(1.5*float64(tr)))
 		}
 	}
 

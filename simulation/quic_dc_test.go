@@ -123,7 +123,7 @@ func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Tran
 		// no datagrams expected
 	}
 	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		err := dcTransport.ReadStream(context.Background(), rs, flowID)
+		err := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
 		if err != nil {
 			panic(fmt.Sprintf("forward stream with flowID: %v: %v", flowID, err))
 		}
@@ -182,7 +182,7 @@ func runDcReceiver(t *testing.T, wg *sync.WaitGroup, quicConn *quictransport.Tra
 	}
 
 	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		err := dcTransport.ReadStream(context.Background(), rs, flowID)
+		err := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
 		if err != nil {
 			panic(fmt.Sprintf("forward stream with flowID: %v: %v", flowID, err))
 		}
