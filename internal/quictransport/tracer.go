@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -79,7 +78,6 @@ func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
 		for _, frame := range e.Frames {
 			switch f := frame.Frame.(type) {
 			case *qlog.AckFrame:
-				slog.Info("received ack frame", "ack_ranges", f.AckRanges, "receive_timestamps", f.ReceiveTimestamps)
 				previous := time.Time{}
 				for _, tsRange := range f.ReceiveTimestamps {
 					for j, delta := range tsRange.TimestampDelta {
@@ -91,7 +89,6 @@ func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
 						} else {
 							arrival = previous.Add(-delta)
 						}
-						slog.Info("ACK", "seqNr", seqNr, "delta", delta.Milliseconds(), "arrival", arrival)
 						previous = arrival
 						t.transport.packetAcked(ts, seqNr, arrival)
 					}
@@ -100,12 +97,6 @@ func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
 		}
 	case qlog.PacketSent:
 		t.transport.packetSent(ts, uint64(e.Header.PacketNumber), e.Raw.Length)
-		for _, frame := range e.Frames {
-			switch f := frame.Frame.(type) {
-			case *qlog.AckFrame:
-				slog.Info("sent ack frame", "ack_ranges", f.AckRanges, "receive_timestamps", f.ReceiveTimestamps)
-			}
-		}
 	case qlog.PacketLost:
 		t.transport.packetLost(uint64(e.Header.PacketNumber))
 	}

@@ -54,4 +54,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/quic-go/quic-go v0.59.0 => github.com/mengelbart/quic-go v0.7.1-0.20260415150203-68116a5fdacc
+replace github.com/quic-go/quic-go v0.59.0 => github.com/mengelbart/quic-go v0.7.1-0.20260430134040-e17c3bf89daf
+
+replace github.com/pion/bwe v0.0.0-20260218143828-d4996fd96f96 => github.com/mengelbart/bwe v0.0.0-20260427191144-17142e7f1f92
+
+replace github.com/mengelbart/roq v0.3.1-0.20260414065730-7ea2404891a8 => github.com/mengelbart/roq v0.3.1-0.20260429162245-63193bc1aca2
+
+replace github.com/mengelbart/quicdc v0.0.0-20250910122056-7f9492d1bdd6 => github.com/mengelbart/quicdc v0.0.0-20260429161412-a779b2310a0f

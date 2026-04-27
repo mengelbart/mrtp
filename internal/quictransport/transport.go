@@ -32,6 +32,7 @@ type Transport struct {
 
 	running atomic.Bool
 
+	pacingFactor    func() float64
 	nada            *nada.SenderOnly
 	bwe             *gcc.SendSideController
 	lastBWEUpdate   time.Time
@@ -108,10 +109,18 @@ func EnableQLogs(qlogFile string) Option {
 	}
 }
 
+func PacingFactor(factor func() float64) Option {
+	return func(t *Transport) error {
+		t.pacingFactor = factor
+		return nil
+	}
+}
+
 func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transport, error) {
 	t := &Transport{
-		role: RoleServer,
-		ctx:  ctx,
+		role:         RoleServer,
+		ctx:          ctx,
+		pacingFactor: func() float64 { return 1.0 },
 	}
 
 	for _, opt := range opts {
@@ -127,8 +136,8 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 
 	if t.role == RoleServer {
 		quicConfig := &quic.Config{
-			EnableDatagrams:                true,
-			InitialStreamReceiveWindow:     quicvarint.Max,
+			EnableDatagrams: true,
+			// InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			MaxIncomingUniStreams:          quicvarint.Max,
 			Tracer:                         tracer.newTracer,
@@ -145,8 +154,8 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 		}
 	} else {
 		quicConfig := &quic.Config{
-			EnableDatagrams:                true,
-			InitialStreamReceiveWindow:     quicvarint.Max,
+			EnableDatagrams: true,
+			// InitialStreamReceiveWindow:     quicvarint.Max,
 			InitialConnectionReceiveWindow: quicvarint.Max,
 			MaxIncomingUniStreams:          quicvarint.Max,
 			Tracer:                         tracer.newTracer,
@@ -289,7 +298,6 @@ func (t *Transport) packetLost(seqNr uint64) {
 }
 
 func (t *Transport) packetAcked(ts time.Time, seqNr uint64, arrival time.Time) {
-	slog.Info("packet acked", "seqNr", seqNr, "arrival", arrival, "rtt", arrival.Sub(ts).Milliseconds())
 	if seqNr > t.highestAcked {
 		t.highestAcked = seqNr
 	}
@@ -340,7 +348,7 @@ func (t *Transport) updateCongestionControl(ts time.Time) {
 			slog.Error("Error setting source target rate:", "error", err)
 		}
 	}
-	t.quicConn.SetPacingRate(uint64(target))
+	t.quicConn.SetPacingRate(uint64(t.pacingFactor() * float64(target)))
 }
 
 func (t *Transport) updateNADA() uint {
@@ -357,7 +365,7 @@ func (t *Transport) updateNADA() uint {
 		if feedback.seqNr < t.lowestInFlight {
 			continue
 		}
-		slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure).Milliseconds())
+		// slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure).Milliseconds())
 		acks = append(acks, nada.Acknowledgment{
 			SeqNr:     feedback.seqNr,
 			SizeBit:   feedback.size * 8,
@@ -385,7 +393,7 @@ func (t *Transport) updateGCC(ts time.Time) uint {
 		if feedback.seqNr < t.lowestInFlight {
 			continue
 		}
-		slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure).Milliseconds())
+		// slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure).Milliseconds())
 		if feedback.arrived {
 			t.bwe.OnAck(feedback.seqNr, int(feedback.size), feedback.departure, feedback.arrival)
 		} else {

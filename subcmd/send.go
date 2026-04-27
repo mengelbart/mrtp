@@ -16,11 +16,15 @@ import (
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
-	roqProtocol "github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
 )
 
 const roqALPN = "roq-09"
+
+const (
+	initTargetRate = 1_000_000
+	minTargetRate  = 400_000
+)
 
 func init() {
 	cmdmain.RegisterSubCmd("send", func() cmdmain.SubCmd { return new(Send) })
@@ -97,6 +101,8 @@ type Send struct {
 	rtpFlowID         uint
 	rtcpSendFlowID    uint
 	rtcpRecvFlowID    uint
+
+	dataSource *data.DataBin
 }
 
 func (s *Send) Help() string {
@@ -113,7 +119,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
 	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
 	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
-	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
+	fs.UintVar(&s.maxTargetRate, "max-target-rate", 30_000_000, "Set the maximum target rate of the congestion controller in bits per second")
 	fs.BoolVar(&s.traceRTP, "trace-rtp-send", false, "Log outgoing RTP packets")
 	fs.BoolVar(&s.datachannel, "dc", false, "Send/Receive data with data channels")
 	fs.StringVar(&s.dcSourceFile, "dc-source", "", "File to be sent. If empty, random data will be sent.")
@@ -191,7 +197,7 @@ Flags:
 
 	rtpBinOpts := []gstreamer.RTPBinOption{}
 	if gstSCReAM {
-		rtpBinOpts = append(rtpBinOpts, gstreamer.EnableSCReAM(750, 250, s.maxTargetRate/1000))
+		rtpBinOpts = append(rtpBinOpts, gstreamer.EnableSCReAM(initTargetRate/1000, minTargetRate/1000, s.maxTargetRate/1000))
 	}
 
 	sender, err := gstreamer.NewRTPBin(rtpBinOpts...)
@@ -209,15 +215,16 @@ Flags:
 			quictransport.WithRole(quictransport.Role(s.roqServer)),
 			quictransport.SetLocalAddress(s.localAddr, s.udpPort),
 			quictransport.SetRemoteAddress(s.remoteAddr, s.udpPort),
+			quictransport.PacingFactor(s.pacingFactor),
 		}
 
 		if s.nada {
 			feedbackDelta := uint64(20)
-			quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 250_000, s.maxTargetRate, uint(feedbackDelta)))
+			quicOptions = append(quicOptions, quictransport.EnableNADA(initTargetRate, minTargetRate, s.maxTargetRate, uint(feedbackDelta)))
 		}
 
 		if s.gcc {
-			quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(s.maxTargetRate)))
+			quicOptions = append(quicOptions, quictransport.EnableGCC(initTargetRate, minTargetRate, int(s.maxTargetRate)))
 		}
 		if s.qlog {
 			quicOptions = append(quicOptions, quictransport.EnableQLogs("sender"))
@@ -249,11 +256,11 @@ Flags:
 		}
 		quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
 			if flowID == uint64(s.rtpFlowID) || flowID == uint64(s.rtcpRecvFlowID) || flowID == uint64(s.rtcpSendFlowID) {
-				roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+				roqTransport.HandleUniStreamWithFlowID(flowID, roq.NewQuicGoReceiveStream(rs))
 				return
 			}
 			if s.datachannel && dcTransport != nil {
-				dcTransport.ReadStream(context.Background(), rs, flowID)
+				dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
 				return
 			}
 
@@ -262,28 +269,30 @@ Flags:
 		quicConn.StartHandlers()
 
 		// open dc connection
-		var dataSource *data.DataBin
+		// var dataSource *data.DataBin
 		if s.datachannel {
 			dcSender, err := dcTransport.NewDataChannelSender(uint64(s.dataChannelFlowID), 0, true)
 			if err != nil {
 				return err
 			}
 
-			dataSource, err = createDataSource(dcSender, s.dcSourceFile, s.dcStartDelay, false, s.dcChunks)
+			s.dataSource, err = createDataSource(dcSender, s.dcSourceFile, s.dcStartDelay, false, s.dcChunks)
 			if err != nil {
 				return err
 			}
 
-			go dataSource.Run(ctx)
+			go s.dataSource.Run(ctx)
 		}
 
 		// set rate callbacks
 		quicConn.SetSourceTargetRate = func(ratebps uint) error {
 			slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
-			mediaTargetRate := ratebps
-			if s.datachannel && dataSource != nil && dataSource.Running() {
+			var mediaTargetRate uint
+			if s.datachannel && s.dataSource != nil && s.dataSource.Running() {
 				mediaTargetRate = ratebps * (100 - dcPercentage) / 100
+			} else {
+				mediaTargetRate = uint(0.9 * float64(ratebps))
 			}
 			err := mediaBa.SetBitrate(mediaTargetRate)
 			if err != nil {
@@ -350,4 +359,13 @@ Flags:
 	}
 
 	return sender.Run()
+}
+
+func (s *Send) pacingFactor() float64 {
+	if s.dataSource != nil && s.dataSource.Running() {
+		// slog.Info("pacing factor", "factor", 1.0, "s.dataSource", s.dataSource, "s.dataSource.Running()", s.dataSource.Running())
+		return 1.0
+	}
+	// slog.Info("pacing factor", "factor", 1.5, "s.dataSource", s.dataSource, "s.dataSource.Running()", s.dataSource.Running())
+	return 1.0
 }

@@ -86,11 +86,12 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 	switch s.codec {
 	case mrtp.H264:
 		encSettings := map[string]any{
-			"pass":         0,   // const rate
-			"speed-preset": 1,   // ultrafast
-			"tune":         4,   // zerolatency
-			"bitrate":      750, // init bitrate in kbps
-			"key-int-max":  0,   // auto
+			"pass":          0,    // const rate
+			"speed-preset":  1,    // ultrafast
+			"tune":          4,    // zerolatency
+			"bitrate":       750,  // init bitrate in kbps
+			"key-int-max":   0,    // auto
+			"intra-refresh": true, // use intra refresh instead of key frames
 		}
 		s.encoder, err = gst.NewElementWithProperties("x264enc", encSettings)
 		if err != nil {
@@ -266,7 +267,6 @@ func (s *StreamSource) SrcPad() (*gst.Pad, error) {
 // SetBitrate sets the target bit rate of the encoder
 func (s *StreamSource) SetBitrate(ratebps uint) error {
 	// reduce target rate
-	ratebps = uint(0.9 * float64(ratebps))
 	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", ratebps)
 
 	switch s.codec {

@@ -33,8 +33,10 @@ func New(conn *quic.Conn, opts ...Option) (*Transport, error) {
 		}
 	}
 
+	quicGoConn := NewQUICGoConnection(t.quicConn)
+
 	// create quicdc session
-	t.session = quicdc.NewSession(t.quicConn)
+	t.session = quicdc.NewSession(quicGoConn)
 
 	t.session.OnIncomingDataChannel(func(dc *quicdc.DataChannel) {
 		t.onIncomingDataChannel(dc)
@@ -53,8 +55,8 @@ func (t *Transport) NewDataChannelSender(channelID uint64, priority uint64, orde
 }
 
 // ReadStream registers a QUIC stream to the quicdc session
-func (t *Transport) ReadStream(ctx context.Context, stream *quic.ReceiveStream, channelID uint64) error {
-	slog.Info("new dc stream", "streamID", stream.StreamID(), "flowID", channelID)
+func (t *Transport) ReadStream(ctx context.Context, stream quicdc.ReceiveStream, channelID uint64) error {
+	slog.Info("new dc stream", "streamID", stream.ID(), "flowID", channelID)
 
 	return t.session.ReadStream(ctx, stream, channelID)
 }

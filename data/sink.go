@@ -25,7 +25,6 @@ func (d *DataSink) read(buf []byte, currentChunk int) (int, error) {
 		slog.Info("Datasink error: ", "err", err)
 		return n, err
 	}
-	slog.Info("DataSink received data", "payload-length", n, "chunk-number", currentChunk)
 	return n, nil
 }
 

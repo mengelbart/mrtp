@@ -1,56 +1,59 @@
 package webrtc
 
 import (
+	"log/slog"
+
 	"github.com/pion/webrtc/v4"
+)
+
+const (
+	bufferedAmountLowThreshold = 512 * 1024  // 512kb
+	maxBufferedAmount          = 1024 * 1024 // 1mb
 )
 
 type DCsender struct {
 	dc       *webrtc.DataChannel
 	dataChan chan []byte // to buffer data until BufferedAmountLow is called by pion
-
-	firstDataUnitsSent bool // have to send one batch outside of BufferedAmountLow callback -> otherwise it is never called
+	sendMore chan struct{}
 }
 
 // newDCsender blocks until the datachannel is open
 func newDCsender(dc *webrtc.DataChannel) *DCsender {
 	s := &DCsender{
 		dc:       dc,
-		dataChan: nil,
+		dataChan: make(chan []byte),
+		sendMore: make(chan struct{}, 1),
 	}
 
-	// chan size and threshold determine burtsyness
-	s.dataChan = make(chan []byte, 50)
-	dc.SetBufferedAmountLowThreshold(20_000)
+	dc.SetBufferedAmountLowThreshold(bufferedAmountLowThreshold)
 
+	connected := make(chan struct{})
 	dc.OnBufferedAmountLow(func() {
-		s.addPacketsToDc()
+		select {
+		case s.sendMore <- struct{}{}:
+		default:
+		}
 	})
 
-	opendChan := make(chan struct{})
 	dc.OnOpen(func() {
-		opendChan <- struct{}{}
+		close(connected)
+		if err := s.sendLoop(); err != nil {
+			slog.Error("Error in send loop", "error", err)
+		}
 	})
 
-	// wait for open
-	<-opendChan
+	<-connected
 
 	return s
 }
 
-// addPacketsToDc adds all packets to the webrtc datachannel which were added unit now
-func (s *DCsender) addPacketsToDc() error {
-	// get length, so we only pick packets that were already in the channel
-	len := len(s.dataChan)
-
-	if len == 0 {
-		s.firstDataUnitsSent = false
-		return nil
-	}
-
-	for range len {
-		data := <-s.dataChan
-		if err := s.dc.Send(data); err != nil {
+func (s *DCsender) sendLoop() error {
+	for buf := range s.dataChan {
+		if err := s.dc.Send(buf); err != nil {
 			return err
+		}
+		if s.dc.BufferedAmount() > maxBufferedAmount {
+			<-s.sendMore
 		}
 	}
 	return nil
@@ -60,12 +63,6 @@ func (s *DCsender) addPacketsToDc() error {
 // Necessary because dc.Send does not block and creates huge buffers
 func (s *DCsender) Write(data []byte) (int, error) {
 	s.dataChan <- data
-
-	if !s.firstDataUnitsSent || len(s.dataChan) == cap(s.dataChan) {
-		s.firstDataUnitsSent = true
-		s.addPacketsToDc() // add first batch
-	}
-
 	return len(data), nil
 }
 

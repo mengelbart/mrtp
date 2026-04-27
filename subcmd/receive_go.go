@@ -16,7 +16,6 @@ import (
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
-	roqProtocol "github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
 )
 
@@ -117,12 +116,12 @@ Flags:
 	}
 	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
 		if flowID == uint64(r.rtpFlowID) || flowID == uint64(r.rtcpRecvFlowID) || flowID == uint64(r.rtcpSendFlowID) {
-			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+			roqTransport.HandleUniStreamWithFlowID(flowID, roq.NewQuicGoReceiveStream(rs))
 			return
 		}
 
 		if r.datachannel {
-			dcTransport.ReadStream(context.Background(), rs, flowID)
+			dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
 			return
 		}
 

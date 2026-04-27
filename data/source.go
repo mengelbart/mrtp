@@ -147,8 +147,6 @@ func (d *DataBin) startFileSource(ctx context.Context) error {
 				d.running.Store(false)
 				return fmt.Errorf("failed to write to sink: %w", writeErr)
 			}
-
-			logDataEvent(n)
 		}
 		if readErr == io.EOF {
 			d.running.Store(false)
@@ -216,13 +214,11 @@ func (d *DataBin) startChunkSource(ctx context.Context) error {
 				default:
 				}
 
-				n, writeErr := d.wc.Write(buf)
+				_, writeErr := d.wc.Write(buf)
 				if writeErr != nil {
 					slog.Error("DataSrc failed to write to sink", "error", writeErr, "chunk-number", chunkNum)
 					return
 				}
-
-				logDataEvent(n)
 			}
 			slog.Info("DataSrc Chunk finised", "chunk-number", chunkNum)
 		}(i)
@@ -268,12 +264,11 @@ func (d *DataBin) startRandomSource(ctx context.Context) error {
 			}
 		}
 
-		n, err := d.wc.Write(buf)
+		_, err := d.wc.Write(buf)
 		if err != nil {
 			d.running.Store(false)
 			return err
 		}
-		logDataEvent(n)
 	}
 }
 
@@ -297,8 +292,4 @@ func (d *DataBin) Run(ctx context.Context) error {
 	}
 
 	return d.startRandomSource(ctx)
-}
-
-func logDataEvent(len int) {
-	slog.Info("DataSource sent data", "payload-length", len)
 }

@@ -16,7 +16,6 @@ import (
 	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
-	roqProtocol "github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
 )
 
@@ -112,11 +111,11 @@ Flags:
 
 	if s.nada {
 		feedbackDelta := uint64(20)
-		quicOptions = append(quicOptions, quictransport.EnableNADA(750_000, 250_000, s.maxTargetRate, uint(feedbackDelta)))
+		quicOptions = append(quicOptions, quictransport.EnableNADA(initTargetRate, minTargetRate, s.maxTargetRate, uint(feedbackDelta)))
 	}
 
 	if s.gcc {
-		quicOptions = append(quicOptions, quictransport.EnableGCC(750_000, 250_000, int(s.maxTargetRate)))
+		quicOptions = append(quicOptions, quictransport.EnableGCC(initTargetRate, minTargetRate, int(s.maxTargetRate)))
 	}
 	if s.qlog {
 		quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
@@ -146,11 +145,11 @@ Flags:
 	}
 	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
 		if flowID == uint64(s.rtpFlowID) || flowID == uint64(s.rtcpRecvFlowID) || flowID == uint64(s.rtcpSendFlowID) {
-			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+			roqTransport.HandleUniStreamWithFlowID(flowID, roq.NewQuicGoReceiveStream(rs))
 			return
 		}
 		if s.datachannel && dcTransport != nil {
-			dcTransport.ReadStream(context.Background(), rs, flowID)
+			dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
 			return
 		}
 
