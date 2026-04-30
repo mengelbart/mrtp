@@ -103,6 +103,9 @@ Usage:
 	}
 	fs.Parse(args)
 
+	// workaround: codec flag is only registered in sink
+	DefaultStreamSourceFactory.SetCodec(DefaultStreamSinkFactory.Codec())
+
 	pipeline, err := gstreamer.NewRTPBin()
 	if err != nil {
 		return err

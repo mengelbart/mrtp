@@ -30,6 +30,7 @@ var UDPRecvBufferSize int
 type StreamSinkFactory interface {
 	ConfigureFlags(*flag.FlagSet)
 	MakeStreamSink(name string, payloadType int) (gstreamer.RTPSinkBin, error)
+	Codec() string
 }
 
 type gstreamerVideoStreamSinkFactory struct {
@@ -46,6 +47,10 @@ func (f *gstreamerVideoStreamSinkFactory) ConfigureFlags(fs *flag.FlagSet) {
 	if fs.Lookup("codec") == nil {
 		fs.StringVar(&f.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
 	}
+}
+
+func (f *gstreamerVideoStreamSinkFactory) Codec() string {
+	return f.codec
 }
 
 func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (gstreamer.RTPSinkBin, error) {
