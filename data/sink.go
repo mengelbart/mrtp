@@ -19,12 +19,13 @@ func NewSink(rc io.ReadCloser) (*DataSink, error) {
 	return d, nil
 }
 
-func (d *DataSink) read(buf []byte, currentChunk int) (int, error) {
+func (d *DataSink) read(buf []byte) (int, error) {
 	n, err := d.rc.Read(buf)
 	if err != nil {
 		slog.Info("Datasink error: ", "err", err)
 		return n, err
 	}
+	slog.Info("DataSink read", "bytes-read", n, "error", err)
 	return n, nil
 }
 
@@ -35,7 +36,7 @@ func (d *DataSink) Run() error {
 	for {
 		// Read chunk size header first (8 bytes for uint64)
 		headerBuf := make([]byte, 8)
-		n, err := d.read(headerBuf, 0)
+		n, err := d.read(headerBuf)
 		if err != nil {
 			return err
 		}
@@ -52,7 +53,7 @@ func (d *DataSink) Run() error {
 			slog.Info("DataSink chunksize 0")
 			buf := make([]byte, 2048)
 			for {
-				_, err = d.read(buf, currentChunk)
+				_, err = d.read(buf)
 				if err != nil {
 					return err
 				}
@@ -62,7 +63,7 @@ func (d *DataSink) Run() error {
 
 			buf := make([]byte, 2048)
 			for read < int(chunkSize) {
-				n, err := d.read(buf, currentChunk)
+				n, err := d.read(buf)
 				if err != nil {
 					return err
 				}

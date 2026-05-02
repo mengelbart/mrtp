@@ -244,7 +244,6 @@ func (d *DataBin) startRandomSource(ctx context.Context) error {
 	}
 
 	buf := make([]byte, 1024)
-	rand.Read(buf)
 
 	for {
 		select {
@@ -263,6 +262,7 @@ func (d *DataBin) startRandomSource(ctx context.Context) error {
 				return err
 			}
 		}
+		rand.Read(buf)
 
 		_, err := d.wc.Write(buf)
 		if err != nil {
