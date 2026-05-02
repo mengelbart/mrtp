@@ -292,7 +292,7 @@ Flags:
 			if s.datachannel && s.dataSource != nil && s.dataSource.Running() {
 				mediaTargetRate = ratebps * (100 - dcPercentage) / 100
 			} else {
-				mediaTargetRate = uint(0.9 * float64(ratebps))
+				mediaTargetRate = uint(0.8 * float64(ratebps))
 			}
 			err := mediaBa.SetBitrate(mediaTargetRate)
 			if err != nil {
