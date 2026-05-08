@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 
 	"github.com/pion/transport/v4"
 	"github.com/wlynxg/anet"
@@ -26,6 +27,7 @@ type Net struct {
 
 	setRecvBufferSize bool
 	recvBufferSize    int
+	ecnMap            *sync.Map
 }
 
 // CreateListenConfig implements [transport.Net].
@@ -34,10 +36,13 @@ func (n *Net) CreateListenConfig(c *net.ListenConfig) transport.ListenConfig {
 }
 
 func NewNet(opts ...NetOption) (*Net, error) {
+	// TODO: should prob be created by caller and pass it to rfc8888 somehow
+	var encMap sync.Map
 	n := &Net{
 		interfaces:        []*transport.Interface{},
 		setRecvBufferSize: false,
 		recvBufferSize:    defaultRecvBufferSize,
+		ecnMap:            &encMap,
 	}
 	for _, opt := range opts {
 		if err := opt(n); err != nil {
@@ -102,7 +107,7 @@ func (n *Net) DialUDP(network string, laddr *net.UDPAddr, raddr *net.UDPAddr) (t
 			return nil, err
 		}
 	}
-	return conn, nil
+	return NewUDPConn(conn, n.ecnMap)
 }
 
 // InterfaceByIndex implements transport.Net.
@@ -155,7 +160,7 @@ func (n *Net) ListenUDP(network string, locAddr *net.UDPAddr) (transport.UDPConn
 			return nil, err
 		}
 	}
-	return conn, nil
+	return NewUDPConn(conn, n.ecnMap)
 }
 
 // ResolveIPAddr implements transport.Net.
