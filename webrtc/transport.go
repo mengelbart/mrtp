@@ -54,6 +54,8 @@ type Transport struct {
 	pacer         *pacing.InterceptorFactory
 	bwe           mrtp.BWE
 	SetTargetRate func(ratebps uint) error
+
+	ect0, ect1, ecnce uint64
 }
 
 type Option func(*Transport) error
@@ -429,11 +431,21 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 	if t.bwe != nil {
 		for _, p := range report.PacketReports {
 			if p.Arrived {
-				t.bwe.OnAck(p.SequenceNumber, p.Size, p.Departure, p.Arrival, 0)
+				slog.Info("packet arrived", "ssrc", p.SSRC, "sequence_number", p.SequenceNumber, "size", p.Size, "ecn", p.ECN)
+				t.bwe.OnAck(p.SequenceNumber, p.Size, p.Departure, p.Arrival, mrtp.ECN(p.ECN))
+				switch p.ECN {
+				case rtcp.ECNECT0:
+					t.ect0++
+				case rtcp.ECNECT1:
+					t.ect1++
+				case rtcp.ECNCE:
+					t.ecnce++
+				}
 			} else {
 				t.bwe.OnLoss(p.SequenceNumber, p.Size, p.Departure)
 			}
 		}
+		t.bwe.UpdateECNCounts(t.ect0, t.ect1, t.ecnce)
 		t.bwe.UpdateRTT(report.RTT)
 		tr := t.bwe.UpdateTargetRate(report.Arrival)
 		if tr > 0 {
