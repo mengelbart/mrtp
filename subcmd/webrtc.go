@@ -166,9 +166,9 @@ Usage:
 			return fmt.Errorf("unknown BWE factory: %v", w.bwe)
 		}
 		bwe, err := bweFactory.MakeBWE(BWEConfig{
-			initTargetRate: initTargetRate,
-			minTargetRate:  minTargetRate,
-			maxTargetRate:  w.maxTargetRate,
+			InitTargetRate: initTargetRate,
+			MinTargetRate:  minTargetRate,
+			MaxTargetRate:  w.maxTargetRate,
 		})
 		if err != nil {
 			return err
