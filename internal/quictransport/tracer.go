@@ -90,9 +90,10 @@ func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
 							arrival = previous.Add(-delta)
 						}
 						previous = arrival
-						t.transport.packetAcked(ts, seqNr, arrival)
+						t.transport.packetAcked(seqNr, arrival)
 					}
 				}
+				t.transport.updateECNCounts(f.ECT0, f.ECT1, f.ECNCE)
 			}
 		}
 	case qlog.PacketSent:
@@ -100,7 +101,7 @@ func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
 	case qlog.PacketLost:
 		t.transport.packetLost(uint64(e.Header.PacketNumber))
 	}
-	t.transport.updateCongestionControl(ts)
+	t.transport.updateCongestionControl()
 }
 
 type traceWriter struct {

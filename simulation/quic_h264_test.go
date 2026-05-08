@@ -12,6 +12,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/internal/quictransport"
@@ -112,11 +113,12 @@ func TestQUICh264(t *testing.T) {
 }
 
 func createH264Sender(ctx context.Context, conn net.PacketConn) (*quictransport.Transport, error) {
+	nada := mrtp.NewNada(750_000, 150_000, 8_000_000, 20*time.Millisecond)
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
 		quictransport.SetRemoteAddress("10.0.0.1", 8080),
 		quictransport.SetNetConn(conn),
-		quictransport.EnableNADA(750_000, 150_000, 8_000_000, uint(20)),
+		quictransport.SetBWE(nada),
 		quictransport.EnableQLogs("./sender.qlog"),
 	}
 

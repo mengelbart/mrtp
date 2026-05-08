@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
@@ -73,27 +74,31 @@ Flags:
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	quicTOptions := []quictransport.Option{
+	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
 		quictransport.SetLocalAddress(s.localAddr, 8080),
 		quictransport.SetRemoteAddress(s.remoteAddr, 8080),
 	}
 
 	if s.nada {
-		feedbackDelta := uint64(20)
-		quicTOptions = append(quicTOptions, quictransport.EnableNADA(initTargetRate, minTargetRate, s.maxTargetRate, uint(feedbackDelta)))
+		nada := mrtp.NewNada(initTargetRate, minTargetRate, s.maxTargetRate, 20*time.Millisecond)
+		quicOptions = append(quicOptions, quictransport.SetBWE(nada))
 	}
 
 	if s.gcc {
-		quicTOptions = append(quicTOptions, quictransport.EnableGCC(initTargetRate, minTargetRate, int(s.maxTargetRate)))
+		gcc, err := mrtp.NewGCC(initTargetRate, minTargetRate, s.maxTargetRate)
+		if err != nil {
+			return err
+		}
+		quicOptions = append(quicOptions, quictransport.SetBWE(gcc))
 	}
 
 	if s.qlog {
-		quicTOptions = append(quicTOptions, quictransport.EnableQLogs("./sender.qlog"))
+		quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
 	}
 
 	// open quic connection
-	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicTOptions...)
+	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicOptions...)
 	if err != nil {
 		return err
 	}

@@ -110,12 +110,16 @@ Flags:
 	}
 
 	if s.nada {
-		feedbackDelta := uint64(20)
-		quicOptions = append(quicOptions, quictransport.EnableNADA(initTargetRate, minTargetRate, s.maxTargetRate, uint(feedbackDelta)))
+		nada := mrtp.NewNada(initTargetRate, minTargetRate, s.maxTargetRate, 20*time.Millisecond)
+		quicOptions = append(quicOptions, quictransport.SetBWE(nada))
 	}
 
 	if s.gcc {
-		quicOptions = append(quicOptions, quictransport.EnableGCC(initTargetRate, minTargetRate, int(s.maxTargetRate)))
+		gcc, err := mrtp.NewGCC(initTargetRate, minTargetRate, s.maxTargetRate)
+		if err != nil {
+			return err
+		}
+		quicOptions = append(quicOptions, quictransport.SetBWE(gcc))
 	}
 	if s.qlog {
 		quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))

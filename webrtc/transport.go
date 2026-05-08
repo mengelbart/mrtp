@@ -7,16 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Willi-42/go-nada/nada"
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/internal/logging"
-	"github.com/pion/bwe/gcc"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/pacing"
 	"github.com/pion/interceptor/pkg/packetdump"
 	"github.com/pion/interceptor/pkg/rfc8888"
 	"github.com/pion/interceptor/pkg/rtpfb"
 	"github.com/pion/interceptor/pkg/twcc"
-	pion_logging "github.com/pion/logging"
 	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v2"
 	"github.com/pion/transport/v4"
@@ -53,8 +51,7 @@ type Transport struct {
 	onConnected   func()
 
 	pacer         *pacing.InterceptorFactory
-	bwe           *gcc.SendSideController
-	nada          *nada.SenderOnly
+	bwe           mrtp.BWE
 	SetTargetRate func(ratebps uint) error
 }
 
@@ -125,28 +122,9 @@ func EnableCCFB() Option {
 	}
 }
 
-func EnableGCC(initRate, minRate, maxRate int) Option {
+func SetBWE(bwe mrtp.BWE) Option {
 	return func(t *Transport) error {
-		var err error
-		plf := pion_logging.NewJSONLoggerFactory()
-		t.bwe, err = gcc.NewSendSideController(initRate, minRate, maxRate, gcc.WithLoggerFactory(plf))
-		return err
-	}
-}
-
-func EnableNADA(initRate, minRate, maxRate uint) Option {
-	return func(t *Transport) error {
-		nadaConfig := nada.Config{
-			MinRate:                  uint64(minRate),
-			MaxRate:                  uint64(maxRate),
-			StartRate:                uint64(initRate),
-			FeedbackDelta:            uint64(feedbackInterval / time.Millisecond), // convert to ms
-			DeactivateQDelayWrapping: true,
-			RefCongLevel:             15, // ms
-		}
-
-		nada := nada.NewSenderOnly(nadaConfig)
-		t.nada = &nada
+		t.bwe = bwe
 		return nil
 	}
 }
@@ -441,47 +419,28 @@ func (t *Transport) Close() error {
 func (t *Transport) onCCFB(report rtpfb.Report) error {
 	t.logger.Info("received ccfb packet report", "arrival", report.Arrival, "RTT", report.RTT)
 
-	var tr uint
-	// GCC as CC
 	if t.bwe != nil {
 		for _, p := range report.PacketReports {
 			if p.Arrived {
-				t.bwe.OnAck(p.SequenceNumber, p.Size, p.Arrival, p.Departure)
+				t.bwe.OnAck(p.SequenceNumber, p.Size, p.Departure, p.Arrival, 0)
 			} else {
-				t.bwe.OnLoss()
+				t.bwe.OnLoss(p.SequenceNumber, p.Size, p.Departure)
 			}
 		}
-		tr = uint(t.bwe.OnFeedback(report.Arrival, report.RTT))
-	}
-
-	// NADA as CC
-	if t.nada != nil {
-		acks := []nada.Acknowledgment{}
-		for _, p := range report.PacketReports {
-			acks = append(acks, nada.Acknowledgment{
-				SeqNr:     p.SequenceNumber,
-				Departure: p.Departure,
-				Arrival:   p.Arrival,
-				SizeBit:   uint64(p.Size) * 8,
-				Marked:    p.ECN == rtcp.ECNCE,
-				Arrived:   p.Arrived,
-			})
-		}
-		tr = uint(t.nada.OnAcks(report.RTT, acks))
-	}
-
-	if tr != 0 {
-		if t.SetTargetRate != nil {
-			// set target rate of encoder
-			err := t.SetTargetRate(tr)
-			if err != nil {
-				return err
+		t.bwe.UpdateRTT(report.RTT)
+		tr := t.bwe.UpdateTargetRate(report.Arrival)
+		if tr > 0 {
+			if t.SetTargetRate != nil {
+				// set target rate of encoder
+				err := t.SetTargetRate(uint(tr))
+				if err != nil {
+					return err
+				}
+			}
+			if t.pacer != nil {
+				t.pacer.SetRate(t.pc.ID(), int(1.5*float64(tr)))
 			}
 		}
-		if t.pacer != nil {
-			t.pacer.SetRate(t.pc.ID(), int(1.5*float64(tr)))
-		}
 	}
-
 	return nil
 }
