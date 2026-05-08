@@ -7,9 +7,9 @@ import (
 )
 
 type BWEConfig struct {
-	initTargetRate uint
-	minTargetRate  uint
-	maxTargetRate  uint
+	InitTargetRate uint
+	MinTargetRate  uint
+	MaxTargetRate  uint
 }
 
 type BWEFactory interface {
@@ -24,9 +24,9 @@ func (f BWEFactoryFunc) MakeBWE(config BWEConfig) (mrtp.BWE, error) {
 
 var BWEFactories = map[string]BWEFactory{
 	"nada": BWEFactoryFunc(func(config BWEConfig) (mrtp.BWE, error) {
-		return mrtp.NewNada(config.initTargetRate, config.minTargetRate, config.maxTargetRate, 20*time.Millisecond), nil
+		return mrtp.NewNada(config.InitTargetRate, config.MinTargetRate, config.MaxTargetRate, 20*time.Millisecond), nil
 	}),
 	"gcc": BWEFactoryFunc(func(config BWEConfig) (mrtp.BWE, error) {
-		return mrtp.NewGCC(config.initTargetRate, config.minTargetRate, config.maxTargetRate)
+		return mrtp.NewGCC(config.InitTargetRate, config.MinTargetRate, config.MaxTargetRate)
 	}),
 }

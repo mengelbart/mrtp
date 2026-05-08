@@ -222,9 +222,9 @@ Flags:
 				return fmt.Errorf("unknown BWE: %v", s.bwe)
 			}
 			bwe, err := bweFactory.MakeBWE(BWEConfig{
-				initTargetRate: initTargetRate,
-				minTargetRate:  minTargetRate,
-				maxTargetRate:  s.maxTargetRate,
+				InitTargetRate: initTargetRate,
+				MinTargetRate:  minTargetRate,
+				MaxTargetRate:  s.maxTargetRate,
 			})
 			if err != nil {
 				return err
