@@ -25,6 +25,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/wlynxg/anet v0.0.5
 	golang.org/x/sync v0.20.0
+	golang.org/x/sys v0.43.0
 	golang.org/x/time v0.14.0
 )
 
@@ -48,7 +49,6 @@ require (
 	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c // indirect
 	golang.org/x/net v0.53.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
@@ -56,3 +56,5 @@ require (
 replace github.com/quic-go/quic-go v0.59.0 => github.com/mengelbart/quic-go v0.7.1-0.20260430134040-e17c3bf89daf
 
 replace github.com/pion/bwe v0.0.0-20260218143828-d4996fd96f96 => github.com/mengelbart/bwe v0.0.0-20260427191144-17142e7f1f92
+
+replace github.com/pion/interceptor v0.1.44 => github.com/mengelbart/interceptor v0.0.0-20260508120442-d8551ca98b80
