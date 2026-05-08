@@ -3,6 +3,7 @@ package webrtc
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"sync"
 
@@ -20,6 +21,11 @@ func SetRecvBufferSize(size int) NetOption {
 		n.recvBufferSize = size
 		return nil
 	}
+}
+
+type ecnMapKey struct {
+	SSRC           uint32
+	SequenceNumber uint16
 }
 
 type Net struct {
@@ -107,7 +113,7 @@ func (n *Net) DialUDP(network string, laddr *net.UDPAddr, raddr *net.UDPAddr) (t
 			return nil, err
 		}
 	}
-	return NewUDPConn(conn, n.ecnMap)
+	return newUDPConn(conn, n.setECN)
 }
 
 // InterfaceByIndex implements transport.Net.
@@ -160,7 +166,7 @@ func (n *Net) ListenUDP(network string, locAddr *net.UDPAddr) (transport.UDPConn
 			return nil, err
 		}
 	}
-	return NewUDPConn(conn, n.ecnMap)
+	return newUDPConn(conn, n.setECN)
 }
 
 // ResolveIPAddr implements transport.Net.
@@ -176,6 +182,21 @@ func (n *Net) ResolveTCPAddr(network string, address string) (*net.TCPAddr, erro
 // ResolveUDPAddr implements transport.Net.
 func (n *Net) ResolveUDPAddr(network string, address string) (*net.UDPAddr, error) {
 	return net.ResolveUDPAddr(network, address)
+}
+
+func (n *Net) setECN(ssrc uint32, sequenceNumber uint16, ecn uint8) {
+	slog.Info("setting ecn", "ecn", ecn, "ssrc", ssrc, "sequenceNumber", sequenceNumber)
+	n.ecnMap.Store(ecnMapKey{SSRC: ssrc, SequenceNumber: sequenceNumber}, ecn)
+}
+
+func (n *Net) getECN(ssrc uint32, sequenceNumber uint16) uint8 {
+	val, ok := n.ecnMap.Load(ecnMapKey{SSRC: ssrc, SequenceNumber: sequenceNumber})
+	if !ok {
+		slog.Info("ecn not found", "ssrc", ssrc, "sequenceNumber", sequenceNumber)
+		return 0
+	}
+	slog.Info("getting ecn", "ecn", val, "ssrc", ssrc, "sequenceNumber", sequenceNumber)
+	return val.(uint8)
 }
 
 type tcpListener struct {

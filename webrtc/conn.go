@@ -3,20 +3,18 @@ package webrtc
 import (
 	"fmt"
 	"net"
-	"sync"
 	"time"
 
+	"github.com/pion/rtp"
 	"golang.org/x/sys/unix"
 )
 
-type UDPConn struct {
-	conn *net.UDPConn
-
-	curEcn uint8
-	ecnMap *sync.Map
+type udpConn struct {
+	conn   *net.UDPConn
+	setECN func(ssrc uint32, sequenceNumber uint16, ecn uint8)
 }
 
-func NewUDPConn(conn *net.UDPConn, ecnMap *sync.Map) (*UDPConn, error) {
+func newUDPConn(conn *net.UDPConn, setECN func(ssrc uint32, sequenceNumber uint16, ecn uint8)) (*udpConn, error) {
 	rawConn, err := conn.SyscallConn()
 	if err != nil {
 		return nil, fmt.Errorf("datastream: failed to get raw connection: %w", err)
@@ -33,52 +31,49 @@ func NewUDPConn(conn *net.UDPConn, ecnMap *sync.Map) (*UDPConn, error) {
 		return nil, fmt.Errorf("datastream: failed to set socket options: %w", errECNIP)
 	}
 
-	return &UDPConn{
+	return &udpConn{
 		conn:   conn,
-		ecnMap: ecnMap,
+		setECN: setECN,
 	}, nil
 }
 
-func (c *UDPConn) Close() error {
+func (c *udpConn) Close() error {
 	return c.conn.Close()
 }
 
-func (c *UDPConn) LocalAddr() net.Addr {
+func (c *udpConn) LocalAddr() net.Addr {
 	return c.conn.LocalAddr()
 }
 
-func (c *UDPConn) RemoteAddr() net.Addr {
+func (c *udpConn) RemoteAddr() net.Addr {
 	return c.conn.RemoteAddr()
 }
 
-func (c *UDPConn) SetDeadline(t time.Time) error {
+func (c *udpConn) SetDeadline(t time.Time) error {
 	return c.conn.SetDeadline(t)
 }
 
-func (c *UDPConn) SetReadDeadline(t time.Time) error {
+func (c *udpConn) SetReadDeadline(t time.Time) error {
 	return c.conn.SetReadDeadline(t)
 }
 
-func (c *UDPConn) SetWriteDeadline(t time.Time) error {
+func (c *udpConn) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
 }
 
-func (c *UDPConn) SetReadBuffer(bytes int) error {
+func (c *udpConn) SetReadBuffer(bytes int) error {
 	return c.conn.SetReadBuffer(bytes)
 }
 
-func (c *UDPConn) SetWriteBuffer(bytes int) error {
+func (c *udpConn) SetWriteBuffer(bytes int) error {
 	return c.conn.SetWriteBuffer(bytes)
 }
 
-func (c *UDPConn) Read(b []byte) (n int, err error) {
-	fmt.Println("Read")
+func (c *udpConn) Read(b []byte) (n int, err error) {
 	return c.conn.Read(b)
 }
 
-func (c *UDPConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	fmt.Println("ReadFrom")
-
+func (c *udpConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	oobBuf := make([]byte, 1500)
 
 	var oobn int
@@ -86,6 +81,9 @@ func (c *UDPConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	n, oobn, _, addr, err = c.conn.ReadMsgUDP(p, oobBuf)
 	if err != nil {
 		return n, addr, err
+	}
+	if !matchSRTP(p) {
+		return n, addr, nil
 	}
 
 	// check meta data for ecn
@@ -108,47 +106,42 @@ func (c *UDPConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 		}
 	}
 	ecn := uint8(tos & 0x03)
-	if ecn != c.curEcn {
-		fmt.Printf("ECN bits of incoming packages changed from %02b to %02b\n", int(c.curEcn), ecn)
-	}
-	c.curEcn = ecn
-
-	// TODO: we also parse non rtp packets here
-	rtpID, err := GetRTPidFromPacket(p)
-	if err != nil {
-		fmt.Println("Could not parse")
-	}
-
-	fmt.Printf("ECN %02b for: %d, SequenceNumber: %d\n", ecn, rtpID.SSRC, rtpID.SequenceNumber)
+	ssrc, sn, err := parseRTPHeader(p[:n])
 
 	// store ecn value for this packet
-	c.ecnMap.Store(rtpID, ecn)
+	c.setECN(ssrc, sn, ecn)
 
 	return n, addr, nil
 }
 
-func (c *UDPConn) ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err error) {
-	fmt.Println("ReadFromUDP")
+func (c *udpConn) ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err error) {
 	return c.conn.ReadFromUDP(b)
 }
 
-func (c *UDPConn) ReadMsgUDP(b, oob []byte) (n, oobn, flags int, addr *net.UDPAddr, err error) {
-	fmt.Println("ReadMsgUDP")
+func (c *udpConn) ReadMsgUDP(b, oob []byte) (n, oobn, flags int, addr *net.UDPAddr, err error) {
 	return c.conn.ReadMsgUDP(b, oob)
 }
 
-func (c *UDPConn) Write(b []byte) (n int, err error) {
+func (c *udpConn) Write(b []byte) (n int, err error) {
 	return c.conn.Write(b)
 }
 
-func (c *UDPConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+func (c *udpConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	return c.conn.WriteTo(p, addr)
 }
 
-func (c *UDPConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
+func (c *udpConn) WriteToUDP(b []byte, addr *net.UDPAddr) (int, error) {
 	return c.conn.WriteToUDP(b, addr)
 }
 
-func (c *UDPConn) WriteMsgUDP(b, oob []byte, addr *net.UDPAddr) (n, oobn int, err error) {
+func (c *udpConn) WriteMsgUDP(b, oob []byte, addr *net.UDPAddr) (n, oobn int, err error) {
 	return c.conn.WriteMsgUDP(b, oob, addr)
+}
+
+func parseRTPHeader(b []byte) (uint32, uint16, error) {
+	pkt := rtp.Packet{}
+	if err := pkt.Unmarshal(b); err != nil {
+		return 0, 0, err
+	}
+	return pkt.Header.SSRC, pkt.Header.SequenceNumber, nil
 }

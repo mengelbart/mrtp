@@ -38,6 +38,7 @@ type Transport struct {
 	settingEngine       *webrtc.SettingEngine
 	mediaEngine         *webrtc.MediaEngine
 	interceptorRegistry *interceptor.Registry
+	net                 *Net
 
 	pc       *webrtc.PeerConnection
 	signaler Signaler
@@ -113,7 +114,10 @@ func EnableCCFB() Option {
 	return func(t *Transport) error {
 		t.mediaEngine.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBACK, Parameter: "ccfb"}, webrtc.RTPCodecTypeVideo)
 		t.mediaEngine.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBACK, Parameter: "ccfb"}, webrtc.RTPCodecTypeAudio)
-		generator, err := rfc8888.NewSenderInterceptor(rfc8888.SendInterval(feedbackInterval))
+		generator, err := rfc8888.NewSenderInterceptor(
+			rfc8888.SendInterval(feedbackInterval),
+			rfc8888.WithECNLookupTable(t),
+		)
 		if err != nil {
 			return err
 		}
@@ -185,6 +189,9 @@ func RegisterDefaultCodecs() Option {
 
 func SetNet(net transport.Net) Option {
 	return func(t *Transport) error {
+		if n, ok := net.(*Net); ok {
+			t.net = n
+		}
 		t.settingEngine.SetNet(net)
 		return nil
 	}
@@ -443,4 +450,11 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 		}
 	}
 	return nil
+}
+
+func (t *Transport) GetECN(ssrc uint32, sequenceNumber uint16) uint8 {
+	if t.net == nil {
+		return 0
+	}
+	return t.net.getECN(ssrc, sequenceNumber)
 }
