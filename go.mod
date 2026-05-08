@@ -3,7 +3,7 @@ module github.com/mengelbart/mrtp
 go 1.25.2
 
 require (
-	github.com/Willi-42/go-nada v0.0.0-20250918135705-6a600030be0b
+	github.com/Willi-42/go-nada v0.0.0-20260508095559-fac583477c2d
 	github.com/go-gst/go-glib v1.4.0
 	github.com/go-gst/go-gst v1.4.0
 	github.com/julienschmidt/httprouter v1.3.0
@@ -24,7 +24,7 @@ require (
 	github.com/quic-go/quic-go v0.59.0
 	github.com/stretchr/testify v1.11.1
 	github.com/wlynxg/anet v0.0.5
-	golang.org/x/sync v0.16.0
+	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.14.0
 )
 
@@ -32,8 +32,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
-	github.com/onsi/ginkgo/v2 v2.22.1 // indirect
-	github.com/onsi/gomega v1.36.2 // indirect
 	github.com/pion/datachannel v1.6.0 // indirect
 	github.com/pion/dtls/v3 v3.0.10 // indirect
 	github.com/pion/ice/v4 v4.2.0 // indirect
@@ -46,11 +44,12 @@ require (
 	github.com/pion/turn/v4 v4.1.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
-	golang.org/x/crypto v0.41.0 // indirect
+	github.com/rogpeppe/go-internal v1.13.1 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c // indirect
-	golang.org/x/net v0.43.0 // indirect
-	golang.org/x/sys v0.35.0 // indirect
-	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

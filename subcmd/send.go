@@ -86,8 +86,7 @@ type Send struct {
 	roqServer         bool
 	roqClient         bool
 	qlog              bool
-	nada              bool
-	gcc               bool
+	bwe               string
 	maxTargetRate     uint
 	traceRTP          bool
 	datachannel       bool
@@ -117,8 +116,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.BoolVar(&s.roqServer, "roq-server", false, "Use RoQ server transport")
 	fs.BoolVar(&s.roqClient, "roq-client", false, "Use RoQ client transport")
 	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
-	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
-	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
+	fs.StringVar(&s.bwe, "bwe", "", "Set a bandwidth estimator by name, e.g. 'nada' or 'gcc'")
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 30_000_000, "Set the maximum target rate of the congestion controller in bits per second")
 	fs.BoolVar(&s.traceRTP, "trace-rtp-send", false, "Log outgoing RTP packets")
 	fs.BoolVar(&s.datachannel, "dc", false, "Send/Receive data with data channels")
@@ -159,8 +157,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if (s.nada || s.gcc || s.qlog || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
-		fmt.Fprintf(os.Stderr, "Flags -nada, -pion-gcc, -log-quic and -roq-mapping are only valid for RoQ\n")
+	if (s.bwe == "nada" || s.bwe == "gcc" || s.qlog || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
+		fmt.Fprintf(os.Stderr, "Flags -bwe {gcc,nada}, -log-quic and -roq-mapping are only valid for RoQ\n")
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -218,14 +216,22 @@ Flags:
 			quictransport.PacingFactor(s.pacingFactor),
 		}
 
-		if s.nada {
-			feedbackDelta := uint64(20)
-			quicOptions = append(quicOptions, quictransport.EnableNADA(initTargetRate, minTargetRate, s.maxTargetRate, uint(feedbackDelta)))
+		if len(s.bwe) > 0 {
+			bweFactory, ok := BWEFactories[s.bwe]
+			if !ok {
+				return fmt.Errorf("unknown BWE: %v", s.bwe)
+			}
+			bwe, err := bweFactory.MakeBWE(BWEConfig{
+				initTargetRate: initTargetRate,
+				minTargetRate:  minTargetRate,
+				maxTargetRate:  s.maxTargetRate,
+			})
+			if err != nil {
+				return err
+			}
+			quicOptions = append(quicOptions, quictransport.SetBWE(bwe))
 		}
 
-		if s.gcc {
-			quicOptions = append(quicOptions, quictransport.EnableGCC(initTargetRate, minTargetRate, int(s.maxTargetRate)))
-		}
 		if s.qlog {
 			quicOptions = append(quicOptions, quictransport.EnableQLogs("sender"))
 		}

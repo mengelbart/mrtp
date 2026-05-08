@@ -10,8 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Willi-42/go-nada/nada"
-	"github.com/pion/bwe/gcc"
+	"github.com/mengelbart/mrtp"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/quicvarint"
 )
@@ -33,8 +32,7 @@ type Transport struct {
 	running atomic.Bool
 
 	pacingFactor    func() float64
-	nada            *nada.SenderOnly
-	bwe             *gcc.SendSideController
+	bwe             mrtp.BWE
 	lastBWEUpdate   time.Time
 	inFlightPackets []packetFeedback
 	lowestInFlight  uint64
@@ -48,29 +46,10 @@ type Transport struct {
 	HandleDatagram      func(flowID uint64, datagram []byte)
 }
 
-func EnableNADA(initRate, minRate, maxRate, expectedFeedbackDelta uint) Option {
+func SetBWE(bwe mrtp.BWE) Option {
 	return func(t *Transport) error {
-		nadaConfig := nada.Config{
-			MinRate:                  uint64(minRate),
-			MaxRate:                  uint64(maxRate),
-			StartRate:                uint64(initRate),
-			FeedbackDelta:            uint64(expectedFeedbackDelta), // ms
-			DeactivateQDelayWrapping: true,
-			RefCongLevel:             15, // ms
-		}
-
-		nadaSo := nada.NewSenderOnly(nadaConfig)
-		t.nada = &nadaSo
+		t.bwe = bwe
 		return nil
-	}
-}
-
-func EnableGCC(initRate, minRate, maxRate int) Option {
-	return func(t *Transport) error {
-		// TODO: add pion logger
-		var err error
-		t.bwe, err = gcc.NewSendSideController(initRate, minRate, maxRate)
-		return err
 	}
 }
 
@@ -297,7 +276,7 @@ func (t *Transport) packetLost(seqNr uint64) {
 	}
 }
 
-func (t *Transport) packetAcked(ts time.Time, seqNr uint64, arrival time.Time) {
+func (t *Transport) packetAcked(seqNr uint64, arrival time.Time) {
 	if seqNr > t.highestAcked {
 		t.highestAcked = seqNr
 	}
@@ -327,60 +306,33 @@ func (t *Transport) packetAcked(ts time.Time, seqNr uint64, arrival time.Time) {
 	}
 }
 
-func (t *Transport) updateCongestionControl(ts time.Time) {
-	var target uint
+func (t *Transport) updateECNCounts(ect0, ect1, ce uint64) {
+	if t.bwe != nil {
+		t.bwe.UpdateECNCounts(ect0, ect1, ce)
+	}
+}
+
+func (t *Transport) updateCongestionControl() {
 	if t.quicConn == nil {
 		// connection not established yet, do not update sending rate
 		return
 	}
-	if t.nada != nil {
-		target = t.updateNADA()
-	} else if t.bwe != nil {
-		target = t.updateGCC(ts)
-	}
-	if target == 0 {
-		// No congestion control update necessary
-		return
-	}
-	t.lastBWEUpdate = time.Now()
-	if t.SetSourceTargetRate != nil {
-		if err := t.SetSourceTargetRate(target); err != nil {
-			slog.Error("Error setting source target rate:", "error", err)
+	if t.bwe != nil {
+		target := t.updateBWE()
+		if target > 0 {
+			slog.Info("Updated target rate:", "rate", target)
+			t.lastBWEUpdate = time.Now()
+			if t.SetSourceTargetRate != nil {
+				if err := t.SetSourceTargetRate(target); err != nil {
+					slog.Error("Error setting source target rate:", "error", err)
+				}
+			}
+			t.quicConn.SetPacingRate(uint64(t.pacingFactor() * float64(target)))
 		}
 	}
-	t.quicConn.SetPacingRate(uint64(t.pacingFactor() * float64(target)))
 }
 
-func (t *Transport) updateNADA() uint {
-	if time.Since(t.lastBWEUpdate) < 20*time.Millisecond {
-		return 0
-	}
-	acks := []nada.Acknowledgment{}
-	idx := 0
-	for i, feedback := range t.packetFeedback {
-		if feedback.seqNr > t.highestAcked {
-			idx = i
-			break
-		}
-		if feedback.seqNr < t.lowestInFlight {
-			continue
-		}
-		// slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure).Milliseconds())
-		acks = append(acks, nada.Acknowledgment{
-			SeqNr:     feedback.seqNr,
-			SizeBit:   feedback.size * 8,
-			Departure: feedback.departure,
-			Arrival:   feedback.arrival,
-			Arrived:   feedback.arrived,
-			Marked:    false, // TODO: ECN
-		})
-	}
-	t.packetFeedback = t.packetFeedback[idx:]
-	target := t.nada.OnAcks(t.quicConn.ConnectionStats().LatestRTT, acks)
-	return uint(target)
-}
-
-func (t *Transport) updateGCC(ts time.Time) uint {
+func (t *Transport) updateBWE() uint {
 	if time.Since(t.lastBWEUpdate) < 20*time.Millisecond {
 		return 0
 	}
@@ -393,18 +345,14 @@ func (t *Transport) updateGCC(ts time.Time) uint {
 		if feedback.seqNr < t.lowestInFlight {
 			continue
 		}
-		// slog.Info("FEEDBACK", "seqNr", feedback.seqNr, "arrived", feedback.arrived, "departure", feedback.departure, "arrival", feedback.arrival, "rtt", feedback.arrival.Sub(feedback.departure).Milliseconds())
 		if feedback.arrived {
-			t.bwe.OnAck(feedback.seqNr, int(feedback.size), feedback.departure, feedback.arrival)
+			t.bwe.OnAck(feedback.seqNr, int(feedback.size), feedback.departure, feedback.arrival, 0)
 		} else {
-			t.bwe.OnLoss()
+			t.bwe.OnLoss(feedback.seqNr, int(feedback.size), feedback.departure)
 		}
 	}
 	t.packetFeedback = t.packetFeedback[idx:]
 	t.lowestInFlight = t.highestAcked + 1
-	conn := t.quicConn
-	stats := conn.ConnectionStats()
-	rtt := stats.LatestRTT
-	target := t.bwe.OnFeedback(ts, rtt)
-	return uint(target)
+	t.bwe.UpdateRTT(t.quicConn.ConnectionStats().LatestRTT)
+	return uint(t.bwe.UpdateTargetRate(time.Now()))
 }
