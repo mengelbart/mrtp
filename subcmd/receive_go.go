@@ -50,7 +50,7 @@ func (r *ReceiveGo) Exec(cmd string, args []string) error {
 	fs.StringVar(&r.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
 	fs.BoolVar(&r.roqServer, "roq-server", false, "Use RoQ server transport.")
-	fs.StringVar(&r.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
+	fs.StringVar(&r.codec, "sink-codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
 	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
 	fs.BoolVar(&r.traceRTP, "trace-rtp-recv", false, "Log incoming RTP packets")
 	fs.BoolVar(&r.datachannel, "dc", false, "Send/Receive data with data channels")

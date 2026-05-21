@@ -16,7 +16,16 @@ type FrameSpacer struct {
 	frameDuration time.Duration
 	pktChan       chan packets
 
-	Ctx context.Context
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func NewFrameSpacer(ctx context.Context) *FrameSpacer {
+	spacerCtx, cancel := context.WithCancel(ctx)
+	return &FrameSpacer{
+		ctx:    spacerCtx,
+		cancel: cancel,
+	}
 }
 
 func (p *FrameSpacer) Link(w Sink, i Info) (Sink, error) {
@@ -44,7 +53,7 @@ func (p *FrameSpacer) WriteAll(pkts [][]byte, attr Attributes) error {
 func (p *FrameSpacer) run() {
 	for {
 		select {
-		case <-p.Ctx.Done():
+		case <-p.ctx.Done():
 			return
 		case pkts := <-p.pktChan:
 			if len(p.pktChan) > 2 {
@@ -63,7 +72,7 @@ func (p *FrameSpacer) run() {
 			var next []byte
 			for range ticker.C {
 				select {
-				case <-p.Ctx.Done():
+				case <-p.ctx.Done():
 					return
 				default:
 				}
@@ -78,4 +87,11 @@ func (p *FrameSpacer) run() {
 			}
 		}
 	}
+}
+
+func (p *FrameSpacer) Close() error {
+	if p.cancel != nil {
+		p.cancel()
+	}
+	return nil
 }

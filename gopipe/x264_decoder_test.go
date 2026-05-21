@@ -110,9 +110,7 @@ func TestH264DecodeWithRTP(t *testing.T) {
 			ClockRate: 90_000,
 			Codec:     codec.H264,
 		}
-		pacer := &FrameSpacer{
-			Ctx: ctx,
-		}
+		pacer := NewFrameSpacer(ctx)
 		frameInter := newFrameInterceptor(false, 0, nil)
 
 		writer, err := Chain(i, sink, pacer, packetizer, encoder, frameInter)

@@ -179,8 +179,9 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 		return err
 	}
 
+	sendCodec := codec.H264
 	i := fileSrc.GetInfo()
-	encoder := gopipe.NewEncoder(codec.H264)
+	encoder := gopipe.NewEncoder(sendCodec)
 
 	// set rate callbacks
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {
@@ -196,11 +197,11 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 		PT:        96,
 		SSRC:      0,
 		ClockRate: 90_000,
-		Codec:     codec.H264,
+		Codec:     sendCodec,
 	}
-	pacer := &gopipe.FrameSpacer{
-		Ctx: ctx,
-	}
+	pacer := gopipe.NewFrameSpacer(ctx)
+	defer pacer.Close()
+
 	rtpPipeline, err := gopipe.Chain(i, appSink, pacer, packetizer, encoder)
 	if err != nil {
 		return err
@@ -239,7 +240,8 @@ func runH264Receiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	}
 	defer rtpSrc.Close()
 
-	decoder, err := gopipe.NewDecoder(codec.H264)
+	recvCodec := codec.H264
+	decoder, err := gopipe.NewDecoder(recvCodec)
 	if err != nil {
 		return err
 	}
@@ -251,7 +253,7 @@ func runH264Receiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	defer fileSink.Close()
 
 	maxTimeout := 150 * time.Millisecond
-	depacketizer, err := gopipe.NewRTPDepacketizer(maxTimeout, codec.H264)
+	depacketizer, err := gopipe.NewRTPDepacketizer(maxTimeout, recvCodec)
 	if err != nil {
 		return err
 	}

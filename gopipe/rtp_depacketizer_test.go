@@ -71,9 +71,9 @@ func testDepacketizerWithCodec(t *testing.T, codec codec.CodecType) {
 			ClockRate: 90_000,
 			Codec:     codec,
 		}
-		pacer := &FrameSpacer{
-			Ctx: ctx,
-		}
+		pacer := NewFrameSpacer(ctx)
+		defer pacer.Close()
+
 		frameInter := newFrameInterceptor(false, 0, nil)
 		rtpPipeline, err := Chain(i, sink, pacer, packetizer, encoder, frameInter)
 		assert.NoError(t, err)
@@ -150,9 +150,8 @@ func testDepacketizerFrameIntegrityWithCodec(t *testing.T, codec codec.CodecType
 			ClockRate: 90_000,
 			Codec:     codec,
 		}
-		pacer := &FrameSpacer{
-			Ctx: ctx,
-		}
+		pacer := NewFrameSpacer(ctx)
+		defer pacer.Close()
 
 		frameInter := newFrameInterceptor(true, maxFrames, nil)
 
@@ -253,9 +252,8 @@ func testDepacketizerRTPdropsWithCodec(t *testing.T, codec codec.CodecType) {
 			ClockRate: 90_000,
 			Codec:     codec,
 		}
-		pacer := &FrameSpacer{
-			Ctx: ctx,
-		}
+		pacer := NewFrameSpacer(ctx)
+		defer pacer.Close()
 
 		frameInter := newFrameInterceptor(true, maxFrames, framesToBeDropped)
 		dropInter := newRtpDropInterceptor()

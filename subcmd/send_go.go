@@ -59,7 +59,7 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs.UintVar(&s.roqMapping, "roq-mapping", 0, "RTP mapping to QUIC. 0: datagrams, 1: stream per packet, 2: single stream")
 	fs.BoolVar(&s.roqServer, "roq-server", false, "Usr RoQ server transport")
 	fs.StringVar(&s.sourceLocation, "source-location", "", "Location for filesource")
-	fs.StringVar(&s.codec, "codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
+	fs.StringVar(&s.codec, "source-codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
 	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
 	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
 	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
@@ -232,9 +232,7 @@ Flags:
 		ClockRate: 90_000,
 		Codec:     codecTyp,
 	}
-	pacer := &gopipe.FrameSpacer{
-		Ctx: ctx,
-	}
+	pacer := gopipe.NewFrameSpacer(ctx)
 	rtpPipeline, err := gopipe.Chain(i, appSink, pacer, packetizer, encoder)
 	if err != nil {
 		return err
