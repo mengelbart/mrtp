@@ -174,9 +174,9 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		ClockRate: 90_000,
 		Codec:     codec.FAKE,
 	}
-	pacer := &gopipe.FrameSpacer{
-		Ctx: ctx,
-	}
+	pacer := gopipe.NewFrameSpacer(ctx)
+	defer pacer.Close()
+
 	rtpPipeline, err := gopipe.Chain(i, appSink, pacer, packetizer)
 	if err != nil {
 		return err

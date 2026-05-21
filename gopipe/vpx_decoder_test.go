@@ -124,9 +124,9 @@ func runVpxDecodeWithRTP(t *testing.T, c codec.CodecType) {
 			ClockRate: 90_000,
 			Codec:     c,
 		}
-		pacer := &FrameSpacer{
-			Ctx: ctx,
-		}
+		pacer := NewFrameSpacer(ctx)
+		defer pacer.Close()
+
 		frameInter := newFrameInterceptor(false, 0, nil)
 
 		writer, err := Chain(i, sink, pacer, packetizer, encoder, frameInter)
