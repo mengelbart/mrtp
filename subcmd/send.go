@@ -233,7 +233,7 @@ Flags:
 		}
 
 		if s.qlog {
-			quicOptions = append(quicOptions, quictransport.EnableQLogs("sender"))
+			quicOptions = append(quicOptions, quictransport.EnableQLogs("sender.qlog"))
 		}
 
 		// open quic connection

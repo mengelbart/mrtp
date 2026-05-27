@@ -4,11 +4,9 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/quic-go/quic-go/qlog"
@@ -118,20 +116,10 @@ func (w *traceWriter) RecordEvent(ev qlogwriter.Event) {
 
 // Everything below is mostly copy from qlog.DefaultConnectionTracer
 
-func qlogTracer(isClient bool, connID qlogwriter.ConnectionID, label string, eventSchemas []string) *qlogwriter.FileSeq {
-	qlogDir := os.Getenv("QLOGDIR")
-	if qlogDir == "" {
-		return nil
-	}
-	if _, err := os.Stat(qlogDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(qlogDir, 0o755); err != nil {
-			log.Fatalf("failed to create qlog dir %s: %v", qlogDir, err)
-		}
-	}
-	path := fmt.Sprintf("%s/%s_%s.sqlog", strings.TrimRight(qlogDir, "/"), connID, label)
-	f, err := os.Create(path)
+func qlogTracer(isClient bool, connID qlogwriter.ConnectionID, qlogPath string, eventSchemas []string) *qlogwriter.FileSeq {
+	f, err := os.Create(qlogPath)
 	if err != nil {
-		log.Printf("Failed to create qlog file %s: %s", path, err.Error())
+		log.Printf("Failed to create qlog file %s: %s", qlogPath, err.Error())
 		return nil
 	}
 	fileSeq := qlogwriter.NewConnectionFileSeq(
