@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/netip"
 	"os"
 	"sync"
@@ -21,9 +20,21 @@ import (
 	roqProtocol "github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestQUICh264(t *testing.T) {
+func TestQUICh264GCC(t *testing.T) {
+	bwe, err := mrtp.NewGCC(1_000_000, 400_000, 8_000_000)
+	require.NoError(t, err)
+	testQUICh264(t, bwe)
+}
+
+func TestQUICh264Nada(t *testing.T) {
+	bwe := mrtp.NewNada(1_000_000, 400_000, 8_000_000, 20*time.Millisecond)
+	testQUICh264(t, bwe)
+}
+
+func testQUICh264(t *testing.T, bwe mrtp.BWE) {
 	// video file must exist
 	if _, err := os.Stat("Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
 		println("Video file not found: Johnny_1280x720_60.y4m - run ./get-video.sh to download it.\n")
@@ -69,7 +80,7 @@ func TestQUICh264(t *testing.T) {
 		})
 
 		// start client in main goroutine
-		clientTransport, err = createH264Sender(ctx, clientConn)
+		clientTransport, err = createSender(ctx, clientConn, bwe)
 		assert.NoError(t, err)
 		assert.NotNil(t, clientTransport)
 
@@ -110,19 +121,6 @@ func TestQUICh264(t *testing.T) {
 		net.Close()
 		synctest.Wait()
 	})
-}
-
-func createH264Sender(ctx context.Context, conn net.PacketConn) (*quictransport.Transport, error) {
-	nada := mrtp.NewNada(750_000, 150_000, 8_000_000, 20*time.Millisecond)
-	quicTOptions := []quictransport.Option{
-		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
-		quictransport.SetRemoteAddress("10.0.0.1", 8080),
-		quictransport.SetNetConn(conn),
-		quictransport.SetBWE(nada),
-		quictransport.EnableQLogs("./sender.qlog"),
-	}
-
-	return quictransport.New(ctx, []string{"dc"}, quicTOptions...)
 }
 
 func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error {

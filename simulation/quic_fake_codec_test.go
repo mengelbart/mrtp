@@ -11,6 +11,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/internal/quictransport"
@@ -19,9 +20,21 @@ import (
 	roqProtocol "github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestFakeCodec(t *testing.T) {
+func TestFakeCodecGCC(t *testing.T) {
+	bwe, err := mrtp.NewGCC(1_000_000, 400_000, 8_000_000)
+	require.NoError(t, err)
+	testFakeCodec(t, bwe)
+}
+
+func TestFakeCodecNada(t *testing.T) {
+	bwe := mrtp.NewNada(1_000_000, 400_000, 8_000_000, 20*time.Millisecond)
+	testFakeCodec(t, bwe)
+}
+
+func testFakeCodec(t *testing.T, bwe mrtp.BWE) {
 	logFile := configureLogging()
 	defer logFile.Close()
 
@@ -61,7 +74,7 @@ func TestFakeCodec(t *testing.T) {
 		})
 
 		// start client in main goroutine
-		clientTransport, err = createH264Sender(ctx, clientConn)
+		clientTransport, err = createSender(ctx, clientConn, bwe)
 		assert.NoError(t, err)
 		assert.NotNil(t, clientTransport)
 

@@ -55,7 +55,8 @@ func TestQUICdc(t *testing.T) {
 		})
 
 		// start client in main goroutine
-		clientTransport, err = createSender(ctx, clientConn)
+		bwe := mrtp.NewNada(750_000, 150_000, 8_000_000, 20*time.Millisecond)
+		clientTransport, err = createSender(ctx, clientConn, bwe)
 		assert.NoError(t, err)
 		assert.NotNil(t, clientTransport)
 
@@ -91,13 +92,12 @@ func TestQUICdc(t *testing.T) {
 	})
 }
 
-func createSender(ctx context.Context, conn net.PacketConn) (*quictransport.Transport, error) {
-	nada := mrtp.NewNada(750_000, 150_000, 8_000_000, 20*time.Millisecond)
+func createSender(ctx context.Context, conn net.PacketConn, bwe mrtp.BWE) (*quictransport.Transport, error) {
 	quicTOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
 		quictransport.SetRemoteAddress("10.0.0.1", 8080),
 		quictransport.SetNetConn(conn),
-		quictransport.SetBWE(nada),
+		quictransport.SetBWE(bwe),
 		quictransport.EnableQLogs("./sender.qlog"),
 	}
 
@@ -108,7 +108,7 @@ func createReceiver(ctx context.Context, conn net.PacketConn) (*quictransport.Tr
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleServer)),
 		quictransport.SetNetConn(conn),
-		quictransport.EnableQLogs("./receiver.qlog"),
+		quictransport.EnableQLogs("./receiver"),
 	}
 
 	return quictransport.New(ctx, []string{"dc"}, quicOptions...)
