@@ -39,7 +39,7 @@ type Transport struct {
 	highestAcked    uint64
 	packetFeedback  []packetFeedback
 
-	qlogFile string
+	qlogLabel string
 
 	SetSourceTargetRate func(ratebps uint) error
 	HandleUniStream     func(flowID uint64, rs *quic.ReceiveStream)
@@ -81,16 +81,16 @@ func SetRemoteAddress(address string, port uint) Option {
 	}
 }
 
-func EnableQLogs(qlogFile string) Option {
+func PacingFactor(factor func() float64) Option {
 	return func(t *Transport) error {
-		t.qlogFile = qlogFile
+		t.pacingFactor = factor
 		return nil
 	}
 }
 
-func PacingFactor(factor func() float64) Option {
+func SetQLOGLabel(label string) Option {
 	return func(t *Transport) error {
-		t.pacingFactor = factor
+		t.qlogLabel = label
 		return nil
 	}
 }
@@ -109,8 +109,8 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 	}
 
 	tracer := &tracerFactory{
-		qlogFileName: t.qlogFile,
-		transport:    t,
+		qlogLabel: t.qlogLabel,
+		transport: t,
 	}
 
 	if t.role == RoleServer {

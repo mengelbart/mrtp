@@ -16,14 +16,14 @@ import (
 )
 
 type tracerFactory struct {
-	qlogFileName string
-	transport    *Transport
+	qlogLabel string
+	transport *Transport
 }
 
 func (f *tracerFactory) newTracer(ctx context.Context, isClient bool, connID qlogwriter.ConnectionID) qlogwriter.Trace {
 	var qfs *qlogwriter.FileSeq
-	if len(f.qlogFileName) > 0 {
-		qfs = qlogTracer(isClient, connID, f.qlogFileName, nil)
+	if len(f.qlogLabel) > 0 {
+		qfs = qlogTracer(isClient, connID, f.qlogLabel, nil)
 	}
 	return &tracer{
 		qlogFileSeq: qfs,
