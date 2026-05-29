@@ -30,7 +30,6 @@ func init() {
 type SendData struct {
 	localAddr         string
 	remoteAddr        string
-	qlog              bool
 	nada              bool
 	gcc               bool
 	maxTargetRate     uint
@@ -45,7 +44,6 @@ func (s *SendData) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("send-data", flag.ExitOnError)
 	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
-	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
 	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
 	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
@@ -78,6 +76,7 @@ Flags:
 		quictransport.WithRole(quictransport.Role(quictransport.RoleClient)),
 		quictransport.SetLocalAddress(s.localAddr, 8080),
 		quictransport.SetRemoteAddress(s.remoteAddr, 8080),
+		quictransport.SetQLOGLabel("sender"),
 	}
 
 	if s.nada {
@@ -91,10 +90,6 @@ Flags:
 			return err
 		}
 		quicOptions = append(quicOptions, quictransport.SetBWE(gcc))
-	}
-
-	if s.qlog {
-		quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
 	}
 
 	// open quic connection

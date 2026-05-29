@@ -85,7 +85,6 @@ type Send struct {
 	roqMapping        uint
 	roqServer         bool
 	roqClient         bool
-	qlog              bool
 	bwe               string
 	maxTargetRate     uint
 	traceRTP          bool
@@ -115,7 +114,6 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.UintVar(&s.roqMapping, "roq-mapping", 0, "RTP mapping to QUIC. 0: datagrams, 1: stream per packet, 2: single stream")
 	fs.BoolVar(&s.roqServer, "roq-server", false, "Use RoQ server transport")
 	fs.BoolVar(&s.roqClient, "roq-client", false, "Use RoQ client transport")
-	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
 	fs.StringVar(&s.bwe, "bwe", "", "Set a bandwidth estimator by name, e.g. 'nada' or 'gcc'")
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 30_000_000, "Set the maximum target rate of the congestion controller in bits per second")
 	fs.BoolVar(&s.traceRTP, "trace-rtp-send", false, "Log outgoing RTP packets")
@@ -157,8 +155,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if (s.bwe == "nada" || s.bwe == "gcc" || s.qlog || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
-		fmt.Fprintf(os.Stderr, "Flags -bwe {gcc,nada}, -log-quic and -roq-mapping are only valid for RoQ\n")
+	if (s.bwe == "nada" || s.bwe == "gcc" || s.roqMapping != 0) && (!s.roqServer && !s.roqClient) {
+		fmt.Fprintf(os.Stderr, "Flags -bwe {gcc,nada}, and -roq-mapping are only valid for RoQ\n")
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -214,6 +212,7 @@ Flags:
 			quictransport.SetLocalAddress(s.localAddr, s.udpPort),
 			quictransport.SetRemoteAddress(s.remoteAddr, s.udpPort),
 			quictransport.PacingFactor(s.pacingFactor),
+			quictransport.SetQLOGLabel("sender"),
 		}
 
 		if len(s.bwe) > 0 {
@@ -230,10 +229,6 @@ Flags:
 				return err
 			}
 			quicOptions = append(quicOptions, quictransport.SetBWE(bwe))
-		}
-
-		if s.qlog {
-			quicOptions = append(quicOptions, quictransport.EnableQLogs("sender"))
 		}
 
 		// open quic connection

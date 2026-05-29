@@ -21,7 +21,6 @@ func init() {
 type ReceiveData struct {
 	localAddr         string
 	remoteAddr        string
-	qlog              bool
 	dataChannelFlowID uint
 }
 
@@ -33,7 +32,6 @@ func (r *ReceiveData) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("receive-data", flag.ExitOnError)
 	fs.StringVar(&r.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
-	fs.BoolVar(&r.qlog, "log-quic", false, "Log quic internal events")
 	fs.UintVar(&r.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 
 	fs.Usage = func() {
@@ -56,10 +54,7 @@ Flags:
 		quictransport.WithRole(quictransport.Role(quictransport.RoleServer)),
 		quictransport.SetLocalAddress(r.localAddr, 8080),
 		quictransport.SetRemoteAddress(r.remoteAddr, 8080),
-	}
-
-	if r.qlog {
-		quicOptions = append(quicOptions, quictransport.EnableQLogs("./receiver.qlog"))
+		quictransport.SetQLOGLabel("receiver"),
 	}
 
 	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicOptions...)

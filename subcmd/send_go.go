@@ -35,7 +35,6 @@ type SendGo struct {
 	roqServer         bool
 	sourceLocation    string
 	codec             string
-	qlog              bool
 	nada              bool
 	gcc               bool
 	maxTargetRate     uint
@@ -60,7 +59,6 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs.BoolVar(&s.roqServer, "roq-server", false, "Usr RoQ server transport")
 	fs.StringVar(&s.sourceLocation, "source-location", "", "Location for filesource")
 	fs.StringVar(&s.codec, "source-codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
-	fs.BoolVar(&s.qlog, "log-quic", false, "Log quic internal events")
 	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
 	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
@@ -107,6 +105,7 @@ Flags:
 		quictransport.WithRole(quictransport.Role(s.roqServer)),
 		quictransport.SetLocalAddress(s.localAddr, s.udpPort),
 		quictransport.SetRemoteAddress(s.remoteAddr, s.udpPort),
+		quictransport.SetQLOGLabel("sender"),
 	}
 
 	if s.nada {
@@ -120,9 +119,6 @@ Flags:
 			return err
 		}
 		quicOptions = append(quicOptions, quictransport.SetBWE(gcc))
-	}
-	if s.qlog {
-		quicOptions = append(quicOptions, quictransport.EnableQLogs("./sender.qlog"))
 	}
 
 	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicOptions...)

@@ -98,7 +98,7 @@ func createSender(ctx context.Context, conn net.PacketConn, bwe mrtp.BWE) (*quic
 		quictransport.SetRemoteAddress("10.0.0.1", 8080),
 		quictransport.SetNetConn(conn),
 		quictransport.SetBWE(bwe),
-		quictransport.EnableQLogs("./sender.qlog"),
+		quictransport.SetQLOGLabel("sender"),
 	}
 
 	return quictransport.New(ctx, []string{"dc"}, quicTOptions...)
@@ -108,7 +108,7 @@ func createReceiver(ctx context.Context, conn net.PacketConn) (*quictransport.Tr
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(quictransport.RoleServer)),
 		quictransport.SetNetConn(conn),
-		quictransport.EnableQLogs("./receiver"),
+		quictransport.SetQLOGLabel("receiver"),
 	}
 
 	return quictransport.New(ctx, []string{"dc"}, quicOptions...)
