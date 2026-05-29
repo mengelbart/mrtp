@@ -81,7 +81,7 @@ func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
 				previous := time.Time{}
 				for _, tsRange := range f.ReceiveTimestamps {
 					for j, delta := range tsRange.TimestampDelta {
-						seqNr := uint64(f.LargestAcked()) - uint64(j)
+						seqNr := uint64(f.LargestAcked()) - tsRange.DeltaLargestAcknowledged - uint64(j)
 						delta := time.Duration(delta) * time.Microsecond
 						var arrival time.Time
 						if previous.IsZero() {
