@@ -17,7 +17,7 @@ require (
 	github.com/pion/interceptor v0.1.44
 	github.com/pion/logging v0.2.5-0.20260131202752-62cbfd2e3ca2
 	github.com/pion/rtcp v1.2.16
-	github.com/pion/rtp v1.10.1
+	github.com/pion/rtp v1.10.2
 	github.com/pion/sdp/v2 v2.4.0
 	github.com/pion/transport/v4 v4.0.1
 	github.com/pion/webrtc/v4 v4.2.3
@@ -57,4 +57,4 @@ replace github.com/quic-go/quic-go v0.59.0 => github.com/mengelbart/quic-go v0.7
 
 replace github.com/pion/bwe v0.0.0-20260218143828-d4996fd96f96 => github.com/mengelbart/bwe v0.0.0-20260427191144-17142e7f1f92
 
-replace github.com/pion/interceptor v0.1.44 => github.com/mengelbart/interceptor v0.0.0-20260508120442-d8551ca98b80
+replace github.com/pion/interceptor v0.1.44 => github.com/mengelbart/interceptor v0.0.0-20260603142058-a72def71ccfe
