@@ -107,6 +107,10 @@ func (c *udpConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	}
 	ecn := uint8(tos & 0x03)
 	ssrc, sn, err := parseRTPHeader(p[:n])
+	if err != nil {
+		// Ignore error
+		return n, addr, nil
+	}
 
 	// store ecn value for this packet
 	c.setECN(ssrc, sn, ecn)
@@ -143,5 +147,5 @@ func parseRTPHeader(b []byte) (uint32, uint16, error) {
 	if err := pkt.Unmarshal(b); err != nil {
 		return 0, 0, err
 	}
-	return pkt.Header.SSRC, pkt.Header.SequenceNumber, nil
+	return pkt.SSRC, pkt.SequenceNumber, nil
 }

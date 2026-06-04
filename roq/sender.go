@@ -50,7 +50,7 @@ func cancelClose(stream *roq.RTPSendStream) {
 	// time.AfterFunc(200*time.Millisecond, func() {
 	// 	stream.CancelStream(5)
 	// })
-	stream.Close()
+	_ = stream.Close()
 }
 
 func (s *Sender) Write(data []byte) (int, error) {

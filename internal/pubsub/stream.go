@@ -74,7 +74,7 @@ func (s *stream) fanout(msg Message) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	for _, sub := range s.subscribers {
-		sub.receive(s.name, msg)
+		_ = sub.receive(s.name, msg)
 	}
 }
 

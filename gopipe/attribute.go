@@ -3,7 +3,6 @@ package gopipe
 import (
 	"fmt"
 	"image"
-	"time"
 )
 
 type AttributeKey int
@@ -34,18 +33,6 @@ func getPTS(attrs Attributes) (int64, error) {
 	return ptsVal, nil
 }
 
-func getFrameDuration(attrs Attributes) (time.Duration, error) {
-	fdAttr, ok := attrs[FrameDuration]
-	if !ok {
-		return 0, fmt.Errorf("FrameDuration attribute not found")
-	}
-	fdVal, ok := fdAttr.(time.Duration)
-	if !ok {
-		return 0, fmt.Errorf("FrameDuration attribute is not time.Duration")
-	}
-	return fdVal, nil
-}
-
 func getChromaSubsampling(attrs Attributes) (image.YCbCrSubsampleRatio, error) {
 	csAttr, ok := attrs[ChromaSubsampling]
 	if !ok {
@@ -61,11 +48,11 @@ func getChromaSubsampling(attrs Attributes) (image.YCbCrSubsampleRatio, error) {
 func getWidth(attrs Attributes) (int, error) {
 	widthAttr, ok := attrs[Width]
 	if !ok {
-		return 0, fmt.Errorf("Width attribute not found")
+		return 0, fmt.Errorf("width attribute not found")
 	}
 	widthVal, ok := widthAttr.(int)
 	if !ok {
-		return 0, fmt.Errorf("Width attribute is not int")
+		return 0, fmt.Errorf("width attribute is not int")
 	}
 	return widthVal, nil
 }
@@ -73,11 +60,11 @@ func getWidth(attrs Attributes) (int, error) {
 func getHeight(attrs Attributes) (int, error) {
 	heightAttr, ok := attrs[Height]
 	if !ok {
-		return 0, fmt.Errorf("Height attribute not found")
+		return 0, fmt.Errorf("height attribute not found")
 	}
 	heightVal, ok := heightAttr.(int)
 	if !ok {
-		return 0, fmt.Errorf("Height attribute is not int")
+		return 0, fmt.Errorf("height attribute is not int")
 	}
 	return heightVal, nil
 }

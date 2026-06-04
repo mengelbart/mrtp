@@ -63,7 +63,9 @@ Flags:
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
 	}
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	if (s.nada || s.gcc) && rateLimit > 0 {
 		return fmt.Errorf("cannot use fixed rate limit with NADA or GCC")
@@ -126,7 +128,11 @@ Flags:
 		return err
 	}
 
-	go source.Run(ctx)
+	go func() {
+		if sourceErr := source.Run(ctx); sourceErr != nil {
+			panic(sourceErr)
+		}
+	}()
 
 	if s.gcc || s.nada {
 		// rate is controlled by cc

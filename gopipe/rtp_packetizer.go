@@ -90,8 +90,8 @@ func (p *RTPPacketizer) Write(encFrame []byte, a Attributes) error {
 		// log packet
 		slog.Info("rtp to pts mapping",
 			"rtp-timestamp", pkt.Timestamp,
-			"sequence-number", pkt.Header.SequenceNumber,
-			"unwrapped-sequence-number", p.unwrapper.Unwrap(pkt.Header.SequenceNumber),
+			"sequence-number", pkt.SequenceNumber,
+			"unwrapped-sequence-number", p.unwrapper.Unwrap(pkt.SequenceNumber),
 			"pts", pts,
 		)
 	}

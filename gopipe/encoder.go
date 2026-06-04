@@ -6,9 +6,22 @@ import (
 	"fmt"
 	"image"
 	"log/slog"
+	"time"
 
 	"github.com/mengelbart/mrtp/gopipe/codec"
 )
+
+func getFrameDuration(attrs Attributes) (time.Duration, error) {
+	fdAttr, ok := attrs[FrameDuration]
+	if !ok {
+		return 0, fmt.Errorf("FrameDuration attribute not found")
+	}
+	fdVal, ok := fdAttr.(time.Duration)
+	if !ok {
+		return 0, fmt.Errorf("FrameDuration attribute is not time.Duration")
+	}
+	return fdVal, nil
+}
 
 type Encoder struct {
 	vpxEnc  *codec.VPXEncoder

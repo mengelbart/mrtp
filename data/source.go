@@ -102,7 +102,11 @@ func (d *DataBin) startFileSource(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			slog.Error("failed to close file", "error", err)
+		}
+	}()
 
 	// Get file size
 	fileInfo, err := file.Stat()
@@ -125,17 +129,18 @@ func (d *DataBin) startFileSource(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			d.running.Store(false)
-			d.wc.Close()
+			if closeErr := d.wc.Close(); closeErr != nil {
+				slog.Error("failed to close writer", "error", closeErr)
+			}
 			return ctx.Err()
 		default:
 		}
 
 		if d.rateLimiter != nil {
-			err := d.rateLimiter.WaitN(ctx, 1024)
-			if err != nil {
+			waitErr := d.rateLimiter.WaitN(ctx, 1024)
+			if waitErr != nil {
 				d.running.Store(false)
-				d.wc.Close()
-				return err
+				return waitErr
 			}
 		}
 
@@ -143,7 +148,9 @@ func (d *DataBin) startFileSource(ctx context.Context) error {
 		if n > 0 {
 			_, writeErr := d.wc.Write(buf[:n])
 			if writeErr != nil {
-				d.wc.Close()
+				if closeErr := d.wc.Close(); closeErr != nil {
+					slog.Error("failed to close writer", "error", err)
+				}
 				d.running.Store(false)
 				return fmt.Errorf("failed to write to sink: %w", writeErr)
 			}
@@ -171,7 +178,9 @@ func (d *DataBin) startChunkSource(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			d.running.Store(false)
-			d.wc.Close()
+			if closeErr := d.wc.Close(); closeErr != nil {
+				slog.Error("failed to close writer", "error", closeErr)
+			}
 			return ctx.Err()
 		case <-time.After(5 * time.Second):
 		}
@@ -249,7 +258,9 @@ func (d *DataBin) startRandomSource(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			d.running.Store(false)
-			d.wc.Close()
+			if closeErr := d.wc.Close(); closeErr != nil {
+				slog.Error("failed to close writer", "error", err)
+			}
 			return ctx.Err()
 		default:
 		}
@@ -258,7 +269,9 @@ func (d *DataBin) startRandomSource(ctx context.Context) error {
 			err := d.rateLimiter.WaitN(ctx, 1024)
 			if err != nil {
 				d.running.Store(false)
-				d.wc.Close()
+				if closeErr := d.wc.Close(); closeErr != nil {
+					slog.Error("failed to close writer", "error", err)
+				}
 				return err
 			}
 		}

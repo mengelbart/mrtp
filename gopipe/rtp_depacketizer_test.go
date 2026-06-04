@@ -59,7 +59,9 @@ func testDepacketizerWithCodec(t *testing.T, codec codec.CodecType) {
 
 		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
-		defer file.Close()
+		defer func() {
+			assert.NoError(t, file.Close())
+		}()
 
 		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
@@ -74,17 +76,19 @@ func testDepacketizerWithCodec(t *testing.T, codec codec.CodecType) {
 			Codec:     codec,
 		}
 		pacer := NewFrameSpacer(ctx)
-		defer pacer.Close()
+		defer func() {
+			assert.NoError(t, pacer.Close())
+		}()
 
 		frameInter := newFrameInterceptor(false, 0, nil)
 		rtpPipeline, err := Chain(i, sink, pacer, packetizer, encoder, frameInter)
 		assert.NoError(t, err)
 
-		fileSrc.StartLive(ctx, rtpPipeline)
+		assert.NoError(t, fileSrc.StartLive(ctx, rtpPipeline))
 
 		assert.Equal(t, frameInter.count, framesReceived)
 
-		depacketizer.Close()
+		assert.NoError(t, depacketizer.Close())
 		cancel()
 		synctest.Wait()
 	})
@@ -137,7 +141,9 @@ func testDepacketizerFrameIntegrityWithCodec(t *testing.T, codec codec.CodecType
 
 		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
-		defer file.Close()
+		defer func() {
+			assert.NoError(t, file.Close())
+		}()
 
 		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
@@ -153,7 +159,9 @@ func testDepacketizerFrameIntegrityWithCodec(t *testing.T, codec codec.CodecType
 			Codec:     codec,
 		}
 		pacer := NewFrameSpacer(ctx)
-		defer pacer.Close()
+		defer func() {
+			assert.NoError(t, pacer.Close())
+		}()
 
 		frameInter := newFrameInterceptor(true, maxFrames, nil)
 
@@ -166,7 +174,7 @@ func testDepacketizerFrameIntegrityWithCodec(t *testing.T, codec codec.CodecType
 		ticker := time.NewTicker(frameDuration)
 		defer ticker.Stop()
 
-		fileSrc.StartLive(ctx, rtpPipeline)
+		assert.NoError(t, fileSrc.StartLive(ctx, rtpPipeline))
 
 		time.Sleep(100 * time.Millisecond)
 
@@ -184,7 +192,7 @@ func testDepacketizerFrameIntegrityWithCodec(t *testing.T, codec codec.CodecType
 			slog.Info("frame comparison", "index", i, "size", len(frameInter.sentFrames[i]), "match", true)
 		}
 
-		depacketizer.Close()
+		assert.NoError(t, depacketizer.Close())
 		wg.Wait()
 		synctest.Wait()
 	})
@@ -239,7 +247,9 @@ func testDepacketizerRTPdropsWithCodec(t *testing.T, codec codec.CodecType) {
 
 		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
-		defer file.Close()
+		defer func() {
+			assert.NoError(t, file.Close())
+		}()
 
 		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
@@ -255,7 +265,9 @@ func testDepacketizerRTPdropsWithCodec(t *testing.T, codec codec.CodecType) {
 			Codec:     codec,
 		}
 		pacer := NewFrameSpacer(ctx)
-		defer pacer.Close()
+		defer func() {
+			assert.NoError(t, pacer.Close())
+		}()
 
 		frameInter := newFrameInterceptor(true, maxFrames, framesToBeDropped)
 		dropInter := newRtpDropInterceptor()
@@ -269,7 +281,7 @@ func testDepacketizerRTPdropsWithCodec(t *testing.T, codec codec.CodecType) {
 		ticker := time.NewTicker(frameDuration)
 		defer ticker.Stop()
 
-		fileSrc.StartLive(ctx, rtpPipeline)
+		assert.NoError(t, fileSrc.StartLive(ctx, rtpPipeline))
 
 		time.Sleep(100 * time.Millisecond)
 
@@ -294,7 +306,7 @@ func testDepacketizerRTPdropsWithCodec(t *testing.T, codec codec.CodecType) {
 			receivedIdx++
 		}
 
-		depacketizer.Close()
+		assert.NoError(t, depacketizer.Close())
 		wg.Wait()
 		synctest.Wait()
 	})

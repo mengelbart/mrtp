@@ -139,7 +139,9 @@ Flags:
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
 	}
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -238,7 +240,9 @@ Flags:
 		if err != nil {
 			return err
 		}
-		defer roqTransport.CloseLogFile()
+		defer func() {
+			_ = roqTransport.CloseLogFile()
+		}()
 
 		dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
 		if err != nil {
@@ -256,7 +260,9 @@ Flags:
 				return
 			}
 			if s.datachannel && dcTransport != nil {
-				dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
+				if readErr := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
+					slog.Error("failed to read stream", "error", err)
+				}
 				return
 			}
 
@@ -267,9 +273,9 @@ Flags:
 		// open dc connection
 		// var dataSource *data.DataBin
 		if s.datachannel {
-			dcSender, err := dcTransport.NewDataChannelSender(uint64(s.dataChannelFlowID), 0, true)
-			if err != nil {
-				return err
+			dcSender, dcErr := dcTransport.NewDataChannelSender(uint64(s.dataChannelFlowID), 0, true)
+			if dcErr != nil {
+				return dcErr
 			}
 
 			s.dataSource, err = createDataSource(dcSender, s.dcSourceFile, s.dcStartDelay, false, s.dcChunks)
@@ -277,7 +283,11 @@ Flags:
 				return err
 			}
 
-			go s.dataSource.Run(ctx)
+			go func() {
+				if datasourceErr := s.dataSource.Run(ctx); datasourceErr != nil {
+					slog.Error("failed to run data source", "error", datasourceErr)
+				}
+			}()
 		}
 
 		// set rate callbacks

@@ -19,11 +19,13 @@ func runPipeline(pipeline *gst.Pipeline) error {
 	pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
 		switch msg.Type() {
 		case gst.MessageEOS:
-			pipeline.BlockSetState(gst.StateNull)
+			if err := pipeline.BlockSetState(gst.StateNull); err != nil {
+				fmt.Printf("failed to set state: %v\n", err)
+			}
 			mainloop.Quit()
 		case gst.MessageError:
 			err := msg.ParseError()
-			fmt.Println("ERROR:", err.Error())
+			fmt.Printf("ERROR: %v\n", err)
 			if debug := err.DebugString(); debug != "" {
 				fmt.Println("DEBUG:", debug)
 			}

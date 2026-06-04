@@ -30,8 +30,8 @@ func TestVpxDecode(t *testing.T) {
 		assert.NoError(t, err)
 
 		sink := WriterFunc(func(frame []byte, attr Attributes) error {
-			rawFrame, err := decoder.Decode(frame)
-			assert.NoError(t, err)
+			rawFrame, decodeErr := decoder.Decode(frame)
+			assert.NoError(t, decodeErr)
 			assert.NotNil(t, rawFrame)
 
 			framesReceived++
@@ -41,7 +41,9 @@ func TestVpxDecode(t *testing.T) {
 
 		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
-		defer file.Close()
+		defer func() {
+			assert.NoError(t, file.Close())
+		}()
 
 		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
@@ -53,7 +55,7 @@ func TestVpxDecode(t *testing.T) {
 		writer, err := Chain(i, sink, encoder, frameInter)
 		assert.NoError(t, err)
 
-		fileSrc.StartLive(ctx, writer)
+		assert.NoError(t, fileSrc.StartLive(ctx, writer))
 
 		assert.Equal(t, frameInter.count, framesReceived)
 
@@ -112,7 +114,9 @@ func runVpxDecodeWithRTP(t *testing.T, c codec.CodecType) {
 
 		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
-		defer file.Close()
+		defer func() {
+			assert.NoError(t, file.Close())
+		}()
 
 		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
@@ -127,18 +131,20 @@ func runVpxDecodeWithRTP(t *testing.T, c codec.CodecType) {
 			Codec:     c,
 		}
 		pacer := NewFrameSpacer(ctx)
-		defer pacer.Close()
+		defer func() {
+			assert.NoError(t, pacer.Close())
+		}()
 
 		frameInter := newFrameInterceptor(false, 0, nil)
 
 		writer, err := Chain(i, sink, pacer, packetizer, encoder, frameInter)
 		assert.NoError(t, err)
 
-		fileSrc.StartLive(ctx, writer)
+		assert.NoError(t, fileSrc.StartLive(ctx, writer))
 
 		assert.Equal(t, frameInter.count, framesReceived)
 
-		depacketizer.Close()
+		assert.NoError(t, depacketizer.Close())
 		cancel()
 		synctest.Wait()
 	})

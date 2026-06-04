@@ -187,7 +187,9 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 		if err != nil {
 			return nil, err
 		}
-		fs.Set("location", s.fileSourceLocation)
+		if err = fs.Set("location", s.fileSourceLocation); err != nil {
+			return nil, err
+		}
 
 		decodebin, err := gst.NewElement("decodebin")
 		if err != nil {
@@ -197,7 +199,9 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 		if err := s.bin.AddMany(s.elements...); err != nil {
 			return nil, err
 		}
-		fs.Link(decodebin)
+		if err = fs.Link(decodebin); err != nil {
+			return nil, err
+		}
 
 		// Create ghost pad with no target yet
 		// will be set in decodebin callback
@@ -207,7 +211,7 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 		}
 
 		// decodebin callback
-		decodebin.Connect("pad-added", func(self *gst.Element, decodeSrcPad *gst.Pad) {
+		if _, err = decodebin.Connect("pad-added", func(self *gst.Element, decodeSrcPad *gst.Pad) {
 			var isVideo bool
 			caps := decodeSrcPad.GetCurrentCaps()
 			for i := 0; i < caps.GetSize(); i++ {
@@ -222,11 +226,11 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 			}
 
 			// link follow up pipeline togehter
-			if err := s.bin.AddMany(followUpElms...); err != nil {
-				panic(err)
+			if addErr := s.bin.AddMany(followUpElms...); addErr != nil {
+				panic(addErr)
 			}
-			if err := gst.ElementLinkMany(followUpElms...); err != nil {
-				panic(err)
+			if linkErr := gst.ElementLinkMany(followUpElms...); linkErr != nil {
+				panic(linkErr)
 			}
 			s.elements = append(s.elements, followUpElms...)
 
@@ -246,7 +250,9 @@ func NewStreamSource(name string, opts ...StreamSourceOption) (*StreamSource, er
 			if !ghostpad.SetTarget(srcpad) {
 				panic("Failed to set ghostpad target")
 			}
-		})
+		}); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("unknown source format: %v", s.source)
 	}

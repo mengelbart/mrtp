@@ -46,7 +46,9 @@ Flags:
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
 	}
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	if len(fs.Args()) > 1 {
 		fmt.Printf("error: unknown extra arguments: %v\n", flag.Args()[1:])
