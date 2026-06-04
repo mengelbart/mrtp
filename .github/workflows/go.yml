@@ -1,0 +1,41 @@
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+
+jobs:
+  golangci:
+    runs-on: ubuntu-latest
+    name: lint
+    env:
+      CGO_ENABLED: 0
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-go@v6
+      with:
+        go-version: 'stable'
+        cache: false
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v9
+      with:
+        version: v2.12
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        go: [ '1.25.x', '1.26.x' ]
+    runs-on: ubuntu-latest
+    name: Unit tests (${{ matrix.go }})
+    env:
+      CGO_ENABLED: 0
+    steps:
+    - uses: actions/checkout@v6
+    - uses: actions/setup-go@v6
+      with:
+        go-version: ${{ matrix.go }}
+    - name: Build
+      run: go build -v ./...
+    - name: Test
+      run: go test -v ./...
