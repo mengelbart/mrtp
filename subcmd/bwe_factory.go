@@ -6,6 +6,11 @@ import (
 	"github.com/mengelbart/mrtp"
 )
 
+const (
+	initTargetRate = 1_000_000
+	minTargetRate  = 400_000
+)
+
 type BWEConfig struct {
 	InitTargetRate uint
 	MinTargetRate  uint

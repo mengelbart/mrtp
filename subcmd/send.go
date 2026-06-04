@@ -1,3 +1,5 @@
+//go:build cgo
+
 package subcmd
 
 import (
@@ -17,13 +19,6 @@ import (
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/quic-go/quic-go"
-)
-
-const roqALPN = "roq-09"
-
-const (
-	initTargetRate = 1_000_000
-	minTargetRate  = 400_000
 )
 
 func init() {
