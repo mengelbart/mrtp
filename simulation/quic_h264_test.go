@@ -1,3 +1,5 @@
+//go:build go1.25 && simulation
+
 package simulation
 
 import (
