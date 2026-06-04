@@ -13,7 +13,6 @@ import (
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/gopipe/codec"
-	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/quic-go/quic-go"
@@ -35,9 +34,6 @@ type ReceiveGo struct {
 	rtpFlowID         uint
 	rtcpSendFlowID    uint
 	rtcpRecvFlowID    uint
-
-	receiver *gstreamer.RTPBin
-	sink     gstreamer.RTPSinkBin
 }
 
 func (r *ReceiveGo) Help() string {

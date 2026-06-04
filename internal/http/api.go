@@ -5,17 +5,14 @@ import (
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/mengelbart/mrtp/internal/model"
 )
 
 type ChannelService interface {
 	CreateChannel() (ID int)
-	ListChannels() ([]*model.Channel, error)
 }
 
 type API struct {
-	logger   *slog.Logger
-	channels ChannelService
+	logger *slog.Logger
 }
 
 func NewApi() *API {
@@ -37,7 +34,6 @@ func (a *API) ListChannels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) CreateChannel(w http.ResponseWriter, r *http.Request) {
-	a.channels.CreateChannel()
 }
 
 func (a *API) UpdateChannel(w http.ResponseWriter, r *http.Request) {

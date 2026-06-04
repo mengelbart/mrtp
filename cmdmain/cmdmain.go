@@ -26,12 +26,6 @@ var (
 	logFile   string
 )
 
-type command struct {
-	name   string
-	help   string
-	subCmd func(cmd string, args []string) error
-}
-
 type SubCmd interface {
 	Help() string
 	Exec(cmd string, args []string) error
