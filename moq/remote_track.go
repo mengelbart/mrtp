@@ -50,8 +50,3 @@ func (t *remoteTrack) run() {
 		}
 	}
 }
-
-func (t *remoteTrack) close() {
-	t.cancel()
-	t.wg.Wait()
-}

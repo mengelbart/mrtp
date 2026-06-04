@@ -101,7 +101,9 @@ Usage:
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
 	}
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	pipeline, err := gstreamer.NewRTPBin()
 	if err != nil {
@@ -213,7 +215,11 @@ Usage:
 	if err != nil {
 		return err
 	}
-	go s.ListenAndServe()
+	go func() {
+		if listenErr := s.ListenAndServe(); listenErr != nil {
+			panic(listenErr)
+		}
+	}()
 
 	if offer && w.datachannel {
 		dcSender := transport.NewDataChannelSender("data")
@@ -222,7 +228,11 @@ Usage:
 		if err != nil {
 			return err
 		}
-		go dataSource.Run(ctx)
+		go func() {
+			if sourceErr := dataSource.Run(ctx); sourceErr != nil {
+				fmt.Printf("failed to run data source: %v\n", sourceErr)
+			}
+		}()
 	} else if w.datachannel {
 		dcReceiver := transport.NewDataChannelReceiver()
 		var dataSink *data.DataSink
@@ -230,7 +240,11 @@ Usage:
 		if err != nil {
 			return err
 		}
-		go dataSink.Run()
+		go func() {
+			if sinkErr := dataSink.Run(); sinkErr != nil {
+				fmt.Printf("failed to run data sink: %v\n", sinkErr)
+			}
+		}()
 	}
 
 	if sendVideoTrack {

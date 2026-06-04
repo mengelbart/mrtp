@@ -30,8 +30,8 @@ func TestH264Decode(t *testing.T) {
 		assert.NoError(t, err)
 
 		sink := WriterFunc(func(frame []byte, attr Attributes) error {
-			rawFrame, err := decoder.Decode(frame)
-			assert.NoError(t, err)
+			rawFrame, decodeErr := decoder.Decode(frame)
+			assert.NoError(t, decodeErr)
 			assert.NotNil(t, rawFrame)
 
 			framesReceived++
@@ -41,7 +41,9 @@ func TestH264Decode(t *testing.T) {
 
 		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
-		defer file.Close()
+		defer func() {
+			assert.NoError(t, file.Close())
+		}()
 
 		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
@@ -53,7 +55,7 @@ func TestH264Decode(t *testing.T) {
 		pipeline, err := Chain(i, sink, encoder, frameInter)
 		assert.NoError(t, err)
 
-		fileSrc.StartLive(ctx, pipeline)
+		assert.NoError(t, fileSrc.StartLive(ctx, pipeline))
 
 		assert.Equal(t, frameInter.count, framesReceived)
 
@@ -80,8 +82,8 @@ func TestH264DecodeWithRTP(t *testing.T) {
 
 		timeout := 10 * time.Millisecond
 		depacketizer, err := newRTPDepacketizer(timeout, codec.H264, func(frame []byte, pts int64) {
-			rawFrame, err := decoder.Decode(frame)
-			assert.NoError(t, err)
+			rawFrame, decodeErr := decoder.Decode(frame)
+			assert.NoError(t, decodeErr)
 			assert.NotNil(t, rawFrame)
 			framesReceived++
 		})
@@ -98,7 +100,9 @@ func TestH264DecodeWithRTP(t *testing.T) {
 
 		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
-		defer file.Close()
+		defer func() {
+			assert.NoError(t, file.Close())
+		}()
 
 		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)
@@ -118,11 +122,11 @@ func TestH264DecodeWithRTP(t *testing.T) {
 		writer, err := Chain(i, sink, pacer, packetizer, encoder, frameInter)
 		assert.NoError(t, err)
 
-		fileSrc.StartLive(ctx, writer)
+		assert.NoError(t, fileSrc.StartLive(ctx, writer))
 
 		assert.Equal(t, frameInter.count, framesReceived)
 
-		depacketizer.Close()
+		assert.NoError(t, depacketizer.Close())
 		cancel()
 		synctest.Wait()
 	})

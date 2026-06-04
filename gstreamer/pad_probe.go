@@ -113,9 +113,9 @@ func logRTPMapping(eventName string, buffer *gst.Buffer, unwrapper *logging.Unwr
 	}
 
 	slog.Info(eventName,
-		"rtp-timestamp", b.Header.Timestamp,
-		"sequence-number", b.Header.SequenceNumber,
-		"unwrapped-sequence-number", unwrapper.Unwrap(b.Header.SequenceNumber),
+		"rtp-timestamp", b.Timestamp,
+		"sequence-number", b.SequenceNumber,
+		"unwrapped-sequence-number", unwrapper.Unwrap(b.SequenceNumber),
 		"pts", ptsMs,
 		"offset", offset)
 }

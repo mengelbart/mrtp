@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 
@@ -120,7 +121,9 @@ Flags:
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
 	}
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	if len(fs.Args()) > 1 {
 		fmt.Fprintf(os.Stderr, "error: unknown extra arguments: %v\n", flag.Args()[1:])
@@ -134,7 +137,7 @@ Flags:
 		os.Exit(1)
 	}
 
-	if (r.datachannel || r.roqMapping != 0) && !(r.roqServer || r.roqClient) {
+	if (r.datachannel || r.roqMapping != 0) && (!r.roqServer && !r.roqClient) {
 		fmt.Fprintf(os.Stderr, "Flag -%v, -%v and only valid for RoQ\n", "dc", "roq-mapping")
 		fs.Usage()
 		os.Exit(1)
@@ -213,7 +216,9 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 		}
 
 		if r.datachannel {
-			dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
+			if readErr := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
+				slog.Error("failed to read stream", "error", err)
+			}
 			return
 		}
 
@@ -236,7 +241,11 @@ func (r *Receive) setupRoQ(ctx context.Context) error {
 			return err
 		}
 
-		go dataSink.Run()
+		go func() {
+			if sinkErr := dataSink.Run(); sinkErr != nil {
+				slog.Error("failed to run data sink", "error", sinkErr)
+			}
+		}()
 	}
 
 	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(r.rtpFlowID), r.traceRTP)

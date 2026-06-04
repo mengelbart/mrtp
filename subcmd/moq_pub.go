@@ -39,7 +39,9 @@ Flags:
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
 	}
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	w := moq.NewLocalTrack()
 
@@ -82,12 +84,12 @@ type handler struct {
 func (l *handler) Handle(conn *quic.Conn) {
 	transport, err := moq.New(quicmoq.New(conn, moqtransport.PerspectiveServer))
 	if err != nil {
-		conn.CloseWithError(quic.ApplicationErrorCode(moqtransport.ErrorCodeInternal), "failed to setup session")
+		_ = conn.CloseWithError(quic.ApplicationErrorCode(moqtransport.ErrorCodeInternal), "failed to setup session")
 		return
 	}
 	err = transport.AddTrack([]string{"clock"}, "second", l.track)
 	if err != nil {
-		conn.CloseWithError(quic.ApplicationErrorCode(moqtransport.ErrorCodeInternal), "failed to setup session")
+		_ = conn.CloseWithError(quic.ApplicationErrorCode(moqtransport.ErrorCodeInternal), "failed to setup session")
 		return
 	}
 }

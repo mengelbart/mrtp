@@ -174,10 +174,10 @@ func (t *Transport) GetQuicConnection() *quic.Conn {
 func (t *Transport) Close() {
 	t.running.Store(false)
 	if t.quicConn != nil {
-		t.quicConn.CloseWithError(0, "bye")
+		_ = t.quicConn.CloseWithError(0, "bye")
 	}
 	if t.quicTransport != nil {
-		t.quicTransport.Close()
+		_ = t.quicTransport.Close()
 	}
 }
 

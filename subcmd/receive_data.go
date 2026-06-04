@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/mengelbart/mrtp/cmdmain"
@@ -45,7 +46,9 @@ Flags:
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
 	}
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -70,7 +73,11 @@ Flags:
 	// start handler
 	quicConn.StartHandlers()
 
-	go r.startDataChannelReceiver(dcTransport)
+	go func() {
+		if dataErr := r.startDataChannelReceiver(dcTransport); dataErr != nil {
+			slog.Error("failed to start data channel receiver", "error", err)
+		}
+	}()
 
 	// set handlers for datagrams and streams
 	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {

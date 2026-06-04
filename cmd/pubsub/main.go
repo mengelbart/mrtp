@@ -9,7 +9,11 @@ import (
 
 func main() {
 	channel := pubsub.NewChannel()
-	defer channel.Close()
+	defer func() {
+		if err := channel.Close(); err != nil {
+			panic(err)
+		}
+	}()
 
 	pub := channel.NewPublisher()
 	if err := pub.Announce("A"); err != nil {
@@ -40,8 +44,10 @@ func main() {
 	}()
 
 	time.Sleep(time.Second)
-	pub.Publish("A", pubsub.Message{
+	if err = pub.Publish("A", pubsub.Message{
 		Payload: []byte("hello world!"),
-	})
+	}); err != nil {
+		panic(err)
+	}
 	time.Sleep(time.Second)
 }

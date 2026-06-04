@@ -23,7 +23,9 @@ func TestX264Encoder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
 		assert.NoError(t, err)
-		defer file.Close()
+		defer func() {
+			assert.NoError(t, file.Close())
+		}()
 
 		fileSrc, err := NewY4MSource(file)
 		assert.NoError(t, err)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -67,7 +68,9 @@ Flags:
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
 	}
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -112,7 +115,9 @@ Flags:
 		}
 
 		if r.datachannel {
-			dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
+			if readErr := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
+				slog.Error("failed to read stream", "error", err)
+			}
 			return
 		}
 
@@ -135,7 +140,11 @@ Flags:
 			return err
 		}
 
-		go dataSink.Run()
+		go func() {
+			if sinkErr := dataSink.Run(); sinkErr != nil {
+				slog.Error("failed to run data sink", "error", sinkErr)
+			}
+		}()
 	}
 
 	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(r.rtpFlowID), r.traceRTP)
@@ -163,7 +172,9 @@ Flags:
 	if err != nil {
 		return err
 	}
-	defer depacketizer.Close()
+	defer func() {
+		_ = depacketizer.Close()
+	}()
 
 	rtpPipeline, err := gopipe.Chain(gopipe.Info{}, fileSink, decoder, depacketizer)
 	if err != nil {

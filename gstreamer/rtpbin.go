@@ -472,7 +472,7 @@ func getAppSinkWithWriteCloser(wc io.WriteCloser) (*gst.Element, error) {
 	appsink := app.SinkFromElement(e)
 	appsink.SetCallbacks(&app.SinkCallbacks{
 		EOSFunc: func(appSink *app.Sink) {
-			wc.Close()
+			_ = wc.Close()
 		},
 		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
 			sample := appSink.PullSample()
@@ -521,7 +521,7 @@ func getAppSrcWithReadCloser(rc io.ReadCloser) (*gst.Element, error) {
 			src.PushBuffer(gstBuffer)
 		},
 		EnoughDataFunc: func(src *app.Source) {
-			rc.Close()
+			_ = rc.Close()
 		},
 	})
 	return e, nil

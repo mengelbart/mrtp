@@ -179,8 +179,8 @@ func (d *rtpDepacketizer) processPackets() {
 		// log packet
 		slog.Info("rtp to pts mapping",
 			"rtp-timestamp", pkt.Timestamp,
-			"sequence-number", pkt.Header.SequenceNumber,
-			"unwrapped-sequence-number", d.unwrapper.Unwrap(pkt.Header.SequenceNumber),
+			"sequence-number", pkt.SequenceNumber,
+			"unwrapped-sequence-number", d.unwrapper.Unwrap(pkt.SequenceNumber),
 			"pts", pkt.Timestamp, // should be fine to use rtp ts as pts
 		)
 
@@ -236,7 +236,9 @@ func NewRTPDepacketizer(timeout time.Duration, codec codec.CodecType) (*RTPDepac
 	adapter.depacketizer, err = newRTPDepacketizer(timeout, codec, func(frame []byte, pts int64) {
 		if adapter.next != nil {
 			// Forward the assembled frame to the next stage
-			adapter.next.Write(frame, Attributes{PTS: pts})
+			if writeErr := adapter.next.Write(frame, Attributes{PTS: pts}); writeErr != nil {
+				panic(writeErr)
+			}
 		} else {
 			panic("RTPDepacketizer: used before linked")
 		}

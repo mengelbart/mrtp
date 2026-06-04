@@ -84,7 +84,12 @@ func Main() {
 			fmt.Printf("failed to open log file: %v\n", err)
 			os.Exit(1)
 		}
-		defer f.Close()
+		defer func() {
+			if err := f.Close(); err != nil {
+				fmt.Printf("failed to save log file: %v\n", err)
+				os.Exit(1)
+			}
+		}()
 		lf = f
 	}
 	logging.Configure(logging.Format(logFormat), slog.Level(logLevel), lf)

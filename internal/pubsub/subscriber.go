@@ -51,7 +51,7 @@ func (s *Subscriber) Subscribe(stream string, queueSize int) (iter.Seq[Message],
 	return func(yield func(Message) bool) {
 		for msg := range queue {
 			if !yield(msg) {
-				s.channel.unsubscribe(stream, id)
+				_ = s.channel.unsubscribe(stream, id)
 				return
 			}
 		}

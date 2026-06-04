@@ -85,18 +85,18 @@ func (t *Transport) AddTrack(namespace []string, trackname string, track *LocalT
 func (t *Transport) handleSubscription(w *moqtransport.SubscribeResponseWriter, m *moqtransport.SubscribeMessage) {
 	ns, ok := t.namespaces[strings.Join(m.Namespace, "")]
 	if !ok {
-		w.Reject(moqtransport.ErrorCodeSubscribeTrackDoesNotExist, "track not found")
+		_ = w.Reject(moqtransport.ErrorCodeSubscribeTrackDoesNotExist, "track not found")
 		return
 	}
 	track := ns.findTrack(m.Track)
 	if t == nil {
-		w.Reject(moqtransport.ErrorCodeSubscribeTrackDoesNotExist, "track not found")
+		_ = w.Reject(moqtransport.ErrorCodeSubscribeTrackDoesNotExist, "track not found")
 		return
 	}
 	if !ok {
-		w.Reject(moqtransport.ErrorCodeSubscribeInternal, "failed to prepare publisher")
+		_ = w.Reject(moqtransport.ErrorCodeSubscribeInternal, "failed to prepare publisher")
 		return
 	}
 	track.subscribe(w)
-	w.Accept()
+	_ = w.Accept()
 }

@@ -86,7 +86,9 @@ Flags:
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
 	}
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	ctx := context.Background()
 
@@ -150,7 +152,9 @@ Flags:
 			return
 		}
 		if s.datachannel && dcTransport != nil {
-			dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
+			if readErr := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
+				slog.Error("failed to read stream", "error", err)
+			}
 			return
 		}
 
@@ -171,7 +175,11 @@ Flags:
 			return err
 		}
 
-		go dataSource.Run(ctx)
+		go func() {
+			if dsErr := dataSource.Run(ctx); dsErr != nil {
+				slog.Error("failed to run data source", "error", dsErr)
+			}
+		}()
 	}
 
 	rtpSink, err := roqTransport.NewSendFlow(uint64(s.rtpFlowID), roq.SendMode(s.roqMapping), s.traceRTP)
@@ -184,21 +192,25 @@ Flags:
 
 		// give pacer time to send everything
 		time.Sleep(5 * time.Second)
-		rtpSink.Close()
-		roqTransport.Close()
-		roqTransport.CloseLogFile()
+		_ = rtpSink.Close()
+		_ = roqTransport.Close()
+		_ = roqTransport.CloseLogFile()
 	}()
 
 	appSink := gopipe.WriterFunc(func(b []byte, _ gopipe.Attributes) error {
-		_, err := rtpSink.Write(b)
-		return err
+		_, writeErr := rtpSink.Write(b)
+		return writeErr
 	})
 
 	file, err := os.Open(s.sourceLocation)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			slog.Error("failed to close file", "error", closeErr)
+		}
+	}()
 
 	fileSrc, err := gopipe.NewY4MSource(file)
 	if err != nil {

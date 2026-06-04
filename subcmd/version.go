@@ -62,15 +62,17 @@ Flags:
 		fs.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
 	}
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
-	fmt.Fprintf(os.Stdout, `%s
+	_, err := fmt.Printf(`%s
 	Version:	%s
 	Git commit:	%s
 	Built:		%s
 	Go Version:	%s
 `, v.path, v.version, v.gitCommit, v.gitDate, v.goVersion)
-	return nil
+	return err
 }
 
 // Help implements cmdmain.SubCmd.
