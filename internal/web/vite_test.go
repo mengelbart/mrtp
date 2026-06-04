@@ -2,7 +2,6 @@ package web
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 	"text/template"
 
@@ -101,8 +100,6 @@ func TestLoadViteManifest(t *testing.T) {
 	err = t1.Execute(buffer, tmplData)
 	assert.NoError(t, err)
 
-	fmt.Printf("result: '%s'\n", buffer.String())
-
 	buffer.Reset()
 	tmplData = viteTemplateData{
 		Chunk:          m["views/bar.js"],
@@ -110,7 +107,4 @@ func TestLoadViteManifest(t *testing.T) {
 	}
 	err = t1.Execute(buffer, tmplData)
 	assert.NoError(t, err)
-
-	fmt.Printf("result: '%s'\n", buffer.String())
-
 }
