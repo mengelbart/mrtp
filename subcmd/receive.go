@@ -1,3 +1,5 @@
+//go:build cgo
+
 package subcmd
 
 import (
@@ -21,10 +23,6 @@ import (
 func init() {
 	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd { return new(Receive) })
 }
-
-// UDPRecvBufferSize is the default UDP Receive Buffer size for the Gstreamer
-// udpsrc element
-var UDPRecvBufferSize int
 
 type StreamSinkFactory interface {
 	ConfigureFlags(*flag.FlagSet)
@@ -82,6 +80,7 @@ type Receive struct {
 	rtpFlowID         uint
 	rtcpSendFlowID    uint
 	rtcpRecvFlowID    uint
+	udpRecvBufferSize int
 }
 
 func (r *Receive) Help() string {
@@ -106,7 +105,7 @@ func (r *Receive) Exec(cmd string, args []string) error {
 	fs.UintVar(&r.rtcpSendFlowID, "rtcp-send-flow-id", 1, "RTCP Sender Flow ID when using RTP over QUIC")
 	fs.UintVar(&r.rtcpRecvFlowID, "rtcp-recv-flow-id", 2, "RTCP Receiver Flow ID when using RTP over QUIC")
 
-	fs.IntVar(&UDPRecvBufferSize, "recv-buffer-size", UDPRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
+	fs.IntVar(&r.udpRecvBufferSize, "recv-buffer-size", r.udpRecvBufferSize, "UDP receive 'buffer-size' of Gstreamer udpsrc element")
 
 	DefaultStreamSinkFactory.ConfigureFlags(fs)
 
@@ -274,7 +273,7 @@ func (r *Receive) setupUDP() error {
 		r.localAddr,
 		uint32(r.udpPort),
 		gstreamer.EnabelUDPSrcPadProbe(r.traceRTP),
-		gstreamer.SetReceiveBufferSize(UDPRecvBufferSize),
+		gstreamer.SetReceiveBufferSize(r.udpRecvBufferSize),
 	)
 	if err != nil {
 		return err
