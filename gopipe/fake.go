@@ -12,8 +12,8 @@ import (
 type FakeSink struct {
 }
 
-func NewFakeSink() (*Y4MSink, error) {
-	return &Y4MSink{}, nil
+func NewFakeSink() (*FakeSink, error) {
+	return &FakeSink{}, nil
 }
 
 func (s *FakeSink) Close() error {
