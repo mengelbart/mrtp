@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -43,6 +44,12 @@ func testQUICh264(t *testing.T, bwe mrtp.BWE) {
 		t.Skip("video not found")
 	}
 
+	err := initTestResultDir()
+	require.NoError(t, err)
+
+	err = createFakeConfig()
+	require.NoError(t, err)
+
 	logFile := configureLogging()
 	defer logFile.Close()
 
@@ -60,8 +67,8 @@ func testQUICh264(t *testing.T, bwe mrtp.BWE) {
 
 		net := netsim.NewNet(forward(), backward())
 
-		net.WriteTcLogForwardPath("tc.log", 100*time.Second)
-		createFakeConfig("config.json")
+		err := net.WriteTcLogForwardPath(filepath.Join(RESULT_DIR, "tc.log"), 100*time.Second)
+		assert.NoError(t, err)
 
 		left := net.NIC(netsim.LeftLocation, netip.MustParseAddr("10.0.0.1"))
 		serverConn, err := left.ListenPacket("udp", "10.0.0.1:8080")
@@ -127,8 +134,7 @@ func testQUICh264(t *testing.T, bwe mrtp.BWE) {
 
 func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error {
 	// open roq connection
-	roqOpt := []roq.Option{roq.EnableRoqLogs("sender.roq.qlog")}
-	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection(), roqOpt...)
+	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
 	}
@@ -148,7 +154,7 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 	}
 	quicConn.StartHandlers()
 
-	rtpSink, err := roqTransport.NewSendFlow(uint64(rtpFlowID), roq.SendModeSingleStream, false)
+	rtpSink, err := roqTransport.NewSendFlow(uint64(rtpFlowID), roq.SendModeSingleStream, true)
 	if err != nil {
 		return err
 	}
@@ -234,7 +240,7 @@ func runH264Receiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	// start handler
 	quicConn.StartHandlers()
 
-	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(rtpFlowID), false)
+	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(rtpFlowID), true)
 	if err != nil {
 		return err
 	}
@@ -246,7 +252,7 @@ func runH264Receiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 		return err
 	}
 
-	fileSink, err := gopipe.NewY4MSink("./out.y4m", 60, 1)
+	fileSink, err := gopipe.NewY4MSink(filepath.Join(RESULT_DIR, "out.y4m"), 60, 1)
 	if err != nil {
 		return err
 	}

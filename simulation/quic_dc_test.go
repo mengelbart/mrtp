@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"path/filepath"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -21,9 +22,19 @@ import (
 	"github.com/mengelbart/netsim"
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestQUICdc(t *testing.T) {
+	err := initTestResultDir()
+	require.NoError(t, err)
+
+	err = createFakeConfig()
+	require.NoError(t, err)
+
+	logFile := configureLogging()
+	defer logFile.Close()
+
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -37,6 +48,9 @@ func TestQUICdc(t *testing.T) {
 		backward := pathFactoryFunc(owd, bw, 5000, bdp, false)
 
 		net := netsim.NewNet(forward(), backward())
+
+		err = net.WriteTcLogForwardPath(filepath.Join(RESULT_DIR, "tc.log"), 100*time.Second)
+		assert.NoError(t, err)
 
 		left := net.NIC(netsim.LeftLocation, netip.MustParseAddr("10.0.0.1"))
 		serverConn, err := left.ListenPacket("udp", "10.0.0.1:8080")
