@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
-	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -37,6 +37,12 @@ func TestFakeCodecNada(t *testing.T) {
 }
 
 func testFakeCodec(t *testing.T, bwe mrtp.BWE) {
+	err := initTestResultDir()
+	require.NoError(t, err)
+
+	err = createFakeConfig()
+	require.NoError(t, err)
+
 	logFile := configureLogging()
 	defer logFile.Close()
 
@@ -54,8 +60,8 @@ func testFakeCodec(t *testing.T, bwe mrtp.BWE) {
 
 		net := netsim.NewNet(forward(), backward())
 
-		net.WriteTcLogForwardPath("tc.log", 100*time.Second)
-		createFakeConfig("config.json")
+		err = net.WriteTcLogForwardPath(filepath.Join(RESULT_DIR, "tc.log"), 100*time.Second)
+		assert.NoError(t, err)
 
 		left := net.NIC(netsim.LeftLocation, netip.MustParseAddr("10.0.0.1"))
 		serverConn, err := left.ListenPacket("udp", "10.0.0.1:8080")
@@ -121,8 +127,7 @@ func testFakeCodec(t *testing.T, bwe mrtp.BWE) {
 
 func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error {
 	// open roq connection
-	roqOpt := []roq.Option{roq.EnableRoqLogs("sender.roq.qlog")}
-	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection(), roqOpt...)
+	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
 	}
@@ -142,7 +147,7 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 	}
 	quicConn.StartHandlers()
 
-	rtpSink, err := roqTransport.NewSendFlow(uint64(rtpFlowID), roq.SendModeSingleStream, false)
+	rtpSink, err := roqTransport.NewSendFlow(uint64(rtpFlowID), roq.SendModeSingleStream, true)
 	if err != nil {
 		return err
 	}
@@ -161,12 +166,6 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		_, err := rtpSink.Write(b)
 		return err
 	})
-
-	file, err := os.Open("Johnny_1280x720_60.y4m")
-	if err != nil {
-		return err
-	}
-	defer file.Close()
 
 	fakeSource := gopipe.NewFakeSource(100*time.Second, 250_000, 8_000_000, 750_000)
 	defer fakeSource.Close()
@@ -224,7 +223,7 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	// start handler
 	quicConn.StartHandlers()
 
-	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(rtpFlowID), false)
+	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(rtpFlowID), true)
 	if err != nil {
 		return err
 	}
