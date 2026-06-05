@@ -49,7 +49,7 @@ func TestQUICdc(t *testing.T) {
 
 		net := netsim.NewNet(forward(), backward())
 
-		err = net.WriteTcLogForwardPath(filepath.Join(RESULT_DIR, "tc.log"), 100*time.Second)
+		err = net.WriteTcLogForwardPath(filepath.Join(resultDir, "tc.log"), 100*time.Second)
 		assert.NoError(t, err)
 
 		left := net.NIC(netsim.LeftLocation, netip.MustParseAddr("10.0.0.1"))

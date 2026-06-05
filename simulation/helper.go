@@ -20,10 +20,10 @@ const (
 	dataChannelFlowID = 3
 )
 
-var RESULT_DIR = "./result"
+const resultDir = "./result"
 
 func initTestResultDir() error {
-	return os.MkdirAll(RESULT_DIR, 0755)
+	return os.MkdirAll(resultDir, 0755)
 }
 
 type pathFactory func() []netsim.Node
@@ -44,7 +44,7 @@ func pathFactoryFunc(delay time.Duration, bandwidth float64, burst, queueSize in
 }
 
 func configureLogging() *os.File {
-	f, err := os.Create(filepath.Join(RESULT_DIR, "stderr.log"))
+	f, err := os.Create(filepath.Join(resultDir, "stderr.log"))
 	if err != nil {
 		fmt.Printf("failed to open log file: %v\n", err)
 		os.Exit(1)
@@ -56,5 +56,5 @@ func configureLogging() *os.File {
 
 func createFakeConfig() error {
 	const config = `{"name": "synctest_simulation","applications": [{"name": "receiver","namespace": "ns1"},{"name": "sender","namespace": "ns4"}],"duration": 100,"time": "2000-01-01T01:00:00.01+01:00"}` + "\n"
-	return os.WriteFile(filepath.Join(RESULT_DIR, "config.json"), []byte(config), 0o644)
+	return os.WriteFile(filepath.Join(resultDir, "config.json"), []byte(config), 0o644)
 }
