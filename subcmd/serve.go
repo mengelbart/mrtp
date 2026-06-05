@@ -6,10 +6,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/julienschmidt/httprouter"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/internal/http"
-	"github.com/mengelbart/mrtp/internal/web"
 )
 
 func init() {
@@ -56,20 +54,24 @@ Flags:
 		os.Exit(1)
 	}
 
-	mux := httprouter.New()
-	api := http.NewApi()
-	api.RegisterRoutes(mux)
+	// mux := httprouter.New()
 
-	_, err := web.NewHandler(web.Mux(mux))
+	// _, err := web.NewHandler(web.Mux(mux))
+	// if err != nil {
+	// 	return err
+	// }
+
+	api, err := http.NewApi()
 	if err != nil {
 		return err
 	}
+	router := http.NewRouter(api)
 
 	server, err := http.NewServer(
 		http.H1Address(s.httpAddr),
 		http.H2Address(s.httpsAddr),
 		http.H3Address(s.httpsAddr),
-		http.Handle(mux),
+		http.Handle(router),
 		http.CertificateFile(s.cert),
 		http.CertificateKeyFile(s.key),
 		http.RequestLogger(slog.Default()),

@@ -6,6 +6,8 @@ require (
 	github.com/Willi-42/go-nada v0.0.0-20260603113220-d44d60c19f5b
 	github.com/go-gst/go-glib v1.4.0
 	github.com/go-gst/go-gst v1.4.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mengelbart/moqtransport v0.5.0
 	github.com/mengelbart/netsim v0.0.0-20260313101905-3800aab93f5e

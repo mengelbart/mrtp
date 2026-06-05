@@ -1,51 +1,67 @@
 package http
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 
-	"github.com/julienschmidt/httprouter"
+	"github.com/gorilla/websocket"
+	"github.com/mengelbart/mrtp/internal/control"
 )
 
-type ChannelService interface {
-	CreateChannel() (ID int)
-}
+type ctxKey string
 
-type API struct {
-	logger *slog.Logger
-}
+type APIOption func(*API) error
 
-func NewApi() *API {
-	return &API{
-		logger: slog.Default(),
+func WithAuthenticator(auth Authenticator) APIOption {
+	return func(api *API) error {
+		api.authenticator = auth
+		return nil
 	}
 }
 
-func (a *API) RegisterRoutes(mux *httprouter.Router) {
-	mux.HandlerFunc("POST", "/api/v1/channels", a.CreateChannel)
-	mux.HandlerFunc("GET", "/api/v1/channels", a.ListChannels)
-	mux.HandlerFunc("GET", "/api/v1/channels/:id", a.ListChannels)
+type API struct {
+	authenticator Authenticator
+	tokenManager  TokenManager
+	userStore     UserStore
+	sessionStore  SessionStore
+
+	upgrader *websocket.Upgrader
 }
 
-func (a *API) GetChannel(w http.ResponseWriter, r *http.Request) {
+func NewApi(options ...APIOption) (*API, error) {
+	api := &API{
+		authenticator: NewStaticAuthenticator(map[string]string{"admin": "password"}),
+		tokenManager:  NewJWTTokenManager(nil),
+		userStore:     control.NewMemoryUserStore(map[string]*control.User{"admin": {ID: "admin"}}),
+		sessionStore:  control.NewSessionRegistry(),
+		upgrader: &websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin: func(r *http.Request) bool {
+				return true // TODO
+			},
+		},
+	}
+	for _, option := range options {
+		if err := option(api); err != nil {
+			return nil, err
+		}
+	}
+	return api, nil
 }
 
-func (a *API) ListChannels(w http.ResponseWriter, r *http.Request) {
+func (a *API) Health(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write([]byte("OK")); err != nil {
+		slog.Error("failed to write health response", "error", err)
+		return
+	}
 }
 
-func (a *API) CreateChannel(w http.ResponseWriter, r *http.Request) {
-}
-
-func (a *API) UpdateChannel(w http.ResponseWriter, r *http.Request) {
-}
-
-func (a *API) DeleteChannel(w http.ResponseWriter, r *http.Request) {
-}
-
-func (a *API) CreatePublisher(w http.ResponseWriter, r *http.Request) {
-
-}
-
-func (a *API) CreateStream(w http.ResponseWriter, r *http.Request) {
-
+func writeJSONResponse(w http.ResponseWriter, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		slog.Error("failed to encode response", "error", err)
+	}
 }
