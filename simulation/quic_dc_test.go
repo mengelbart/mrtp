@@ -1,4 +1,4 @@
-//go:build go1.25 && simulation
+//go:build go1.26 && simulation
 
 package simulation
 
@@ -26,16 +26,16 @@ import (
 )
 
 func TestQUICdc(t *testing.T) {
-	err := initTestResultDir()
-	require.NoError(t, err)
-
-	err = createFakeConfig()
-	require.NoError(t, err)
-
-	logFile := configureLogging()
-	defer logFile.Close()
-
 	synctest.Test(t, func(t *testing.T) {
+		err := initTestResultDir(t)
+		require.NoError(t, err)
+
+		err = createFakeConfig(t, "QUICdcNada")
+		require.NoError(t, err)
+
+		logFile := configureLogging(t)
+		defer logFile.Close()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -49,7 +49,7 @@ func TestQUICdc(t *testing.T) {
 
 		net := netsim.NewNet(forward(), backward())
 
-		err = net.WriteTcLogForwardPath(filepath.Join(resultDir, "tc.log"), 100*time.Second)
+		err = net.WriteTcLogForwardPath(filepath.Join(t.ArtifactDir(), "tc.log"), 100*time.Second)
 		assert.NoError(t, err)
 
 		left := net.NIC(netsim.LeftLocation, netip.MustParseAddr("10.0.0.1"))

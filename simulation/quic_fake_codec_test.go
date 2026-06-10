@@ -1,4 +1,4 @@
-//go:build go1.25 && simulation
+//go:build go1.26 && simulation
 
 package simulation
 
@@ -28,25 +28,25 @@ import (
 func TestFakeCodecGCC(t *testing.T) {
 	bwe, err := mrtp.NewGCC(1_000_000, 400_000, 8_000_000)
 	require.NoError(t, err)
-	testFakeCodec(t, bwe)
+	testFakeCodec(t, bwe, "FakeCodecGCC")
 }
 
 func TestFakeCodecNada(t *testing.T) {
 	bwe := mrtp.NewNada(1_000_000, 400_000, 8_000_000, 20*time.Millisecond)
-	testFakeCodec(t, bwe)
+	testFakeCodec(t, bwe, "FakeCodecNada")
 }
 
-func testFakeCodec(t *testing.T, bwe mrtp.BWE) {
-	err := initTestResultDir()
-	require.NoError(t, err)
-
-	err = createFakeConfig()
-	require.NoError(t, err)
-
-	logFile := configureLogging()
-	defer logFile.Close()
-
+func testFakeCodec(t *testing.T, bwe mrtp.BWE, testName string) {
 	synctest.Test(t, func(t *testing.T) {
+		err := initTestResultDir(t)
+		require.NoError(t, err)
+
+		err = createFakeConfig(t, testName)
+		require.NoError(t, err)
+
+		logFile := configureLogging(t)
+		defer logFile.Close()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -60,7 +60,7 @@ func testFakeCodec(t *testing.T, bwe mrtp.BWE) {
 
 		net := netsim.NewNet(forward(), backward())
 
-		err = net.WriteTcLogForwardPath(filepath.Join(resultDir, "tc.log"), 100*time.Second)
+		err = net.WriteTcLogForwardPath(filepath.Join(t.ArtifactDir(), "tc.log"), 100*time.Second)
 		assert.NoError(t, err)
 
 		left := net.NIC(netsim.LeftLocation, netip.MustParseAddr("10.0.0.1"))
