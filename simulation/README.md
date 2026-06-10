@@ -5,4 +5,9 @@ Run the test in the terminal like that:
 ```
 go test -tags simulation -v -run TestQUICh264Nada ./simulation
 ```
-Each test writes its results to `./result` (override each other).
+If you want to save the artifacts, run it like that:
+
+```
+go test -tags simulation -artifacts -v -run TestQUICh264Nada ./simulation
+```
+The results are saved in a folder named `_artifacts`.

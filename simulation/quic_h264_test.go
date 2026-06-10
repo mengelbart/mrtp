@@ -1,4 +1,4 @@
-//go:build go1.25 && simulation
+//go:build go1.26 && simulation
 
 package simulation
 
@@ -29,31 +29,31 @@ import (
 func TestQUICh264GCC(t *testing.T) {
 	bwe, err := mrtp.NewGCC(1_000_000, 400_000, 8_000_000)
 	require.NoError(t, err)
-	testQUICh264(t, bwe)
+	testQUICh264(t, bwe, "QUICh264GCC")
 }
 
 func TestQUICh264Nada(t *testing.T) {
 	bwe := mrtp.NewNada(1_000_000, 400_000, 8_000_000, 20*time.Millisecond)
-	testQUICh264(t, bwe)
+	testQUICh264(t, bwe, "QUICh264Nada")
 }
 
-func testQUICh264(t *testing.T, bwe mrtp.BWE) {
+func testQUICh264(t *testing.T, bwe mrtp.BWE, testName string) {
 	// video file must exist
 	if _, err := os.Stat("Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
 		println("Video file not found: Johnny_1280x720_60.y4m - run ./get-video.sh to download it.\n")
 		t.Skip("video not found")
 	}
 
-	err := initTestResultDir()
-	require.NoError(t, err)
-
-	err = createFakeConfig()
-	require.NoError(t, err)
-
-	logFile := configureLogging()
-	defer logFile.Close()
-
 	synctest.Test(t, func(t *testing.T) {
+		err := initTestResultDir(t)
+		require.NoError(t, err)
+
+		err = createFakeConfig(t, testName)
+		require.NoError(t, err)
+
+		logFile := configureLogging(t)
+		defer logFile.Close()
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -67,7 +67,7 @@ func testQUICh264(t *testing.T, bwe mrtp.BWE) {
 
 		net := netsim.NewNet(forward(), backward())
 
-		err := net.WriteTcLogForwardPath(filepath.Join(resultDir, "tc.log"), 100*time.Second)
+		err = net.WriteTcLogForwardPath(filepath.Join(t.ArtifactDir(), "tc.log"), 100*time.Second)
 		assert.NoError(t, err)
 
 		left := net.NIC(netsim.LeftLocation, netip.MustParseAddr("10.0.0.1"))
@@ -100,7 +100,7 @@ func testQUICh264(t *testing.T, bwe mrtp.BWE) {
 
 		// all connected, start sender and receiver
 		wg.Go(func() {
-			err = runH264Receiver(ctx, serverTransport, &wg)
+			err = runH264Receiver(t, ctx, serverTransport, &wg)
 			assert.NoError(t, err)
 			println("receiver ended")
 		})
@@ -216,7 +216,7 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 	return fileSrc.StartLive(ctx, rtpPipeline)
 }
 
-func runH264Receiver(ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
+func runH264Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
 	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
@@ -252,7 +252,7 @@ func runH264Receiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 		return err
 	}
 
-	fileSink, err := gopipe.NewY4MSink(filepath.Join(resultDir, "out.y4m"), 60, 1)
+	fileSink, err := gopipe.NewY4MSink(filepath.Join(t.ArtifactDir(), "out.y4m"), 60, 1)
 	if err != nil {
 		return err
 	}
