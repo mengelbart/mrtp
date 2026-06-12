@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 
+	nethttp "net/http"
+
 	"github.com/julienschmidt/httprouter"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
@@ -201,8 +203,10 @@ Usage:
 	}
 	signalingHandler := webrtc.NewHTTPSignalingHandler(transport)
 	router := httprouter.New()
-	router.HandlerFunc("POST", "/candidate", signalingHandler.HandleCandidate)
-	router.HandlerFunc("POST", "/session_description", signalingHandler.HandleSessionDescription)
+	router.HandlerFunc("POST", "/candidate", withCORS(nethttp.HandlerFunc(signalingHandler.HandleCandidate)))
+	router.HandlerFunc("OPTIONS", "/candidate", withCORS(nil))
+	router.HandlerFunc("POST", "/session_description", withCORS(nethttp.HandlerFunc(signalingHandler.HandleSessionDescription)))
+	router.HandlerFunc("OPTIONS", "/session_description", withCORS(nil))
 
 	host := net.JoinHostPort(w.localAddr, localPort)
 	s, err := http.NewServer(
@@ -297,4 +301,21 @@ Usage:
 
 	<-connectedCtx.Done()
 	return pipeline.Run()
+}
+
+func withCORS(next nethttp.Handler) func(w nethttp.ResponseWriter, r *nethttp.Request) {
+	return func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*") // lock to your origin in production
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == nethttp.MethodOptions {
+			w.WriteHeader(nethttp.StatusNoContent)
+			return
+		}
+		if next == nil {
+			w.WriteHeader(nethttp.StatusOK)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
 }
