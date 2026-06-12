@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+  <body>
+    Status<br />
+    <div id="status">Starting...</div>
+
+    Video<br />
+    <video
+      id="video1"
+      width="160"
+      height="120"
+      autoplay
+      muted
+      playsinline
+    ></video>
+  </body>
+  <script>
+    const remoteSignalURL = "__REMOTE_SIGNAL_URL__";
+    const pendingRemoteCandidates = [];
+    let remoteDescriptionApplied = false;
+
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: "stun:stun.l.google.com:19302",
+        },
+      ],
+    });
+
+    const setStatus = (msg) => {
+      document.getElementById("status").textContent = msg;
+      console.log("__STATUS__:" + msg);
+    };
+
+    async function postJSON(url, payload) {
+      setStatus(`Posting JSON to ${url}`);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        setStatus(
+          `Failed to POST ${url}: ${response.status}, response: ${response.statusText}`,
+        );
+        throw new Error(`POST ${url} failed with ${response.status}`);
+      }
+    }
+
+    async function postText(url, payload) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+        },
+        body: payload,
+      });
+
+      if (!response.ok) {
+        setStatus(`Failed to POST ${url}: ${response.status}`);
+        throw new Error(`POST ${url} failed with ${response.status}`);
+      }
+    }
+
+    window.applyRemoteSessionDescription = async (sessionDescription) => {
+      await pc.setRemoteDescription(sessionDescription);
+      remoteDescriptionApplied = true;
+      setStatus(`Applied remote ${sessionDescription.type}`);
+
+      while (pendingRemoteCandidates.length > 0) {
+        await pc.addIceCandidate(pendingRemoteCandidates.shift());
+      }
+    };
+
+    window.applyRemoteCandidate = async (candidate) => {
+      if (remoteDescriptionApplied) {
+        await pc.addIceCandidate(candidate);
+        return;
+      }
+
+      pendingRemoteCandidates.push(candidate);
+    };
+
+    let candidatesBuffer = [];
+    let offerPosted = false;
+
+    function sendCandidateText(candidateText) {
+      return postText(`${remoteSignalURL}/candidate`, candidateText);
+    }
+
+    async function startMediaAndOffer() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false,
+      });
+      document.getElementById("video1").srcObject = stream;
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      setStatus("Going to post offer to remote peer");
+      await postJSON(
+        `${remoteSignalURL}/session_description`,
+        pc.localDescription,
+      );
+
+      // mark as posted and flush buffered
+      offerPosted = true;
+      for (const candText of candidatesBuffer) {
+        try {
+          await sendCandidateText(candText);
+        } catch (err) {
+          setStatus(`Failed post buffered candidate: ${err}`);
+        }
+      }
+      candidatesBuffer = []; // clear buffer
+      setStatus("Sent offer and flushed candidates");
+    }
+
+    startMediaAndOffer().catch((err) => {
+      setStatus(`Failed: ${err}`);
+    });
+
+    pc.oniceconnectionstatechange = (e) => setStatus(pc.iceConnectionState);
+    pc.onicecandidate = (event) => {
+      if (!event.candidate) return;
+      const candText = event.candidate.toJSON().candidate;
+      if (!offerPosted) {
+        candidatesBuffer.push(candText);
+      } else {
+        sendCandidateText(candText).catch((err) =>
+          setStatus(`Failed post candidate: ${err}`),
+        );
+      }
+    };
+  </script>
+</html>
