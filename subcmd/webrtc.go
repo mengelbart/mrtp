@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/mengelbart/mrtp/cmdmain"
@@ -28,6 +29,7 @@ var (
 	pionReadCCFB   bool
 	sendVideoTrack bool
 	pacing         bool
+	pionSCReAM     bool
 )
 
 func init() {
@@ -87,6 +89,7 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 	fs.UintVar(&w.dcStartDelay, "dc-start-delay", 0, "Start delay in seconds before data channel source starts sending data.")
 	fs.BoolVar(&w.dcChunks, "dc-chunks", false, "Send chunks on datachannel")
 
+	fs.BoolVar(&pionSCReAM, "scream", false, "Enable pion SCReAM interceptor")
 	fs.BoolVar(&pacing, "pacing", false, "Enable packet pacing")
 
 	DefaultStreamSinkFactory.ConfigureFlags(fs)
@@ -178,6 +181,9 @@ Usage:
 			return err
 		}
 		webrtcOptions = append(webrtcOptions, webrtc.SetBWE(bwe))
+	}
+	if pionSCReAM {
+		webrtcOptions = append(webrtcOptions, webrtc.EnableSCReAM(initTargetRate, minTargetRate, int(w.maxTargetRate)))
 	}
 
 	connectedCtx, cancelConnectedCtx := context.WithCancel(context.Background())
@@ -296,5 +302,10 @@ Usage:
 	}
 
 	<-connectedCtx.Done()
+	// TODO(ME): Remove this sleep. Without it, we seem to be sending to early
+	// and scream will build up a queue and consequently drop some packets from
+	// the queue, which is likely to be the key frame. We then have to wait for
+	// the next keyframe.
+	time.Sleep(75 * time.Millisecond)
 	return pipeline.Run()
 }
