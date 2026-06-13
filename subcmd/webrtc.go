@@ -183,7 +183,7 @@ Usage:
 		webrtcOptions = append(webrtcOptions, webrtc.SetBWE(bwe))
 	}
 	if pionSCReAM {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableSCReAM(750_000, 250_000, int(flags.MaxTargetRate)))
+		webrtcOptions = append(webrtcOptions, webrtc.EnableSCReAM(initTargetRate, minTargetRate, int(w.maxTargetRate)))
 	}
 
 	connectedCtx, cancelConnectedCtx := context.WithCancel(context.Background())

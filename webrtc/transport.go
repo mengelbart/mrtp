@@ -483,12 +483,19 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 			}
 		}
 		if ssrc != 0 {
-			t, err := t.scream.GetTargetRate(t.pc.ID(), ssrc)
+			tr, err := t.scream.GetTargetRate(t.pc.ID(), ssrc)
 			if err != nil {
 				return err
 			}
-			if t > 0 {
-				tr = uint(t)
+			if tr > 0 {
+				// set target rate of encoder
+				err := t.SetTargetRate(uint(tr))
+				if err != nil {
+					return err
+				}
+				if t.pacer != nil {
+					t.pacer.SetRate(t.pc.ID(), int(1.5*float64(tr)))
+				}
 			}
 		}
 	}
