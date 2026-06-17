@@ -111,6 +111,9 @@
         `${remoteSignalURL}/session_description`,
         pc.localDescription,
       );
+      setStatus(
+        `Local sessionDescription ${JSON.stringify(pc.localDescription)}`,
+      );
 
       // mark as posted and flush buffered
       offerPosted = true;
@@ -123,6 +126,18 @@
       }
       candidatesBuffer = []; // clear buffer
       setStatus("Sent offer and flushed candidates");
+
+      // set max bitrate of video stream
+      const sender = pc
+        .getSenders()
+        .find((s) => s.track && s.track.kind === "video");
+      if (sender) {
+        const params = sender.getParameters();
+        if (!params.encodings || params.encodings.length === 0)
+          params.encodings = [{}];
+        params.encodings[0].maxBitrate = 30_000_000; // TODO: make configurable
+        await sender.setParameters(params);
+      }
     }
 
     async function logStats() {
