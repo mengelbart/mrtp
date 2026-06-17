@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/chromedp/cdproto/runtime"
@@ -80,17 +81,36 @@ func (c *Controller) Run() error {
 				parts = append(parts, fmt.Sprint(arg.Value))
 			}
 		}
-		msg := strings.Join(parts, " ")
+		msg := strings.Join(parts, "")
+
 		if strings.Contains(msg, "__STATUS__:") {
+			if unq, err := strconv.Unquote(msg); err == nil {
+				msg = unq
+			}
+
 			slog.Info("Browser status", "status", strings.Replace(msg, "__STATUS__:", "", 1))
-			return
+
+		} else if strings.Contains(msg, "__WEBRTC_STATS_ERROR__:") {
+			slog.Info("Webrtc status", "status", strings.Replace(msg, "__WEBRTC_STATS_ERROR__:", "", 1))
+
+		} else if strings.Contains(msg, "__WEBRTC_TR__:") {
+			msg, err := strconv.Unquote(msg)
+			if err != nil {
+				panic(fmt.Sprintf("failed to parse target rate log: %v", err))
+			}
+
+			msg = strings.Replace(msg, "__WEBRTC_TR__:", "", 1)
+			rate, err := strconv.Atoi(msg)
+			if err != nil {
+				panic(fmt.Sprintf("could not convert target rate to int: %v", err))
+			}
+			slog.Info("NEW_TARGET_MEDIA_RATE", "rate", rate)
 		}
 	})
 
 	// singal server
 	incomingSignaler := NewSignaler(
 		func(sessionDesc *pionwebrtc.SessionDescription) error {
-			fmt.Println("golang: got sessionDesc")
 			payload, err := json.Marshal(sessionDesc)
 			if err != nil {
 				return err
@@ -99,7 +119,6 @@ func (c *Controller) Run() error {
 			return chromedp.Run(taskCtx, chromedp.Evaluate(js, nil))
 		},
 		func(candidate pionwebrtc.ICECandidateInit) error {
-			fmt.Println("golang: got ICECandidateInit")
 			payload, err := json.Marshal(candidate)
 			if err != nil {
 				return err
