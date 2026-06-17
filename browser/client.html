@@ -70,6 +70,10 @@
       remoteDescriptionApplied = true;
       setStatus(`Applied remote ${sessionDescription.type}`);
 
+      setStatus(
+        `Remote sessionDescription ${JSON.stringify(sessionDescription)}`,
+      );
+
       while (pendingRemoteCandidates.length > 0) {
         await pc.addIceCandidate(pendingRemoteCandidates.shift());
       }
@@ -120,6 +124,25 @@
       candidatesBuffer = []; // clear buffer
       setStatus("Sent offer and flushed candidates");
     }
+
+    async function logStats() {
+      while (true) {
+        try {
+          const stats = [];
+          const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+          const report = await (sender ? sender.getStats() : pc.getStats());
+          report.forEach((v) => {
+            if (v && Object.prototype.hasOwnProperty.call(v, "targetBitrate")) {
+              console.log("__WEBRTC_TR__:" + v.targetBitrate);
+            }
+          });
+        } catch (e) {
+          console.log("__WEBRTC_STATS_ERROR__:" + e.toString());
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    logStats();
 
     startMediaAndOffer().catch((err) => {
       setStatus(`Failed: ${err}`);
