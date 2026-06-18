@@ -88,6 +88,42 @@
       pendingRemoteCandidates.push(candidate);
     };
 
+    window.startRandomDataSender = async (datafile) => {
+      let dataChannel = pc.createDataChannel("MyApp Channel");
+
+      dataChannel.addEventListener("open", async (event) => {
+        setStatus(`datasource started with delay of ${datafile.delay} seconds`);
+        await new Promise((resolve) =>
+          setTimeout(resolve, datafile.delay * 1000),
+        );
+        setStatus(`datasource started`);
+
+        // send 8-byte big-endian uint64 = 0
+        const sizeBuf = new ArrayBuffer(8);
+        const sizeView = new DataView(sizeBuf);
+        sizeView.setBigUint64(0, 0n, false);
+        dataChannel.send(sizeBuf);
+
+        const chunkSize = 1024;
+        const buf = new Uint8Array(chunkSize);
+        try {
+          while (dataChannel.readyState === "open") {
+            if (dataChannel.bufferedAmount > 16 * chunkSize) {
+              // avoid filling up the buffer too much
+              await new Promise((resolve) => setTimeout(resolve, 10));
+              continue;
+            }
+            setStatus(`datasource: pushed: ${chunkSize} in buffer (total buffer: ${dataChannel.bufferedAmount})`);
+
+            crypto.getRandomValues(buf);
+            dataChannel.send(buf.buffer);
+          }
+        } catch (err) {
+          setStatus(`Data channel error: ${err}`);
+        }
+      });
+    };
+
     let candidatesBuffer = [];
     let offerPosted = false;
 
