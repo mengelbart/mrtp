@@ -22,22 +22,43 @@ import (
 //go:embed client.html
 var clientHTML []byte
 
+type Option func(*Controller) error
+
 type Controller struct {
 	videoPath  string
 	localAddr  string
 	remoteAddr string
 	localPort  string
 	remotePort string
+
+	datachannel  bool
+	dcStartDelay uint
 }
 
-func NewController(videoPath, localAddr, localPort, remoteAddr, remotePort string) *Controller {
-	return &Controller{
+func UseDatachannel(startDelay uint) Option {
+	return func(t *Controller) error {
+		t.datachannel = true
+		t.dcStartDelay = startDelay
+		return nil
+	}
+}
+
+func NewController(videoPath, localAddr, localPort, remoteAddr, remotePort string, opts ...Option) (*Controller, error) {
+	c := &Controller{
 		videoPath:  videoPath,
 		localAddr:  localAddr,
 		localPort:  localPort,
 		remoteAddr: remoteAddr,
 		remotePort: remotePort,
 	}
+
+	for _, opt := range opts {
+		if err := opt(c); err != nil {
+			return nil, err
+		}
+	}
+
+	return c, nil
 }
 
 func (c *Controller) Run() error {
@@ -171,6 +192,15 @@ func (c *Controller) Run() error {
 		return err
 	}
 
+	// start datachannel
+	if c.datachannel {
+		go func() {
+			if err := c.StartDataChannel(taskCtx); err != nil {
+				log.Printf("failed to start data channel: %v", err)
+			}
+		}()
+	}
+
 	// path := filepath.Join(dir, "DevToolsActivePort")
 	// bs, err := os.ReadFile(path)
 	// if err != nil {
@@ -185,10 +215,30 @@ func (c *Controller) Run() error {
 	select {}
 }
 
+func (c *Controller) StartDataChannel(taskCtx context.Context) error {
+	fmt.Printf("starting data channel source after %v seconds\n", c.dcStartDelay)
+
+	payload, err := json.Marshal(DataFile{Delay: int(c.dcStartDelay)})
+	if err != nil {
+		return err
+	}
+	js := fmt.Sprintf("window.startRandomDataSender(%s)", string(payload))
+	err = chromedp.Run(taskCtx, chromedp.Evaluate(js, nil))
+	if err != nil {
+		return fmt.Errorf("failed to start random data sender: %v", err)
+	}
+
+	return nil
+}
+
 func writeHTML(remoteSignalURL string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		html := strings.ReplaceAll(string(clientHTML), "__REMOTE_SIGNAL_URL__", remoteSignalURL)
 		_, _ = w.Write([]byte(html))
 	})
+}
+
+type DataFile struct {
+	Delay int `json:"delay"`
 }
