@@ -185,7 +185,6 @@ func (n *Net) ResolveUDPAddr(network string, address string) (*net.UDPAddr, erro
 }
 
 func (n *Net) setECN(ssrc uint32, sequenceNumber uint16, ecn uint8) {
-	slog.Info("setting ecn", "ecn", ecn, "ssrc", ssrc, "sequenceNumber", sequenceNumber)
 	n.ecnMap.Store(ecnMapKey{SSRC: ssrc, SequenceNumber: sequenceNumber}, ecn)
 }
 
@@ -195,7 +194,6 @@ func (n *Net) getECN(ssrc uint32, sequenceNumber uint16) uint8 {
 		slog.Info("ecn not found", "ssrc", ssrc, "sequenceNumber", sequenceNumber)
 		return 0
 	}
-	slog.Info("getting ecn", "ecn", val, "ssrc", ssrc, "sequenceNumber", sequenceNumber)
 	return val.(uint8)
 }
 
