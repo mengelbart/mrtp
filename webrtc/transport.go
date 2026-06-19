@@ -431,7 +431,6 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 	if t.bwe != nil {
 		for _, p := range report.PacketReports {
 			if p.Arrived {
-				slog.Info("packet arrived", "ssrc", p.SSRC, "sequence_number", p.SequenceNumber, "size", p.Size, "ecn", p.ECN)
 				t.bwe.OnAck(p.SequenceNumber, p.Size, p.Departure, p.Arrival, mrtp.ECN(p.ECN))
 				switch p.ECN {
 				case rtcp.ECNECT0:
