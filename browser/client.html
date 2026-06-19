@@ -146,7 +146,7 @@
         );
         setStatus(`datasource started with random data`);
 
-        // send 8-byte big-endian uint64 = 0
+        // send size: 0 = no chunk size defined
         const sizeBuf = new ArrayBuffer(8);
         const sizeView = new DataView(sizeBuf);
         sizeView.setBigUint64(0, 0n, false);
@@ -186,9 +186,35 @@
 
     async function sendFileOverDC(dataChannel, file, delay) {
       setStatus(`datasource started with delay of ${delay} seconds`);
+      await new Promise((resolve) => setTimeout(resolve, delay * 1000));
+
       const fileSize = file.size;
-      setStatus(`datasource file len: ${fileSize}`);
-      // TODO: actually send file
+      setStatus(`datasource starts sending file with totoal len: ${fileSize}`);
+
+      // write size on channel
+      const sizeBuf = new ArrayBuffer(8);
+      const sizeView = new DataView(sizeBuf);
+      sizeView.setBigUint64(0, BigInt(fileSize), false);
+      dataChannel.send(sizeBuf);
+
+      // send file data in chunks
+      const chunkSize = 1024;
+      let offset = 0;
+
+      while (offset < fileSize) {
+        if (dataChannel.bufferedAmount > 16 * chunkSize) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          continue;
+        }
+
+        const chunk = file.slice(offset, offset + chunkSize);
+        const arrayBuffer = await chunk.arrayBuffer();
+
+        dataChannel.send(arrayBuffer);
+        offset += arrayBuffer.byteLength;
+
+        setStatus(`datasource sent ${offset}/${fileSize} bytes`);
+      }
     }
 
     let candidatesBuffer = [];
