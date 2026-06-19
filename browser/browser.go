@@ -33,12 +33,14 @@ type Controller struct {
 
 	datachannel  bool
 	dcStartDelay uint
+	dcSourceFile string
 }
 
-func UseDatachannel(startDelay uint) Option {
-	return func(t *Controller) error {
-		t.datachannel = true
-		t.dcStartDelay = startDelay
+func UseDatachannel(startDelay uint, sourceFile string) Option {
+	return func(c *Controller) error {
+		c.datachannel = true
+		c.dcStartDelay = startDelay
+		c.dcSourceFile = sourceFile
 		return nil
 	}
 }
@@ -201,31 +203,41 @@ func (c *Controller) Run() error {
 		}()
 	}
 
-	// path := filepath.Join(dir, "DevToolsActivePort")
-	// bs, err := os.ReadFile(path)
-	// if err != nil {
-	// 	return err
-	// }
-	// lines := bytes.Split(bs, []byte("\n"))
-	// fmt.Printf("DevToolsActivePort has %d lines\n", len(lines))
-	// for _, line := range lines {
-	// 	fmt.Printf("%v\n", string(line))
-	// }
-
 	select {}
 }
 
 func (c *Controller) StartDataChannel(taskCtx context.Context) error {
-	fmt.Printf("starting data channel source after %v seconds\n", c.dcStartDelay)
+	if c.dcSourceFile == "" {
+		// start random sender
+		payload, err := json.Marshal(DataFile{Delay: int(c.dcStartDelay)})
+		if err != nil {
+			return err
+		}
+		js := fmt.Sprintf("window.startRandomDataSender(%s)", string(payload))
+		err = chromedp.Run(taskCtx, chromedp.Evaluate(js, nil))
+		if err != nil {
+			return fmt.Errorf("failed to start random data sender: %v", err)
+		}
 
+		return nil
+	}
+
+	// start file sender
 	payload, err := json.Marshal(DataFile{Delay: int(c.dcStartDelay)})
 	if err != nil {
 		return err
 	}
-	js := fmt.Sprintf("window.startRandomDataSender(%s)", string(payload))
+	js := fmt.Sprintf("window.startFileDataSender(%s)", string(payload))
 	err = chromedp.Run(taskCtx, chromedp.Evaluate(js, nil))
 	if err != nil {
 		return fmt.Errorf("failed to start random data sender: %v", err)
+	}
+
+	err = chromedp.Run(taskCtx,
+		chromedp.SetUploadFiles(`#fileInput`, []string{c.dcSourceFile}),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to send file: %v", err)
 	}
 
 	return nil
