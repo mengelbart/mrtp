@@ -21,6 +21,18 @@ func (r *RTPReceiver) Close() error {
 	return r.receiver.Stop()
 }
 
+func (r *RTPReceiver) Codec() webrtc.RTPCodecParameters {
+	return r.track.Codec()
+}
+
+func (r *RTPReceiver) ID() string {
+	return r.track.ID()
+}
+
+func (r *RTPReceiver) SSRC() uint32 {
+	return uint32(r.track.SSRC())
+}
+
 func (r *RTPReceiver) PayloadType() uint8 {
 	return uint8(r.track.PayloadType())
 }

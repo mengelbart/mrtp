@@ -383,21 +383,25 @@ func (t *Transport) AddRemoteVideoTrack() error {
 }
 
 func (t *Transport) AddLocalTrack() (*RTPSender, error) {
-	return t.addLocalTrackWithCodec(webrtc.MimeTypeH264)
+	return t.addLocalTrack(webrtc.MimeTypeH264, "video")
 }
 
 func (t *Transport) AddLocalTrackWithCodec(codec string) (*RTPSender, error) {
-	return t.addLocalTrackWithCodec(codec)
+	return t.addLocalTrack(codec, "video")
 }
 
-func (t *Transport) addLocalTrackWithCodec(codec string) (*RTPSender, error) {
+func (t *Transport) AddLocalTrackWithCodecAndID(codec string, id string) (*RTPSender, error) {
+	return t.addLocalTrack(codec, id)
+}
+
+func (t *Transport) addLocalTrack(codec string, id string) (*RTPSender, error) {
 	track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{
 		MimeType:     codec,
 		ClockRate:    0,
 		Channels:     0,
 		SDPFmtpLine:  "",
 		RTCPFeedback: []webrtc.RTCPFeedback{},
-	}, "video", "pion")
+	}, id, "pion")
 	if err != nil {
 		return nil, err
 	}
