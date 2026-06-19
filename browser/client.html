@@ -4,6 +4,8 @@
     Status<br />
     <div id="status">Starting...</div>
 
+    <input id="fileInput" type="file" style="display: none" />
+
     Video<br />
     <video
       id="video1"
@@ -15,6 +17,51 @@
     ></video>
   </body>
   <script>
+    // sendFileCoordinator waits for file to be uploaded and data channel to be opened, then starts sending process
+    const sendFileCoordinator = {
+      file: null,
+      dataChannel: null,
+      delay: null,
+
+      setFile(f) {
+        this.file = f;
+        this.tryProceed();
+      },
+
+      setDataChannel(dc) {
+        this.dataChannel = dc;
+        this.tryProceed();
+      },
+
+      setDelay(d) {
+        this.delay = d;
+        this.tryProceed();
+      },
+
+      tryProceed() {
+        setStatus(
+          `sendFileCoordinator: file: ${
+            this.file ? this.file.name : "null"
+          }, dataChannel: ${
+            this.dataChannel ? "open" : "null"
+          }, delay: ${this.delay}`,
+        );
+        if (this.file && this.dataChannel && this.delay !== null) {
+          sendFileOverDC(this.dataChannel, this.file, this.delay);
+        }
+      },
+    };
+
+    // Listen for file selection
+    document
+      .getElementById("fileInput")
+      .addEventListener("change", async (event) => {
+        const file = event.target.files[0];
+        if (file) {
+          sendFileCoordinator.setFile(file);
+        }
+      });
+
     const remoteSignalURL = "__REMOTE_SIGNAL_URL__";
     const pendingRemoteCandidates = [];
     let remoteDescriptionApplied = false;
@@ -63,6 +110,7 @@
         setStatus(`Failed to POST ${url}: ${response.status}`);
         throw new Error(`POST ${url} failed with ${response.status}`);
       }
+      window.startFileDataSend;
     }
 
     window.applyRemoteSessionDescription = async (sessionDescription) => {
@@ -96,7 +144,7 @@
         await new Promise((resolve) =>
           setTimeout(resolve, datafile.delay * 1000),
         );
-        setStatus(`datasource started`);
+        setStatus(`datasource started with random data`);
 
         // send 8-byte big-endian uint64 = 0
         const sizeBuf = new ArrayBuffer(8);
@@ -113,7 +161,9 @@
               await new Promise((resolve) => setTimeout(resolve, 10));
               continue;
             }
-            setStatus(`datasource: pushed: ${chunkSize} in buffer (total buffer: ${dataChannel.bufferedAmount})`);
+            setStatus(
+              `datasource: pushed: ${chunkSize} in buffer (total buffer: ${dataChannel.bufferedAmount})`,
+            );
 
             crypto.getRandomValues(buf);
             dataChannel.send(buf.buffer);
@@ -123,6 +173,23 @@
         }
       });
     };
+
+    window.startFileDataSender = async (datafile) => {
+      sendFileCoordinator.setDelay(datafile.delay);
+
+      let dataChannel = pc.createDataChannel("MyApp Channel");
+
+      dataChannel.addEventListener("open", async (event) => {
+        sendFileCoordinator.setDataChannel(dataChannel);
+      });
+    };
+
+    async function sendFileOverDC(dataChannel, file, delay) {
+      setStatus(`datasource started with delay of ${delay} seconds`);
+      const fileSize = file.size;
+      setStatus(`datasource file len: ${fileSize}`);
+      // TODO: actually send file
+    }
 
     let candidatesBuffer = [];
     let offerPosted = false;
