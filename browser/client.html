@@ -1,0 +1,308 @@
+<!doctype html>
+<html>
+  <body>
+    Status<br />
+    <div id="status">Starting...</div>
+
+    <input id="fileInput" type="file" style="display: none" />
+
+    Video<br />
+    <video
+      id="video1"
+      width="160"
+      height="120"
+      autoplay
+      muted
+      playsinline
+    ></video>
+  </body>
+  <script>
+    // sendFileCoordinator waits for file to be uploaded and data channel to be opened, then starts sending process
+    const sendFileCoordinator = {
+      file: null,
+      dataChannel: null,
+      delay: null,
+
+      setFile(f) {
+        this.file = f;
+        this.tryProceed();
+      },
+
+      setDataChannel(dc) {
+        this.dataChannel = dc;
+        this.tryProceed();
+      },
+
+      setDelay(d) {
+        this.delay = d;
+        this.tryProceed();
+      },
+
+      tryProceed() {
+        setStatus(
+          `sendFileCoordinator: file: ${
+            this.file ? this.file.name : "null"
+          }, dataChannel: ${
+            this.dataChannel ? "open" : "null"
+          }, delay: ${this.delay}`,
+        );
+        if (this.file && this.dataChannel && this.delay !== null) {
+          sendFileOverDC(this.dataChannel, this.file, this.delay);
+        }
+      },
+    };
+
+    // Listen for file selection
+    document
+      .getElementById("fileInput")
+      .addEventListener("change", async (event) => {
+        const file = event.target.files[0];
+        if (file) {
+          sendFileCoordinator.setFile(file);
+        }
+      });
+
+    const remoteSignalURL = "__REMOTE_SIGNAL_URL__";
+    const pendingRemoteCandidates = [];
+    let remoteDescriptionApplied = false;
+
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: "stun:stun.l.google.com:19302",
+        },
+      ],
+    });
+
+    const setStatus = (msg) => {
+      document.getElementById("status").textContent = msg;
+      console.log("__STATUS__:" + msg);
+    };
+
+    async function postJSON(url, payload) {
+      setStatus(`Posting JSON to ${url}`);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        setStatus(
+          `Failed to POST ${url}: ${response.status}, response: ${response.statusText}`,
+        );
+        throw new Error(`POST ${url} failed with ${response.status}`);
+      }
+    }
+
+    async function postText(url, payload) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+        },
+        body: payload,
+      });
+
+      if (!response.ok) {
+        setStatus(`Failed to POST ${url}: ${response.status}`);
+        throw new Error(`POST ${url} failed with ${response.status}`);
+      }
+      window.startFileDataSend;
+    }
+
+    window.applyRemoteSessionDescription = async (sessionDescription) => {
+      await pc.setRemoteDescription(sessionDescription);
+      remoteDescriptionApplied = true;
+      setStatus(`Applied remote ${sessionDescription.type}`);
+
+      setStatus(
+        `Remote sessionDescription ${JSON.stringify(sessionDescription)}`,
+      );
+
+      while (pendingRemoteCandidates.length > 0) {
+        await pc.addIceCandidate(pendingRemoteCandidates.shift());
+      }
+    };
+
+    window.applyRemoteCandidate = async (candidate) => {
+      if (remoteDescriptionApplied) {
+        await pc.addIceCandidate(candidate);
+        return;
+      }
+
+      pendingRemoteCandidates.push(candidate);
+    };
+
+    window.startRandomDataSender = async (datafile) => {
+      let dataChannel = pc.createDataChannel("MyApp Channel");
+
+      dataChannel.addEventListener("open", async (event) => {
+        setStatus(`datasource started with delay of ${datafile.delay} seconds`);
+        await new Promise((resolve) =>
+          setTimeout(resolve, datafile.delay * 1000),
+        );
+        setStatus(`datasource started with random data`);
+
+        // send size: 0 = no chunk size defined
+        const sizeBuf = new ArrayBuffer(8);
+        const sizeView = new DataView(sizeBuf);
+        sizeView.setBigUint64(0, 0n, false);
+        dataChannel.send(sizeBuf);
+
+        const chunkSize = 1024;
+        const buf = new Uint8Array(chunkSize);
+        try {
+          while (dataChannel.readyState === "open") {
+            if (dataChannel.bufferedAmount > 16 * chunkSize) {
+              // avoid filling up the buffer too much
+              await new Promise((resolve) => setTimeout(resolve, 10));
+              continue;
+            }
+            setStatus(
+              `datasource: pushed: ${chunkSize} in buffer (total buffer: ${dataChannel.bufferedAmount})`,
+            );
+
+            crypto.getRandomValues(buf);
+            dataChannel.send(buf.buffer);
+          }
+        } catch (err) {
+          setStatus(`Data channel error: ${err}`);
+        }
+      });
+    };
+
+    window.startFileDataSender = async (datafile) => {
+      sendFileCoordinator.setDelay(datafile.delay);
+
+      let dataChannel = pc.createDataChannel("MyApp Channel");
+
+      dataChannel.addEventListener("open", async (event) => {
+        sendFileCoordinator.setDataChannel(dataChannel);
+      });
+    };
+
+    async function sendFileOverDC(dataChannel, file, delay) {
+      setStatus(`datasource started with delay of ${delay} seconds`);
+      await new Promise((resolve) => setTimeout(resolve, delay * 1000));
+
+      const fileSize = file.size;
+      setStatus(`datasource starts sending file with totoal len: ${fileSize}`);
+
+      // write size on channel
+      const sizeBuf = new ArrayBuffer(8);
+      const sizeView = new DataView(sizeBuf);
+      sizeView.setBigUint64(0, BigInt(fileSize), false);
+      dataChannel.send(sizeBuf);
+
+      // send file data in chunks
+      const chunkSize = 1024;
+      let offset = 0;
+
+      while (offset < fileSize) {
+        if (dataChannel.bufferedAmount > 16 * chunkSize) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          continue;
+        }
+
+        const chunk = file.slice(offset, offset + chunkSize);
+        const arrayBuffer = await chunk.arrayBuffer();
+
+        dataChannel.send(arrayBuffer);
+        offset += arrayBuffer.byteLength;
+
+        setStatus(`datasource sent ${offset}/${fileSize} bytes`);
+      }
+    }
+
+    let candidatesBuffer = [];
+    let offerPosted = false;
+
+    function sendCandidateText(candidateText) {
+      return postText(`${remoteSignalURL}/candidate`, candidateText);
+    }
+
+    async function startMediaAndOffer() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false,
+      });
+      document.getElementById("video1").srcObject = stream;
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      setStatus("Going to post offer to remote peer");
+      await postJSON(
+        `${remoteSignalURL}/session_description`,
+        pc.localDescription,
+      );
+      setStatus(
+        `Local sessionDescription ${JSON.stringify(pc.localDescription)}`,
+      );
+
+      // mark as posted and flush buffered
+      offerPosted = true;
+      for (const candText of candidatesBuffer) {
+        try {
+          await sendCandidateText(candText);
+        } catch (err) {
+          setStatus(`Failed post buffered candidate: ${err}`);
+        }
+      }
+      candidatesBuffer = []; // clear buffer
+      setStatus("Sent offer and flushed candidates");
+
+      // set max bitrate of video stream
+      const sender = pc
+        .getSenders()
+        .find((s) => s.track && s.track.kind === "video");
+      if (sender) {
+        const params = sender.getParameters();
+        if (!params.encodings || params.encodings.length === 0)
+          params.encodings = [{}];
+        params.encodings[0].maxBitrate = 30_000_000; // TODO: make configurable
+        await sender.setParameters(params);
+      }
+    }
+
+    async function logStats() {
+      while (true) {
+        try {
+          const stats = [];
+          const sender = pc.getSenders().find((s) => s.track?.kind === "video");
+          const report = await (sender ? sender.getStats() : pc.getStats());
+          report.forEach((v) => {
+            if (v && Object.prototype.hasOwnProperty.call(v, "targetBitrate")) {
+              console.log("__WEBRTC_TR__:" + v.targetBitrate);
+            }
+          });
+        } catch (e) {
+          console.log("__WEBRTC_STATS_ERROR__:" + e.toString());
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    logStats();
+
+    startMediaAndOffer().catch((err) => {
+      setStatus(`Failed: ${err}`);
+    });
+
+    pc.oniceconnectionstatechange = (e) => setStatus(pc.iceConnectionState);
+    pc.onicecandidate = (event) => {
+      if (!event.candidate) return;
+      const candText = event.candidate.toJSON().candidate;
+      if (!offerPosted) {
+        candidatesBuffer.push(candText);
+      } else {
+        sendCandidateText(candText).catch((err) =>
+          setStatus(`Failed post candidate: ${err}`),
+        );
+      }
+    };
+  </script>
+</html>
