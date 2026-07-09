@@ -88,6 +88,7 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 
 	DefaultStreamSinkFactory.ConfigureFlags(fs)
 	DefaultStreamSourceFactory.ConfigureFlags(fs)
+	DefaultBweFlags.ConfigureFlags(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a WebRTC pipeline

@@ -37,8 +37,6 @@ type SendGo struct {
 	roqServer         bool
 	sourceLocation    string
 	codec             string
-	nada              bool
-	gcc               bool
 	maxTargetRate     uint
 	traceRTP          bool
 	datachannel       bool
@@ -50,6 +48,7 @@ type SendGo struct {
 	rtpFlowID         uint
 	rtcpSendFlowID    uint
 	rtcpRecvFlowID    uint
+	bwe               string
 }
 
 // Exec implements cmdmain.SubCmd.
@@ -61,8 +60,7 @@ func (s *SendGo) Exec(cmd string, args []string) error {
 	fs.BoolVar(&s.roqServer, "roq-server", false, "Usr RoQ server transport")
 	fs.StringVar(&s.sourceLocation, "source-location", "", "Location for filesource")
 	fs.StringVar(&s.codec, "source-codec", mrtp.H264.String(), "Codec to use (H264, VP8)")
-	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
-	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
+	fs.StringVar(&s.bwe, "bwe", "", "Set a bandwidth estimator by name, e.g. 'nada' or 'gcc'")
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
 	fs.BoolVar(&s.traceRTP, "trace-rtp-send", false, "Log outgoing RTP packets")
 	fs.BoolVar(&s.datachannel, "dc", false, "Send/Receive data with data channels")
@@ -111,17 +109,20 @@ Flags:
 		quictransport.SetQLOGLabel("sender"),
 	}
 
-	if s.nada {
-		nada := mrtp.NewNada(initTargetRate, minTargetRate, s.maxTargetRate, 20*time.Millisecond)
-		quicOptions = append(quicOptions, quictransport.SetBWE(nada))
-	}
-
-	if s.gcc {
-		gcc, err := mrtp.NewGCC(initTargetRate, minTargetRate, s.maxTargetRate)
+	if len(s.bwe) > 0 {
+		bweFactory, ok := BWEFactories[s.bwe]
+		if !ok {
+			return fmt.Errorf("unknown BWE: %v", s.bwe)
+		}
+		bwe, err := bweFactory.MakeBWE(BWEConfig{
+			InitTargetRate: initTargetRate,
+			MinTargetRate:  minTargetRate,
+			MaxTargetRate:  s.maxTargetRate,
+		})
 		if err != nil {
 			return err
 		}
-		quicOptions = append(quicOptions, quictransport.SetBWE(gcc))
+		quicOptions = append(quicOptions, quictransport.SetBWE(bwe))
 	}
 
 	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicOptions...)

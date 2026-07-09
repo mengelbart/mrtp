@@ -3,7 +3,7 @@ package gopipe
 import (
 	"context"
 	"log/slog"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/logging"
@@ -29,31 +29,31 @@ func (a *FakeSink) Write(b []byte, attrs Attributes) error {
 type FakeSource struct {
 	logger logging.LeveledLogger
 
-	minTargetRateBps int
-	maxTargetRateBps int
-	targetBitrateBps int
+	minTargetRateBps uint64
+	maxTargetRateBps uint64
+	targetBitrateBps atomic.Uint64
 	fps              int
 	bitrateUpdateCh  chan int
 
 	done chan struct{}
-	wg   sync.WaitGroup
 
 	runTime time.Duration
 }
 
 // NewFakeSource creates a new FakeSource with the specified target bitrate.
-func NewFakeSource(runTime time.Duration, minTargetRateBps, maxTargetRateBps, initTargetBitrateBps int) *FakeSource {
-	return &FakeSource{
+func NewFakeSource(runTime time.Duration, minTargetRateBps, maxTargetRateBps, initTargetBitrateBps uint64) *FakeSource {
+	fs := &FakeSource{
 		logger:           logging.NewDefaultLoggerFactory().NewLogger("perfect_codec"),
 		minTargetRateBps: minTargetRateBps,
 		maxTargetRateBps: maxTargetRateBps,
-		targetBitrateBps: initTargetBitrateBps,
 		fps:              30,
 		bitrateUpdateCh:  make(chan int),
 		done:             make(chan struct{}),
-		wg:               sync.WaitGroup{},
 		runTime:          runTime,
 	}
+	fs.targetBitrateBps.Store(initTargetBitrateBps)
+
+	return fs
 }
 
 func (s *FakeSource) GetInfo() Info {
@@ -68,15 +68,12 @@ func (s *FakeSource) GetInfo() Info {
 // setTargetBitrate sets the target bitrate to r bits per second.
 func (c *FakeSource) SetTargetRate(targetRate uint64) {
 	// reduce target rate
-	targetRate = uint64(0.9 * float64(targetRate))
-	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", targetRate)
+	decRate := uint64(0.9 * float64(targetRate))
+	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", decRate)
 
-	c.wg.Go(func() {
-		select {
-		case c.bitrateUpdateCh <- int(targetRate):
-		case <-c.done:
-		}
-	})
+	decRate = max(decRate, c.minTargetRateBps)
+	decRate = min(decRate, c.maxTargetRateBps)
+	c.targetBitrateBps.Store(decRate)
 }
 
 // Start begins the codec operation, generating frames at the configured frame rate.
@@ -90,6 +87,8 @@ func (c *FakeSource) StartLive(ctx context.Context, pipeline Sink) error {
 	pts := int64(0)
 	ticker := time.NewTicker(msToNextFrame)
 
+	lastSent := time.Now().UnixMicro()
+
 	defer ticker.Stop()
 	for {
 		select {
@@ -102,8 +101,12 @@ func (c *FakeSource) StartLive(ctx context.Context, pipeline Sink) error {
 			}
 			FrameCount++
 
-			size := c.targetBitrateBps / (8.0 * c.fps)
+			size := int(c.targetBitrateBps.Load()) / (8.0 * c.fps)
 			buf := make([]byte, size)
+
+			now := time.Now().UnixMicro()
+			slog.Info("generate frame", "frame", FrameCount, "size", size, "rate (probably)", c.targetBitrateBps.Load(), "time last", now-lastSent)
+			lastSent = now
 
 			attr := Attributes{}
 			attr[PTS] = pts
@@ -115,11 +118,6 @@ func (c *FakeSource) StartLive(ctx context.Context, pipeline Sink) error {
 			if err != nil {
 				return err
 			}
-
-		case nextRate := <-c.bitrateUpdateCh:
-			nextRate = max(nextRate, c.minTargetRateBps)
-			nextRate = min(nextRate, c.maxTargetRateBps)
-			c.targetBitrateBps = nextRate
 		case <-c.done:
 			return nil
 		}
@@ -129,7 +127,6 @@ func (c *FakeSource) StartLive(ctx context.Context, pipeline Sink) error {
 // Close stops the codec and cleans up resources.
 func (c *FakeSource) Close() error {
 	close(c.done)
-	c.wg.Wait()
 
 	return nil
 }
