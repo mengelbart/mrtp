@@ -10,16 +10,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/quic-go/quic-go"
-)
-
-var (
-	rateLimit uint
 )
 
 func init() {
@@ -30,10 +25,9 @@ func init() {
 type SendData struct {
 	localAddr         string
 	remoteAddr        string
-	nada              bool
-	gcc               bool
 	maxTargetRate     uint
 	dataChannelFlowID uint
+	bwe               string
 }
 
 func (s *SendData) Help() string {
@@ -44,13 +38,11 @@ func (s *SendData) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("send-data", flag.ExitOnError)
 	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
-	fs.BoolVar(&s.nada, "nada", false, "Enable NADA congestion control")
-	fs.BoolVar(&s.gcc, "pion-gcc", false, "Enable GCC congestion control")
+	fs.StringVar(&s.bwe, "bwe", "", "Set a bandwidth estimator by name, e.g. 'nada' or 'gcc'")
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
 	fs.UintVar(&s.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 
 	sourceFile := fs.String("source-file", "", "File to be sent. If empty, random data will be sent.")
-	fs.UintVar(&rateLimit, "fixed-rate-limit", 0, "Rate limit in bits per second. 0 means no limit.")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `%v
@@ -67,8 +59,8 @@ Flags:
 		return err
 	}
 
-	if (s.nada || s.gcc) && rateLimit > 0 {
-		return fmt.Errorf("cannot use fixed rate limit with NADA or GCC")
+	if len(s.bwe) == 0 {
+		return fmt.Errorf("bwe has to be set")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,18 +73,19 @@ Flags:
 		quictransport.SetQLOGLabel("sender"),
 	}
 
-	if s.nada {
-		nada := mrtp.NewNada(initTargetRate, minTargetRate, s.maxTargetRate, 20*time.Millisecond)
-		quicOptions = append(quicOptions, quictransport.SetBWE(nada))
+	bweFactory, ok := BWEFactories[s.bwe]
+	if !ok {
+		return fmt.Errorf("unknown BWE: %v", s.bwe)
 	}
-
-	if s.gcc {
-		gcc, err := mrtp.NewGCC(initTargetRate, minTargetRate, s.maxTargetRate)
-		if err != nil {
-			return err
-		}
-		quicOptions = append(quicOptions, quictransport.SetBWE(gcc))
+	bwe, err := bweFactory.MakeBWE(BWEConfig{
+		InitTargetRate: initTargetRate,
+		MinTargetRate:  minTargetRate,
+		MaxTargetRate:  s.maxTargetRate,
+	})
+	if err != nil {
+		return err
 	}
+	quicOptions = append(quicOptions, quictransport.SetBWE(bwe))
 
 	// open quic connection
 	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicOptions...)
@@ -134,18 +127,12 @@ Flags:
 		}
 	}()
 
-	if s.gcc || s.nada {
-		// rate is controlled by cc
-		quicConn.SetSourceTargetRate = func(ratebps uint) error {
-			// log "combined" target rate even if we do not split it. Makes plotting easier
-			slog.Info("NEW_TARGET_RATE", "rate", ratebps)
+	quicConn.SetSourceTargetRate = func(ratebps uint) error {
+		// log "combined" target rate even if we do not split it. Makes plotting easier
+		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
-			source.SetRateLimit(ratebps)
-			return nil
-		}
-	} else if rateLimit > 0 {
-		// fixed rate limit
-		source.SetRateLimit(rateLimit)
+		source.SetRateLimit(ratebps)
+		return nil
 	}
 
 	select {}

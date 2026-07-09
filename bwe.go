@@ -40,7 +40,11 @@ func NewNada(initRate, minRate, maxRate uint, feedbackInterval time.Duration) *N
 		DeactivateQDelayWrapping: true,
 		RefCongLevel:             15, // ms
 	}
-	nada := nada.NewSenderOnly(nadaConfig)
+	return NewNadaWithConfig(nadaConfig)
+}
+
+func NewNadaWithConfig(config nada.Config) *Nada {
+	nada := nada.NewSenderOnly(config)
 	return &Nada{
 		nada: &nada,
 	}

@@ -127,6 +127,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.UintVar(&dcPercentage, "dc-tr-share", 50, "Percentage of target rate to be used for data channel (RoQ only)")
 
 	DefaultStreamSourceFactory.ConfigureFlags(fs)
+	DefaultBweFlags.ConfigureFlags(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a sender pipeline
