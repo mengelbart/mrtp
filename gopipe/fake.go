@@ -33,7 +33,6 @@ type FakeSource struct {
 	maxTargetRateBps uint64
 	targetBitrateBps atomic.Uint64
 	fps              int
-	bitrateUpdateCh  chan int
 
 	done chan struct{}
 
@@ -47,7 +46,6 @@ func NewFakeSource(runTime time.Duration, minTargetRateBps, maxTargetRateBps, in
 		minTargetRateBps: minTargetRateBps,
 		maxTargetRateBps: maxTargetRateBps,
 		fps:              30,
-		bitrateUpdateCh:  make(chan int),
 		done:             make(chan struct{}),
 		runTime:          runTime,
 	}
