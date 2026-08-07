@@ -246,7 +246,7 @@ func (r *RTPBin) AddRTPSourceStreamGst(id int, src RTPSourceBin) error {
 					if err != nil {
 						panic(err)
 					}
-					anys = append(anys, key, val)
+					anys = append(anys, strings.TrimSpace(key), val)
 				}
 				slog.Info("SCReAM stats", anys...)
 
