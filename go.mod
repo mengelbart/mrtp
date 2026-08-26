@@ -1,6 +1,6 @@
 module github.com/mengelbart/mrtp
 
-go 1.25.2
+go 1.26
 
 require (
 	github.com/Willi-42/go-nada v0.0.0-20260603113220-d44d60c19f5b
@@ -34,7 +34,7 @@ require (
 require (
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/go-json-experiment/json v0.0.0-20251027170946-4849db3c2f7e // indirect
+	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
