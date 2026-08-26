@@ -15,6 +15,8 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
+	"github.com/mengelbart/mrtp/gopipe"
+	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/http"
 	"github.com/mengelbart/mrtp/webrtc"
@@ -55,6 +57,8 @@ type WebRTC struct {
 	sendVideoTrack   bool
 	pacing           bool
 	pionSCReAM       bool
+	goPipe           bool
+	fakeRtp          bool
 }
 
 // Help implements cmdmain.SubCmd.
@@ -94,6 +98,8 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 	DefaultStreamSinkFactory.ConfigureFlags(fs)
 	DefaultStreamSourceFactory.ConfigureFlags(fs)
 	DefaultBweFlags.ConfigureFlags(fs)
+	fs.BoolVar(&w.goPipe, "go-pipe", false, "Send/Receive using the go-pipe instead of gstreamer pipeline")
+	fs.BoolVar(&w.fakeRtp, "fake-rtp", false, "Send/Receive fake RTP packets")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a WebRTC pipeline
@@ -108,9 +114,13 @@ Usage:
 		return err
 	}
 
-	pipeline, err := gstreamer.NewRTPBin()
-	if err != nil {
-		return err
+	var pipeline *gstreamer.RTPBin
+	if !w.goPipe && !w.fakeRtp {
+		var err error
+		pipeline, err = gstreamer.NewRTPBin()
+		if err != nil {
+			return err
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -127,18 +137,89 @@ Usage:
 		webrtc.SetSRTPBufferLimit(10_000_000), // 10MB
 		webrtc.RegisterDefaultCodecs(),
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
-			sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()))
-			if newSinkErr != nil {
-				panic(err)
-			}
-			if pipelineErr := pipeline.AddRTPSink(0, sink); pipelineErr != nil {
-				panic(pipelineErr)
-			}
-			if pipelineErr := pipeline.ReceiveRTPStreamFrom(0, receiver, w.gstCCFB); pipelineErr != nil {
-				panic(pipelineErr)
-			}
-			if pipelineErr := pipeline.ReceiveRTCPFrom(receiver.RTCPReceiver()); pipelineErr != nil {
-				panic(pipelineErr)
+			if w.goPipe || w.fakeRtp {
+				codecType, err := codec.CodecTypeFromString(DefaultStreamSourceFactory.Codec())
+				if err != nil {
+					panic(err)
+				}
+				if w.fakeRtp {
+					codecType = codec.FAKE
+				}
+
+				maxTimeout := 150 * time.Millisecond
+				depacketizer, err := gopipe.NewRTPDepacketizer(maxTimeout, codecType)
+				if err != nil {
+					panic(err)
+				}
+				defer depacketizer.Close()
+
+				var rtpPipeline gopipe.Sink
+				if w.fakeRtp {
+					fakeSink, err := gopipe.NewFakeSink()
+					if err != nil {
+						panic(err)
+					}
+					rtpPipeline, err = gopipe.Chain(gopipe.Info{}, fakeSink, depacketizer)
+					if err != nil {
+						panic(err)
+					}
+				} else {
+					fileSink, err := gopipe.NewY4MSink("./out.y4m", 30, 1) // TODO: this could read the fps from the y4m
+					if err != nil {
+						panic(err)
+					}
+					defer fileSink.Close()
+
+					decoder, err := gopipe.NewDecoder(codecType)
+					if err != nil {
+						panic(err)
+					}
+
+					rtpPipeline, err = gopipe.Chain(gopipe.Info{}, fileSink, decoder, depacketizer)
+					if err != nil {
+						panic(err)
+					}
+				}
+
+				buf := make([]byte, 150000)
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+					}
+
+					// depacketizer.UpdateRTT(quicConn.GetRTT()) // TODO
+
+					n, err := receiver.Read(buf)
+					if err != nil {
+						if err == context.Canceled {
+							return
+						}
+
+						panic(err)
+					}
+
+					err = rtpPipeline.Write(buf[:n], gopipe.Attributes{})
+					if err != nil {
+						panic(err)
+					}
+				}
+			} else {
+				// gstreamer
+				sink, newSinkErr := DefaultStreamSinkFactory.MakeStreamSink("rtp-stream-sink", int(receiver.PayloadType()))
+				if newSinkErr != nil {
+					panic(err)
+				}
+				if pipelineErr := pipeline.AddRTPSink(0, sink); pipelineErr != nil {
+					panic(pipelineErr)
+				}
+				if pipelineErr := pipeline.ReceiveRTPStreamFrom(0, receiver, w.gstCCFB); pipelineErr != nil {
+					panic(pipelineErr)
+				}
+				if pipelineErr := pipeline.ReceiveRTCPFrom(receiver.RTCPReceiver()); pipelineErr != nil {
+					panic(pipelineErr)
+				}
 			}
 		}),
 	}
@@ -256,42 +337,133 @@ Usage:
 	}
 
 	if w.sendVideoTrack {
-		var source gstreamer.RTPSourceBin
-		source, err = DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source")
-		if err != nil {
-			return err
-		}
+		// send fake rtp
+		if w.goPipe || w.fakeRtp {
+			codecType, err := codec.CodecTypeFromString(DefaultStreamSourceFactory.Codec())
+			if err != nil {
+				panic(err)
+			}
+			if w.fakeRtp {
+				codecType = codec.FAKE
+			}
 
-		var rtpSink *webrtc.RTPSender
-		rtpSink, err = transport.AddLocalTrackWithCodec(source.EncodingName())
-		if err != nil {
-			return err
-		}
-		if err = pipeline.AddRTPTransportSink(0, rtpSink); err != nil {
-			return err
-		}
+			var rtpSink *webrtc.RTPSender
+			rtpSink, err = transport.AddLocalTrackWithCodec("video/H264")
+			if err != nil {
+				return err
+			}
+			appSink := gopipe.WriterFunc(func(b []byte, _ gopipe.Attributes) error {
+				_, err := rtpSink.Write(b)
+				return err
+			})
 
-		// set callback of transport, so CCs can set the target rate of the encoder
-		ba, ok := source.(BitrateAdapter)
-		if ok {
-			transport.SetTargetRate = ba.SetBitrate
-		}
+			packetizer := &gopipe.RTPPacketizerFactory{
+				MTU:       1420,
+				PT:        96,
+				SSRC:      0,
+				ClockRate: 90_000,
+				Codec:     codecType,
+			}
+			pacer := gopipe.NewFrameSpacer(ctx)
+			defer pacer.Close()
 
-		// TODO(ME): Cannot enable SCReAM here because WebRTC rewrites the SSRCs
-		// of outgoing packets. Thus, the sender cannot use the feedback,
-		// because the receiver will mirror the SSRC set by Pion and not the one
-		// seen by the ScreamTx implementation.
-		// Another problem in the current ScreamRx implementation is that it
-		// does not correctly set the CCFB type (count value of the RTCP
-		// header). Pion expects the correct type, otherwise it can't forward
-		// the packet to the correct SSRC (because it cannot read the media SSRC
-		// from a raw RTCP packet. The ScreamTx sender on the other hand,
-		// expects the type set to 0.
-		if err = pipeline.AddRTPSourceStreamGst(0, source); err != nil {
-			return err
-		}
-		if err = pipeline.ReceiveRTCPFrom(rtpSink.RTCPReceiver()); err != nil {
-			return err
+			// start feedback loop
+			go func() {
+				rtcp := rtpSink.RTCPReceiver()
+				buf := make([]byte, 1500)
+				for {
+					_, err := rtcp.Read(buf)
+					if err != nil {
+						panic(err)
+					}
+				}
+			}()
+
+			if w.fakeRtp {
+				fakeSource := gopipe.NewFakeSource(100*time.Second, 250_000, 8_000_000, 750_000)
+
+				transport.SetTargetRate = func(rate uint) error {
+					fakeSource.SetTargetRate(uint64(rate))
+					return nil
+				}
+
+				i := fakeSource.GetInfo()
+				rtpPipeline, err := gopipe.Chain(i, appSink, pacer, packetizer)
+				if err != nil {
+					return err
+				}
+
+				<-connectedCtx.Done()
+				return fakeSource.StartLive(ctx, rtpPipeline)
+
+			} else {
+				file, err := os.Open(DefaultStreamSourceFactory.SourceLocation())
+				if err != nil {
+					return err
+				}
+				defer file.Close()
+
+				fileSrc, err := gopipe.NewY4MSource(file)
+				if err != nil {
+					return err
+				}
+
+				i := fileSrc.GetInfo()
+				encoder := gopipe.NewEncoder(codecType)
+
+				transport.SetTargetRate = func(rate uint) error {
+					encoder.SetTargetRate(uint64(rate))
+					return nil
+				}
+
+				rtpPipeline, err := gopipe.Chain(i, appSink, pacer, packetizer, encoder)
+				if err != nil {
+					return err
+				}
+
+				// start sender
+				<-connectedCtx.Done()
+				return fileSrc.StartLive(ctx, rtpPipeline)
+			}
+		} else {
+			// gstreamer
+			var source gstreamer.RTPSourceBin
+			source, err = DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source")
+			if err != nil {
+				return err
+			}
+
+			var rtpSink *webrtc.RTPSender
+			rtpSink, err = transport.AddLocalTrackWithCodec(source.EncodingName())
+			if err != nil {
+				return err
+			}
+			if err = pipeline.AddRTPTransportSink(0, rtpSink); err != nil {
+				return err
+			}
+
+			// set callback of transport, so CCs can set the target rate of the encoder
+			ba, ok := source.(BitrateAdapter)
+			if ok {
+				transport.SetTargetRate = ba.SetBitrate
+			}
+
+			// TODO(ME): Cannot enable SCReAM here because WebRTC rewrites the SSRCs
+			// of outgoing packets. Thus, the sender cannot use the feedback,
+			// because the receiver will mirror the SSRC set by Pion and not the one
+			// seen by the ScreamTx implementation.
+			// Another problem in the current ScreamRx implementation is that it
+			// does not correctly set the CCFB type (count value of the RTCP
+			// header). Pion expects the correct type, otherwise it can't forward
+			// the packet to the correct SSRC (because it cannot read the media SSRC
+			// from a raw RTCP packet. The ScreamTx sender on the other hand,
+			// expects the type set to 0.
+			if err = pipeline.AddRTPSourceStreamGst(0, source); err != nil {
+				return err
+			}
+			if err = pipeline.ReceiveRTCPFrom(rtpSink.RTCPReceiver()); err != nil {
+				return err
+			}
 		}
 	} else {
 		if err = transport.AddRemoteVideoTrack(); err != nil {
@@ -299,17 +471,21 @@ Usage:
 		}
 	}
 
-	if err = pipeline.SendRTCPForStream(0, transport); err != nil {
-		return err
-	}
+	if w.goPipe || w.fakeRtp {
+		select {}
+	} else {
+		if err = pipeline.SendRTCPForStream(0, transport); err != nil {
+			return err
+		}
 
-	<-connectedCtx.Done()
-	// TODO(ME): Remove this sleep. Without it, we seem too be sending to early
-	// and scream will build up a queue and consequently drop some packets from
-	// the queue, which is likely to be the key frame. We then have to wait for
-	// the next keyframe.
-	time.Sleep(75 * time.Millisecond)
-	return pipeline.Run()
+		<-connectedCtx.Done()
+		// TODO(ME): Remove this sleep. Without it, we seem too be sending to early
+		// and scream will build up a queue and consequently drop some packets from
+		// the queue, which is likely to be the key frame. We then have to wait for
+		// the next keyframe.
+		time.Sleep(75 * time.Millisecond)
+		return pipeline.Run()
+	}
 }
 
 func withCORS(next nethttp.Handler) func(w nethttp.ResponseWriter, r *nethttp.Request) {
