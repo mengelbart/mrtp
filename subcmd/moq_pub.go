@@ -55,21 +55,13 @@ Flags:
 		}
 	}()
 
-	// TODO: Add flag to select server/client
-	if true {
-		handler := &handler{
-			track: w,
-		}
-		l := quictransport.NewListener(handler)
-		err := l.ListenAndHandle(m.localAddr, &quic.Config{
-			EnableDatagrams: true,
-		}, []string{"moq-00"})
-		if err != nil {
-			return err
-		}
+	handler := &handler{
+		track: w,
 	}
-
-	return nil
+	l := quictransport.NewListener(handler)
+	return l.ListenAndHandle(m.localAddr, &quic.Config{
+		EnableDatagrams: true,
+	}, []string{"moq-00"})
 }
 
 // Help implements cmdmain.SubCmd.
