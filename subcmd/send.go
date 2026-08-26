@@ -35,6 +35,8 @@ type BitrateAdapter interface {
 type StreamSourceFactory interface {
 	ConfigureFlags(*flag.FlagSet)
 	MakeStreamSource(name string) (gstreamer.RTPSourceBin, error)
+	SourceLocation() string
+	Codec() string
 }
 
 type gstreamerVideoStreamSourceFactory struct {
@@ -65,6 +67,14 @@ func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstre
 		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
 	}
 	return gstreamer.NewStreamSource(name, streamSourceOpts...)
+}
+
+func (f *gstreamerVideoStreamSourceFactory) SourceLocation() string {
+	return f.sourceLocation
+}
+
+func (f *gstreamerVideoStreamSourceFactory) Codec() string {
+	return f.codec
 }
 
 var DefaultStreamSourceFactory StreamSourceFactory = &gstreamerVideoStreamSourceFactory{}
