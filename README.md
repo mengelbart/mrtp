@@ -18,12 +18,14 @@ graph LR
   S["send<br/>cmd"] -->|roq| R["receive<br/>cmd"]
 ```
 
-#### _**Experimental:**_ RoQ without GStreamer 
-The `send-go` and `receive-go` subcommand use a custom video pipeline instead of GStreamer.
+#### _**Experimental:**_ RoQ without GStreamer
+`-media-pipeline go` runs a custom video pipeline instead of GStreamer. It reads
+and writes Y4M, so it needs `-source-location` on the sender and
+`-sink-location` on the receiver: it has neither a test source nor a display.
 
 ```mermaid
 graph LR
-  S["send-go<br/>cmd"] -->|roq| R["receive-go<br/>cmd"]
+  S["send<br/>-media-pipeline go"] -->|roq| R["receive<br/>-media-pipeline go"]
 ```
 
 
@@ -52,7 +54,7 @@ graph LR
 * In root directory, set `GST_PLUGIN_PATH=./scream/gstscream/target/debug/` and `LD_LIBRARY_PATH=./scream/code/wrapper_lib/`
 
 ### Setup gopipe
-Only required for the experimental `send-go` and `receive-go` commands.
+Only required for the experimental `-media-pipeline go`.
 #### h264
 Installation encoder:
 * Mac: brew install x264
@@ -105,7 +107,7 @@ go run cmd/main.go browser -source-location <path/to/video> -local-port 8080 -re
 |                | commands| NADA     | GCC  | SCReAMv1 | SCReAMv2 |
 | -------------- | ------| -------- | -------- | -------- | -------- |
 | WebRTC         | `webrtc` | ✅       | ✅       | ❌[^1]   | ❌[^1]   |
-| QUIC (RoQ)     | `send`, `receive`, `send-go`, `receive-go` | ✅       | ✅       | ❌[^2]   | ❌[^2]   |
+| QUIC (RoQ)     | `send`, `receive` | ✅       | ✅       | ❌[^2]   | ❌[^2]   |
 | UDP (Gst)      | `send`, `receive` without roq enabled |          |          | ✅       | ?[^3]    |
 
 

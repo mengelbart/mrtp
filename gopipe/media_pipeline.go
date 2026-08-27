@@ -200,6 +200,11 @@ func (p *pipeline) AddReceiver(config media.ReceiverConfig) error {
 	p.addCloser(depacketizer)
 	p.drainRTCP(config.RTCP)
 
+	// The depacketizer waits for a missing packet, so how long it is worth
+	// waiting depends on the round trip time. A transport that does not know
+	// its RTT leaves it at the fixed -go-depacketizer-timeout.
+	rtt, _ := config.RTP.(mrtp.RTTSource)
+
 	p.addStream(&stream{
 		run: func(ctx context.Context) error {
 			chain, err := Chain(Info{}, sink, append(decoders, depacketizer)...)
@@ -216,6 +221,9 @@ func (p *pipeline) AddReceiver(config media.ReceiverConfig) error {
 				n, err := config.RTP.Read(buf)
 				if err != nil {
 					return err
+				}
+				if rtt != nil {
+					depacketizer.UpdateRTT(rtt.RTT())
 				}
 				if err = chain.Write(buf[:n], Attributes{}); err != nil {
 					return err
