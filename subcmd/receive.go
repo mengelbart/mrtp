@@ -28,6 +28,8 @@ func init() {
 type StreamSinkFactory interface {
 	ConfigureFlags(*flag.FlagSet)
 	MakeStreamSink(name string, payloadType int) (gstreamer.RTPSinkBin, error)
+	Codec() string
+	SinkLocation() string
 }
 
 type gstreamerVideoStreamSinkFactory struct {
@@ -59,6 +61,14 @@ func (f *gstreamerVideoStreamSinkFactory) MakeStreamSink(name string, pt int) (g
 		gstreamer.StreamSinkLocation(f.sinkLocation),
 		gstreamer.StreamSinkPayloadType(pt),
 	)
+}
+
+func (f *gstreamerVideoStreamSinkFactory) Codec() string {
+	return f.codec
+}
+
+func (f *gstreamerVideoStreamSinkFactory) SinkLocation() string {
+	return f.sinkLocation
 }
 
 var DefaultStreamSinkFactory StreamSinkFactory = &gstreamerVideoStreamSinkFactory{}
