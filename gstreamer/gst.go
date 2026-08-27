@@ -13,9 +13,7 @@ func init() {
 	gst.Init(nil)
 }
 
-func runPipeline(pipeline *gst.Pipeline) error {
-	mainloop := glib.NewMainLoop(glib.MainContextDefault(), false)
-
+func runPipeline(pipeline *gst.Pipeline, mainloop *glib.MainLoop) error {
 	pipeline.GetPipelineBus().AddWatch(func(msg *gst.Message) bool {
 		switch msg.Type() {
 		case gst.MessageEOS:

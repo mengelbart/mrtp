@@ -1,5 +1,3 @@
-//go:build cgo
-
 package subcmd
 
 import (
@@ -10,14 +8,15 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"strings"
 
-	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
-	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/internal/quictransport"
+	"github.com/mengelbart/mrtp/media"
 	"github.com/mengelbart/mrtp/roq"
+	"github.com/mengelbart/mrtp/udp"
 	"github.com/quic-go/quic-go"
 )
 
@@ -25,64 +24,7 @@ func init() {
 	cmdmain.RegisterSubCmd("send", func() cmdmain.SubCmd { return new(Send) })
 }
 
-// BitrateAdapter is the interface implemented by source streams that can adapt
-// their bitrate to a target rate.
-type BitrateAdapter interface {
-	// SetBitrate sets the target bitrate for the stream source.
-	SetBitrate(uint) error
-}
-
-type StreamSourceFactory interface {
-	ConfigureFlags(*flag.FlagSet)
-	MakeStreamSource(name string) (gstreamer.RTPSourceBin, error)
-	SourceLocation() string
-	Codec() string
-}
-
-type gstreamerVideoStreamSourceFactory struct {
-	sourceLocation string
-	codec          string
-}
-
-func (f *gstreamerVideoStreamSourceFactory) ConfigureFlags(fs *flag.FlagSet) {
-	fs.StringVar(&f.sourceLocation, "source-location", "", "Location for filesource (or videotestsrc to generate a testsource)")
-	fs.StringVar(&f.codec, "source-codec", mrtp.H264.String(), "Codec to use for encoder (H264, VP8)")
-}
-
-func (f *gstreamerVideoStreamSourceFactory) MakeStreamSource(name string) (gstreamer.RTPSourceBin, error) {
-	codec, error := mrtp.NewCodec(f.codec)
-	if error != nil {
-		return nil, error
-	}
-
-	streamSourceOpts := []gstreamer.StreamSourceOption{gstreamer.StreamSourceCodec(codec)}
-
-	if f.sourceLocation != "videotestsrc" {
-		// check if file exists
-		if _, err := os.Stat(f.sourceLocation); errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("file does not exist: %v", f.sourceLocation)
-		}
-
-		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceFileSourceLocation(f.sourceLocation))
-		streamSourceOpts = append(streamSourceOpts, gstreamer.StreamSourceType(gstreamer.Filesrc))
-	}
-	return gstreamer.NewStreamSource(name, streamSourceOpts...)
-}
-
-func (f *gstreamerVideoStreamSourceFactory) SourceLocation() string {
-	return f.sourceLocation
-}
-
-func (f *gstreamerVideoStreamSourceFactory) Codec() string {
-	return f.codec
-}
-
-var DefaultStreamSourceFactory StreamSourceFactory = &gstreamerVideoStreamSourceFactory{}
-
-var (
-	gstSCReAM    bool
-	dcPercentage uint
-)
+var dcPercentage uint
 
 type Send struct {
 	localAddr         string
@@ -104,7 +46,9 @@ type Send struct {
 	rtpFlowID         uint
 	rtcpSendFlowID    uint
 	rtcpRecvFlowID    uint
+	transport         string
 
+	media      media.Flags
 	dataSource *data.DataBin
 }
 
@@ -133,10 +77,13 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.UintVar(&s.rtcpRecvPort, "rtcp-recv-porto", 5002, "UDP port for incoming RTCP stream")
 	fs.UintVar(&s.rtcpSendFlowID, "rtcp-send-flow-id", 2, "RTCP Sender Flow ID when using RTP over QUIC")
 	fs.UintVar(&s.rtcpRecvFlowID, "rtcp-recv-flow-id", 1, "RTCP Receiver Flow ID when using RTP over QUIC")
-	fs.BoolVar(&gstSCReAM, "gst-scream", false, "Run SCReAM Gstreamer element")
 	fs.UintVar(&dcPercentage, "dc-tr-share", 50, "Percentage of target rate to be used for data channel (RoQ only)")
+	fs.StringVar(&s.transport, "transport", DefaultTransport,
+		fmt.Sprintf("Transport for plain RTP, ignored when RoQ is enabled or when the media pipeline moves the packets itself (%v)", strings.Join(transportNames, ", ")))
 
-	DefaultStreamSourceFactory.ConfigureFlags(fs)
+	if err := s.media.ConfigureSender(fs); err != nil {
+		return err
+	}
 	DefaultBweFlags.ConfigureFlags(fs)
 
 	fs.Usage = func() {
@@ -194,25 +141,27 @@ Flags:
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
-	source, err := DefaultStreamSourceFactory.MakeStreamSource("rtp-stream-source")
+	senderConfig, err := s.media.SenderConfig("rtp-stream-source")
 	if err != nil {
 		return err
 	}
-
-	rtpBinOpts := []gstreamer.RTPBinOption{}
-	if gstSCReAM {
-		rtpBinOpts = append(rtpBinOpts, gstreamer.EnableSCReAM(initTargetRate/1000, minTargetRate/1000, s.maxTargetRate/1000))
+	senderConfig.RateBounds = media.RateBounds{
+		Initial: initTargetRate,
+		Min:     minTargetRate,
+		Max:     s.maxTargetRate,
 	}
 
-	sender, err := gstreamer.NewRTPBin(rtpBinOpts...)
+	pipeline, err := s.media.NewPipeline()
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if closeErr := pipeline.Close(); closeErr != nil {
+			slog.Error("failed to close media pipeline", "error", closeErr)
+		}
+	}()
 
-	mediaBa, ok := source.(BitrateAdapter)
-	if ok {
-		sender.SetTargetRateEncoder = mediaBa.SetBitrate
-	}
+	var mediaSender media.Sender
 
 	if s.roqServer || s.roqClient {
 		quicOptions := []quictransport.Option{
@@ -311,7 +260,7 @@ Flags:
 			} else {
 				mediaTargetRate = uint(0.8 * float64(ratebps))
 			}
-			err := mediaBa.SetBitrate(mediaTargetRate)
+			err := mediaSender.SetTargetBitrate(mediaTargetRate)
 			if err != nil {
 				panic(err)
 			}
@@ -323,59 +272,59 @@ Flags:
 		if err != nil {
 			return err
 		}
-		if err = sender.AddRTPTransportSink(0, rtpSink); err != nil {
-			return err
-		}
-		if err = sender.AddRTPSourceStreamGst(0, source); err != nil {
-			return err
-		}
-
 		rtcpSink, err := roqTransport.NewSendFlow(uint64(s.rtcpSendFlowID), roq.SendMode(s.roqMapping), false)
 		if err != nil {
 			return err
 		}
-		if err = sender.SendRTCPForStream(0, rtcpSink); err != nil {
-			return err
-		}
-
 		rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(s.rtcpRecvFlowID), false)
 		if err != nil {
 			return err
 		}
-		if err = sender.ReceiveRTCPFrom(rtcpSrc); err != nil {
+
+		senderConfig.RTP = rtpSink
+		senderConfig.RTCP = media.RTCPFlow{Send: rtcpSink, Recv: rtcpSrc}
+		mediaSender, err = pipeline.AddSender(senderConfig)
+		if err != nil {
 			return err
 		}
 
 	} else {
-		rtpSink, err := gstreamer.NewUDPSink(s.remoteAddr, uint32(s.udpPort), gstreamer.EnabelUDPSinkPadProbe(s.traceRTP))
+		mediaSender, err = s.setupPlainRTP(pipeline, senderConfig)
 		if err != nil {
-			return err
-		}
-		if err = sender.AddRTPTransportSinkGst(0, rtpSink.GetGstElement()); err != nil {
-			return err
-		}
-		if err = sender.AddRTPSourceStreamGst(0, source); err != nil {
-			return err
-		}
-
-		rtcpSink, err := gstreamer.NewUDPSink(s.remoteAddr, uint32(s.rtcpSendPort))
-		if err != nil {
-			return err
-		}
-		if err = sender.SendRTCPForStreamGst(0, rtcpSink.GetGstElement()); err != nil {
-			return err
-		}
-
-		rtcpSrc, err := gstreamer.NewUDPSrc(s.localAddr, uint32(s.rtcpRecvPort))
-		if err != nil {
-			return err
-		}
-		if err = sender.ReceiveRTCPFromGst(rtcpSrc.GetGstElement()); err != nil {
 			return err
 		}
 	}
 
-	return sender.Run()
+	return pipeline.Run(ctx)
+}
+
+func (s *Send) setupPlainRTP(pipeline media.Pipeline, config media.SenderConfig) (media.Sender, error) {
+	switch s.transport {
+	case transportGstUDP:
+		// The pipeline sends the packets itself, from its own flags. Opening a
+		// socket here would only bind the same port twice.
+		return pipeline.AddSender(config)
+	case transportUDP:
+	default:
+		return nil, fmt.Errorf("unknown transport %q, available: %v", s.transport, transportNames)
+	}
+
+	rtpSink, err := udp.Dial(address(s.remoteAddr, uint16(s.udpPort)), s.traceRTP)
+	if err != nil {
+		return nil, err
+	}
+	rtcpSink, err := udp.Dial(address(s.remoteAddr, uint16(s.rtcpSendPort)), false)
+	if err != nil {
+		return nil, err
+	}
+	rtcpSrc, err := udp.Listen(address(s.localAddr, uint16(s.rtcpRecvPort)), false)
+	if err != nil {
+		return nil, err
+	}
+
+	config.RTP = rtpSink
+	config.RTCP = media.RTCPFlow{Send: rtcpSink, Recv: rtcpSrc}
+	return pipeline.AddSender(config)
 }
 
 func (s *Send) pacingFactor() float64 {

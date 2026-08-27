@@ -44,6 +44,16 @@ type RTCPFlow struct {
 	Recv io.ReadCloser
 }
 
+// RateBounds are the bitrate bounds of the congestion controller, in bits per
+// second. Only a pipeline that runs its own congestion control needs them
+// (GStreamer's screamtx does). A pipeline whose rate is steered from outside,
+// through Sender.SetTargetBitrate, ignores them.
+type RateBounds struct {
+	Initial uint
+	Min     uint
+	Max     uint
+}
+
 // SenderConfig describes one outgoing stream.
 type SenderConfig struct {
 	// Name identifies the stream for logging and for naming pipeline elements.
@@ -59,6 +69,8 @@ type SenderConfig struct {
 	// RTP receives the RTP packets produced by the pipeline.
 	RTP  io.WriteCloser
 	RTCP RTCPFlow
+
+	RateBounds RateBounds
 }
 
 // ReceiverConfig describes one incoming stream.

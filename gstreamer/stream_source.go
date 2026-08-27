@@ -32,9 +32,9 @@ type StreamSource struct {
 	encoder  *gst.Element
 }
 
-func StreamSourcePayloadType(pt int) StreamSinkOption {
-	return func(rs *StreamSink) error {
-		rs.payloadType = pt
+func StreamSourcePayloadType(pt int) StreamSourceOption {
+	return func(rs *StreamSource) error {
+		rs.payloadType = uint(pt)
 		return nil
 	}
 }

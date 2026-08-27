@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
 	"github.com/go-gst/go-gst/gst/app"
 )
@@ -35,6 +36,7 @@ type RTPBin struct {
 	streams    map[int]RTPSinkBin
 
 	pipeline *gst.Pipeline
+	mainloop *glib.MainLoop
 	rtpbin   *gst.Element
 
 	rtcpFunnels map[int]*gst.Element
@@ -43,20 +45,20 @@ type RTPBin struct {
 	SetTargetRateEncoder func(ratebps uint) error
 }
 
-func EnableSCReAM(initRateKbps, minRateKbps, maxRateKbps uint) RTPBinOption {
-	return func(r *RTPBin) error {
-		screamtx, err := gst.NewElementWithProperties(
-			"screamtx",
-			map[string]any{
-				"params": fmt.Sprintf("-initrate %d -minrate %d -maxrate %d", initRateKbps, minRateKbps, maxRateKbps),
-			},
-		)
-		if err != nil {
-			return err
-		}
-		r.screamTx = screamtx
-		return nil
+// EnableSCReAM adds a screamtx element, which runs SCReAM congestion control
+// inside the pipeline. It has to be called before the sending stream is added.
+func (r *RTPBin) EnableSCReAM(initRateKbps, minRateKbps, maxRateKbps uint) error {
+	screamtx, err := gst.NewElementWithProperties(
+		"screamtx",
+		map[string]any{
+			"params": fmt.Sprintf("-initrate %d -minrate %d -maxrate %d", initRateKbps, minRateKbps, maxRateKbps),
+		},
+	)
+	if err != nil {
+		return err
 	}
+	r.screamTx = screamtx
+	return nil
 }
 
 func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
@@ -74,6 +76,7 @@ func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
 		transports:           map[int]*gst.Element{},
 		streams:              map[int]RTPSinkBin{},
 		pipeline:             pipeline,
+		mainloop:             glib.NewMainLoop(glib.MainContextDefault(), false),
 		rtpbin:               rtpbin,
 		rtcpFunnels:          map[int]*gst.Element{},
 		SetTargetRateEncoder: nil,
@@ -97,7 +100,15 @@ func (r *RTPBin) Pipeline() *gst.Pipeline {
 }
 
 func (r *RTPBin) Run() error {
-	return runPipeline(r.pipeline)
+	return runPipeline(r.pipeline, r.mainloop)
+}
+
+// stop tears the pipeline down and makes a running Run return. It is safe to
+// call before Run, and more than once.
+func (r *RTPBin) stop() error {
+	err := r.pipeline.BlockSetState(gst.StateNull)
+	r.mainloop.Quit()
+	return err
 }
 
 func (r *RTPBin) DebugBinToDotFile(name string) {
