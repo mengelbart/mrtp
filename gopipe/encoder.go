@@ -113,9 +113,10 @@ func (e *Encoder) Link(f Sink, i Info) (Sink, error) {
 	}), nil
 }
 
-func (e *Encoder) SetTargetRate(targetRate uint64) {
+// SetTargetBitrate implements media.Sender.
+func (e *Encoder) SetTargetBitrate(bitrate uint) error {
 	// reduce target rate
-	targetRate = uint64(0.9 * float64(targetRate))
+	targetRate := uint64(0.9 * float64(bitrate))
 	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", targetRate)
 
 	if e.vpxEnc != nil {
@@ -123,6 +124,7 @@ func (e *Encoder) SetTargetRate(targetRate uint64) {
 	} else if e.x264Enc != nil {
 		e.x264Enc.SetTargetRate(targetRate)
 	}
+	return nil
 }
 
 func (e *Encoder) Close() error {

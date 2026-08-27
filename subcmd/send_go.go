@@ -229,9 +229,7 @@ Flags:
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {
 		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
-		encoder.SetTargetRate(uint64(ratebps))
-
-		return nil
+		return encoder.SetTargetBitrate(ratebps)
 	}
 
 	packetizer := &gopipe.RTPPacketizerFactory{
