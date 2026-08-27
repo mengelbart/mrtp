@@ -5,11 +5,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
@@ -229,9 +232,24 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 		return err
 	}
 
-	config.RTP = rtpSrc
+	config.RTP = roqSource{ReadCloser: rtpSrc, conn: quicConn}
 	config.RTCP = media.RTCPFlow{Send: rtcpSink, Recv: rtcpSrc}
 	return pipeline.AddReceiver(config)
+}
+
+// roqSource is a RoQ receive flow that also reports the round trip time of the
+// QUIC connection it runs on, which the flow itself does not know. Nothing
+// requires the interface, a pipeline only asks for it, so it is asserted here.
+var _ mrtp.RTTSource = roqSource{}
+
+type roqSource struct {
+	io.ReadCloser
+	conn *quictransport.Transport
+}
+
+// RTT implements mrtp.RTTSource.
+func (s roqSource) RTT() time.Duration {
+	return s.conn.GetRTT()
 }
 
 func (r *Receive) setupPlainRTP(pipeline media.Pipeline, config media.ReceiverConfig) error {
