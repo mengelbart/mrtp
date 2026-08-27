@@ -13,10 +13,10 @@ import (
 	nethttp "net/http"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/gopipe"
-	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/gstreamer"
 	"github.com/mengelbart/mrtp/http"
 	"github.com/mengelbart/mrtp/webrtc"
@@ -138,12 +138,12 @@ Usage:
 		webrtc.RegisterDefaultCodecs(),
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
 			if w.goPipe || w.fakeRtp {
-				codecType, err := codec.CodecTypeFromString(DefaultStreamSinkFactory.Codec())
+				codecType, err := mrtp.NewCodec(DefaultStreamSinkFactory.Codec())
 				if err != nil {
 					panic(err)
 				}
 				if w.fakeRtp {
-					codecType = codec.FAKE
+					codecType = mrtp.Fake
 				}
 
 				maxTimeout := 150 * time.Millisecond
@@ -339,12 +339,12 @@ Usage:
 	if w.sendVideoTrack {
 		// send fake rtp
 		if w.goPipe || w.fakeRtp {
-			codecType, err := codec.CodecTypeFromString(DefaultStreamSourceFactory.Codec())
+			codecType, err := mrtp.NewCodec(DefaultStreamSourceFactory.Codec())
 			if err != nil {
 				panic(err)
 			}
 			if w.fakeRtp {
-				codecType = codec.FAKE
+				codecType = mrtp.Fake
 			}
 
 			var rtpSink *webrtc.RTPSender
@@ -434,7 +434,7 @@ Usage:
 			}
 
 			var rtpSink *webrtc.RTPSender
-			rtpSink, err = transport.AddLocalTrackWithCodec(source.EncodingName())
+			rtpSink, err = transport.AddLocalTrackWithCodec(source.MimeType())
 			if err != nil {
 				return err
 			}

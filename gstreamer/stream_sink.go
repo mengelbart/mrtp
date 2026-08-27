@@ -183,11 +183,8 @@ func (s *StreamSink) ClockRate() int {
 	return s.codec.ClockRate()
 }
 
+// EncodingName returns the RTP encoding name, as used in GStreamer caps.
 func (s *StreamSink) EncodingName() string {
-	return s.codec.String()
-}
-
-func (s *StreamSink) PayloadTypeName() string {
 	return s.codec.String()
 }
 

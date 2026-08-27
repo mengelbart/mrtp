@@ -15,7 +15,6 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/gopipe"
-	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/quic-go/quic-go"
@@ -152,7 +151,7 @@ Flags:
 		return err
 	}
 
-	codecTyp, err := codec.CodecTypeFromString(r.codec)
+	codecTyp, err := mrtp.NewCodec(r.codec)
 	if err != nil {
 		return err
 	}

@@ -10,6 +10,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/stretchr/testify/assert"
 )
@@ -26,7 +27,7 @@ func TestVpxDecode(t *testing.T) {
 
 		framesReceived := 0
 
-		decoder, err := codec.NewVPXDecoder(codec.VP8)
+		decoder, err := codec.NewVPXDecoder(mrtp.VP8)
 		assert.NoError(t, err)
 
 		sink := WriterFunc(func(frame []byte, attr Attributes) error {
@@ -49,7 +50,7 @@ func TestVpxDecode(t *testing.T) {
 		assert.NoError(t, err)
 
 		i := fileSrc.GetInfo()
-		encoder := NewEncoder(codec.VP8)
+		encoder := NewEncoder(mrtp.VP8)
 		frameInter := newFrameInterceptor(false, 0, nil)
 
 		writer, err := Chain(i, sink, encoder, frameInter)
@@ -72,7 +73,7 @@ func TestVpxDecodeWithRtpVP8(t *testing.T) {
 		t.Skip("video not found")
 	}
 
-	runVpxDecodeWithRTP(t, codec.VP8)
+	runVpxDecodeWithRTP(t, mrtp.VP8)
 }
 
 func TestVpxDecodeWithRtpVP9(t *testing.T) {
@@ -82,10 +83,10 @@ func TestVpxDecodeWithRtpVP9(t *testing.T) {
 		t.Skip("video not found")
 	}
 
-	runVpxDecodeWithRTP(t, codec.VP9)
+	runVpxDecodeWithRTP(t, mrtp.VP9)
 }
 
-func runVpxDecodeWithRTP(t *testing.T, c codec.CodecType) {
+func runVpxDecodeWithRTP(t *testing.T, c mrtp.Codec) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 

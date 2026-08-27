@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"image"
 	"unsafe"
+
+	"github.com/mengelbart/mrtp"
 )
 
 /*
@@ -67,12 +69,12 @@ type VPXDecoder struct {
 	iter C.vpx_codec_iter_t
 }
 
-func NewVPXDecoder(codec CodecType) (*VPXDecoder, error) {
+func NewVPXDecoder(codec mrtp.Codec) (*VPXDecoder, error) {
 	var ccodec *C.vpx_codec_iface_t
 	switch codec {
-	case VP8:
+	case mrtp.VP8:
 		ccodec = C.ifaceVP8Decoder()
-	case VP9:
+	case mrtp.VP9:
 		ccodec = C.ifaceVP9Decoder()
 	default:
 		return nil, fmt.Errorf("unsupported codec for decoder: %s", codec.String())

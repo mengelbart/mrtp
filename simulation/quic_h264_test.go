@@ -16,7 +16,6 @@ import (
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe"
-	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/mengelbart/netsim"
@@ -185,7 +184,7 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 		return err
 	}
 
-	sendCodec := codec.H264
+	sendCodec := mrtp.H264
 	i := fileSrc.GetInfo()
 	encoder := gopipe.NewEncoder(sendCodec)
 
@@ -246,7 +245,7 @@ func runH264Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.
 	}
 	defer rtpSrc.Close()
 
-	recvCodec := codec.H264
+	recvCodec := mrtp.H264
 	decoder, err := gopipe.NewDecoder(recvCodec)
 	if err != nil {
 		return err

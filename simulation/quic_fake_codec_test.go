@@ -15,7 +15,6 @@ import (
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe"
-	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/mengelbart/netsim"
@@ -186,7 +185,7 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		PT:        96,
 		SSRC:      0,
 		ClockRate: 90_000,
-		Codec:     codec.FAKE,
+		Codec:     mrtp.Fake,
 	}
 	pacer := gopipe.NewFrameSpacer(ctx)
 	defer pacer.Close()
@@ -235,7 +234,7 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	}
 
 	maxTimeout := 150 * time.Millisecond
-	depacketizer, err := gopipe.NewRTPDepacketizer(maxTimeout, codec.FAKE)
+	depacketizer, err := gopipe.NewRTPDepacketizer(maxTimeout, mrtp.Fake)
 	if err != nil {
 		return err
 	}

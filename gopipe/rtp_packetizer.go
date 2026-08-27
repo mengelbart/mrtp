@@ -5,21 +5,21 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/mengelbart/mrtp/gopipe/codec"
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 )
 
-func getPacketizerByName(c codec.CodecType) (rtp.Payloader, error) {
+func getPacketizerByName(c mrtp.Codec) (rtp.Payloader, error) {
 	switch c {
-	case codec.VP8:
+	case mrtp.VP8:
 		return &codecs.VP8Payloader{}, nil
-	case codec.VP9:
+	case mrtp.VP9:
 		return &codecs.VP9Payloader{}, nil
-	case codec.H264:
+	case mrtp.H264:
 		return &codecs.H264Payloader{}, nil
-	case codec.FAKE:
+	case mrtp.Fake:
 		// use G722 as 0s are a valid payload for it
 		return &codecs.G722Payloader{}, nil
 	}
@@ -31,7 +31,7 @@ type RTPPacketizerFactory struct {
 	PT        uint8
 	SSRC      uint32
 	ClockRate uint32
-	Codec     codec.CodecType
+	Codec     mrtp.Codec
 }
 
 type RTPPacketizer struct {

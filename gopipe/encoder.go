@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe/codec"
 )
 
@@ -27,12 +28,12 @@ type Encoder struct {
 	vpxEnc  *codec.VPXEncoder
 	x264Enc *codec.X264encoder
 
-	codec codec.CodecType
+	codec mrtp.Codec
 }
 
-func NewEncoder(codec codec.CodecType) *Encoder {
+func NewEncoder(c mrtp.Codec) *Encoder {
 	return &Encoder{
-		codec: codec,
+		codec: c,
 	}
 }
 
@@ -46,13 +47,13 @@ func (e *Encoder) Link(f Sink, i Info) (Sink, error) {
 		TimebaseDen: i.TimebaseDen,
 	}
 	switch e.codec {
-	case codec.VP8, codec.VP9:
+	case mrtp.VP8, mrtp.VP9:
 		enc, err := codec.NewVPXEncoder(conf)
 		if err != nil {
 			return nil, err
 		}
 		e.vpxEnc = enc
-	case codec.H264:
+	case mrtp.H264:
 		enc, err := codec.NewX264encoder(conf)
 		if err != nil {
 			return nil, err

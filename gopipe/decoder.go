@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe/codec"
 )
 
@@ -14,9 +15,9 @@ type Decoder struct {
 	vpxdec  *codec.VPXDecoder
 }
 
-func NewDecoder(c codec.CodecType) (*Decoder, error) {
+func NewDecoder(c mrtp.Codec) (*Decoder, error) {
 	switch c {
-	case codec.H264:
+	case mrtp.H264:
 		dec, err := codec.NewH264Decoder()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create H264 decoder: %w", err)
@@ -24,7 +25,7 @@ func NewDecoder(c codec.CodecType) (*Decoder, error) {
 		return &Decoder{
 			x264dec: dec,
 		}, nil
-	case codec.VP8, codec.VP9:
+	case mrtp.VP8, mrtp.VP9:
 		dec, err := codec.NewVPXDecoder(c)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create H264 decoder: %w", err)
