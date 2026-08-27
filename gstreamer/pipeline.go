@@ -139,7 +139,7 @@ func (p *pipeline) AddSender(config media.SenderConfig) (media.Sender, error) {
 		}
 		p.bin.SetTargetRateEncoder = source.SetBitrate
 	}
-	if err = p.bin.AddRTPSourceStreamGst(id, source); err != nil {
+	if err = p.bin.addRTPSourceStream(id, source); err != nil {
 		return nil, err
 	}
 	if err = p.addRTCP(id, config.RTCP, true); err != nil {
@@ -170,7 +170,7 @@ func (p *pipeline) AddReceiver(config media.ReceiverConfig) error {
 	}
 
 	id := p.claimID()
-	if err = p.bin.AddRTPSink(id, sink); err != nil {
+	if err = p.bin.addRTPSinkStream(id, sink); err != nil {
 		return err
 	}
 	if err = p.addRTPSource(id, config.RTP); err != nil {
@@ -212,7 +212,7 @@ func (p *pipeline) addRTPSink(id int, writer io.WriteCloser) error {
 		if err != nil {
 			return err
 		}
-		return p.bin.AddRTPTransportSinkGst(id, sink)
+		return p.bin.addRTPTransportSinkElement(id, sink)
 	}
 	if writer == nil {
 		return errNoRTPEndpoint
@@ -227,7 +227,7 @@ func (p *pipeline) addRTPSource(id int, reader io.ReadCloser) error {
 		if err != nil {
 			return err
 		}
-		return p.bin.ReceiveRTPStreamFromGst(id, source, p.factory.ccfb)
+		return p.bin.receiveRTPStreamFromElement(id, source, p.factory.ccfb)
 	}
 	if reader == nil {
 		return errNoRTPEndpoint
@@ -259,14 +259,14 @@ func (p *pipeline) addUDPRTCP(id int, sending bool) error {
 	if err != nil {
 		return err
 	}
-	if err = p.bin.SendRTCPForStreamGst(id, sink); err != nil {
+	if err = p.bin.sendRTCPForStreamElement(id, sink); err != nil {
 		return err
 	}
 	source, err := newUDPSrcElement(p.factory.udpLocal, recvPort, false, 0)
 	if err != nil {
 		return err
 	}
-	return p.bin.ReceiveRTCPFromGst(source)
+	return p.bin.receiveRTCPFromElement(source)
 }
 
 // sender adapts StreamSource to media.Sender.
