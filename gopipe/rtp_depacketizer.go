@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mengelbart/mrtp/gopipe/codec"
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/pion/interceptor/pkg/jitterbuffer"
 	"github.com/pion/rtp"
@@ -27,7 +27,7 @@ type rtpDepacketizer struct {
 	missedPacketTime *time.Time
 	fastSkip         bool   // skip missing packets immediately after first timeout until buffer drains
 	playoutTs        uint32 // playout timestamp of the current frame being assembled
-	codec            codec.CodecType
+	codec            mrtp.Codec
 
 	maxTimeout     time.Duration
 	currentTimeout atomic.Int64
@@ -39,8 +39,8 @@ type rtpDepacketizer struct {
 	unwrapper *logging.Unwrapper // for logging the rtp packets
 }
 
-func newRTPDepacketizer(maxTimeout time.Duration, c codec.CodecType, onFrame func(encFrame []byte, pts int64)) (*rtpDepacketizer, error) {
-	if c != codec.VP8 && c != codec.VP9 && c != codec.H264 && c != codec.FAKE {
+func newRTPDepacketizer(maxTimeout time.Duration, c mrtp.Codec, onFrame func(encFrame []byte, pts int64)) (*rtpDepacketizer, error) {
+	if c != mrtp.VP8 && c != mrtp.VP9 && c != mrtp.H264 && c != mrtp.Fake {
 		return nil, fmt.Errorf("unsupported codec for depacketizer: %s", c.String())
 	}
 
@@ -186,22 +186,22 @@ func (d *rtpDepacketizer) processPackets() {
 
 		var payload []byte
 		switch d.codec {
-		case codec.VP8:
+		case mrtp.VP8:
 			payload, err = d.vp8Depacketizer.Unmarshal(pkt.Payload)
 			if err != nil {
 				panic(err)
 			}
-		case codec.VP9:
+		case mrtp.VP9:
 			payload, err = d.vp9Depacketizer.Unmarshal(pkt.Payload)
 			if err != nil {
 				panic(err)
 			}
-		case codec.H264:
+		case mrtp.H264:
 			payload, err = d.h264Depacketizer.Unmarshal(pkt.Payload)
 			if err != nil {
 				panic(err)
 			}
-		case codec.FAKE:
+		case mrtp.Fake:
 			// just pass it through
 			payload = pkt.Payload
 		}
@@ -228,12 +228,12 @@ type RTPDepacketizer struct {
 	next         Sink
 }
 
-func NewRTPDepacketizer(timeout time.Duration, codec codec.CodecType) (*RTPDepacketizer, error) {
+func NewRTPDepacketizer(timeout time.Duration, c mrtp.Codec) (*RTPDepacketizer, error) {
 	adapter := &RTPDepacketizer{}
 
 	// forwards to next writer when frame is complete
 	var err error
-	adapter.depacketizer, err = newRTPDepacketizer(timeout, codec, func(frame []byte, pts int64) {
+	adapter.depacketizer, err = newRTPDepacketizer(timeout, c, func(frame []byte, pts int64) {
 		if adapter.next != nil {
 			// Forward the assembled frame to the next stage
 			if writeErr := adapter.next.Write(frame, Attributes{PTS: pts}); writeErr != nil {

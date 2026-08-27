@@ -288,6 +288,8 @@ func (s *StreamSource) SetBitrate(ratebps uint) error {
 	}
 }
 
-func (s *StreamSource) EncodingName() string {
-	return fmt.Sprintf("%v/%v", s.codec.MediaType(), s.codec.String())
+// MimeType returns the media type of the encoded stream in "<media>/<codec>"
+// form.
+func (s *StreamSource) MimeType() string {
+	return s.codec.MimeType()
 }

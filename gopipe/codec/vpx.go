@@ -41,13 +41,15 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"github.com/mengelbart/mrtp"
 )
 
-func getEncoderByName(codec CodecType) (*C.vpx_codec_iface_t, error) {
+func getEncoderByName(codec mrtp.Codec) (*C.vpx_codec_iface_t, error) {
 	switch codec {
-	case VP8:
+	case mrtp.VP8:
 		return C.vpx_codec_vp8_cx(), nil
-	case VP9:
+	case mrtp.VP9:
 		return C.vpx_codec_vp9_cx(), nil
 	}
 	return nil, fmt.Errorf("unknown codec: %v", codec)
@@ -64,7 +66,7 @@ type VPXEncoder struct {
 	cfg     *C.vpx_codec_enc_cfg_t
 
 	frame []byte
-	codec CodecType
+	codec mrtp.Codec
 
 	targetBitrate atomic.Uint64
 
@@ -72,7 +74,7 @@ type VPXEncoder struct {
 }
 
 type Config struct {
-	Codec       CodecType
+	Codec       mrtp.Codec
 	Width       uint
 	Height      uint
 	TimebaseNum int
@@ -126,7 +128,7 @@ func NewVPXEncoder(c Config) (*VPXEncoder, error) {
 	}
 
 	// VP9-specific settings
-	if c.Codec == VP9 {
+	if c.Codec == mrtp.VP9 {
 		// VP9E_SET_CPU_USED: Speed vs quality tradeoff
 		// higher values = faster encoding
 		if res := C.vp9_set_cpu_used(ctx, 5); res != C.VPX_CODEC_OK {

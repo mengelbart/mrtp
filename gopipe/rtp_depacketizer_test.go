@@ -12,24 +12,24 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/mengelbart/mrtp/gopipe/codec"
+	"github.com/mengelbart/mrtp"
 	"github.com/pion/rtp"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestDepacketizerVP8(t *testing.T) {
-	testDepacketizerWithCodec(t, codec.VP8)
+	testDepacketizerWithCodec(t, mrtp.VP8)
 }
 
 func TestDepacketizerVP9(t *testing.T) {
-	testDepacketizerWithCodec(t, codec.VP9)
+	testDepacketizerWithCodec(t, mrtp.VP9)
 }
 
 func TestDepacketizerH264(t *testing.T) {
-	testDepacketizerWithCodec(t, codec.H264)
+	testDepacketizerWithCodec(t, mrtp.H264)
 }
 
-func testDepacketizerWithCodec(t *testing.T, codec codec.CodecType) {
+func testDepacketizerWithCodec(t *testing.T, codec mrtp.Codec) {
 	// video file must exist
 	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
 		println("Video file not found. See simulation folder for more information.\n")
@@ -95,14 +95,14 @@ func testDepacketizerWithCodec(t *testing.T, codec codec.CodecType) {
 }
 
 func TestDepacketizerFrameIntegrityVP8(t *testing.T) {
-	testDepacketizerFrameIntegrityWithCodec(t, codec.VP8)
+	testDepacketizerFrameIntegrityWithCodec(t, mrtp.VP8)
 }
 
 func TestDepacketizerFrameIntegrityVP9(t *testing.T) {
-	testDepacketizerFrameIntegrityWithCodec(t, codec.VP9)
+	testDepacketizerFrameIntegrityWithCodec(t, mrtp.VP9)
 }
 
-func testDepacketizerFrameIntegrityWithCodec(t *testing.T, codec codec.CodecType) {
+func testDepacketizerFrameIntegrityWithCodec(t *testing.T, codec mrtp.Codec) {
 	// video file must exist
 	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
 		println("Video file not found. See simulation folder for more information.\n")
@@ -199,14 +199,14 @@ func testDepacketizerFrameIntegrityWithCodec(t *testing.T, codec codec.CodecType
 }
 
 func TestDepacketizerRTPdropsVP8(t *testing.T) {
-	testDepacketizerRTPdropsWithCodec(t, codec.VP8)
+	testDepacketizerRTPdropsWithCodec(t, mrtp.VP8)
 }
 
 func TestDepacketizerRTPdropsVP9(t *testing.T) {
-	testDepacketizerRTPdropsWithCodec(t, codec.VP9)
+	testDepacketizerRTPdropsWithCodec(t, mrtp.VP9)
 }
 
-func testDepacketizerRTPdropsWithCodec(t *testing.T, codec codec.CodecType) {
+func testDepacketizerRTPdropsWithCodec(t *testing.T, codec mrtp.Codec) {
 	// video file must exist
 	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
 		println("Video file not found. See simulation folder for more information.\n")

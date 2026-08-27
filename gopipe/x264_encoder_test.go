@@ -9,6 +9,7 @@ import (
 	"testing"
 	"testing/synctest"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/stretchr/testify/assert"
 )
@@ -32,7 +33,7 @@ func TestX264Encoder(t *testing.T) {
 		i := fileSrc.GetInfo()
 
 		conf := codec.Config{
-			Codec:      codec.H264,
+			Codec:      mrtp.H264,
 			Width:      i.Width,
 			Height:     i.Height,
 			TargetRate: 750_000,
