@@ -16,13 +16,13 @@ import (
 	"github.com/go-gst/go-gst/gst/app"
 )
 
-type RTPSourceBin interface {
+type rtpSourceBin interface {
 	Element() *gst.Element
 	SrcPad() (*gst.Pad, error)
 	MimeType() string
 }
 
-type RTPSinkBin interface {
+type rtpSinkBin interface {
 	Element() *gst.Element
 	SinkPad() (*gst.Pad, error)
 	ClockRate() int
@@ -33,7 +33,7 @@ type RTPSinkBin interface {
 
 type RTPBin struct {
 	transports map[int]*gst.Element
-	streams    map[int]RTPSinkBin
+	streams    map[int]rtpSinkBin
 
 	pipeline *gst.Pipeline
 	mainloop *glib.MainLoop
@@ -74,7 +74,7 @@ func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
 	}
 	r := &RTPBin{
 		transports:           map[int]*gst.Element{},
-		streams:              map[int]RTPSinkBin{},
+		streams:              map[int]rtpSinkBin{},
 		pipeline:             pipeline,
 		mainloop:             glib.NewMainLoop(glib.MainContextDefault(), false),
 		rtpbin:               rtpbin,
@@ -175,15 +175,16 @@ func (r *RTPBin) setupRTPPipeline() error {
 	return nil
 }
 
+// AddRTPTransportSink sends the RTP of stream id to wc.
 func (r *RTPBin) AddRTPTransportSink(id int, wc io.WriteCloser) error {
 	e, err := getAppSinkWithWriteCloser(wc)
 	if err != nil {
 		return err
 	}
-	return r.AddRTPTransportSinkGst(id, e)
+	return r.addRTPTransportSinkElement(id, e)
 }
 
-func (r *RTPBin) AddRTPTransportSinkGst(id int, sink *gst.Element) error {
+func (r *RTPBin) addRTPTransportSinkElement(id int, sink *gst.Element) error {
 	if _, ok := r.transports[id]; ok {
 		return errors.New("duplicate stream id")
 	}
@@ -191,7 +192,7 @@ func (r *RTPBin) AddRTPTransportSinkGst(id int, sink *gst.Element) error {
 	return nil
 }
 
-func (r *RTPBin) AddRTPSourceStreamGst(id int, src RTPSourceBin) error {
+func (r *RTPBin) addRTPSourceStream(id int, src rtpSourceBin) error {
 	if err := r.pipeline.Add(src.Element()); err != nil {
 		return err
 	}
@@ -279,10 +280,10 @@ func (r *RTPBin) SendRTCPForStream(id int, wc io.WriteCloser) error {
 	if err != nil {
 		return err
 	}
-	return r.SendRTCPForStreamGst(id, e)
+	return r.sendRTCPForStreamElement(id, e)
 }
 
-func (r *RTPBin) SendRTCPForStreamGst(id int, sink *gst.Element) error {
+func (r *RTPBin) sendRTCPForStreamElement(id int, sink *gst.Element) error {
 	sendRTCPSrcPad := r.rtpbin.GetRequestPad(fmt.Sprintf("send_rtcp_src_%v", id))
 	if sendRTCPSrcPad == nil {
 		return errors.New("failed to request RTCP src pad")
@@ -317,7 +318,7 @@ func (r *RTPBin) SendRTCPForStreamGst(id int, sink *gst.Element) error {
 	return nil
 }
 
-func (r *RTPBin) AddRTPSink(id int, sink RTPSinkBin) error {
+func (r *RTPBin) addRTPSinkStream(id int, sink rtpSinkBin) error {
 	if _, ok := r.streams[id]; ok {
 		return errors.New("duplicate stream id")
 	}
@@ -330,13 +331,13 @@ func (r *RTPBin) ReceiveRTPStreamFrom(id int, rc io.ReadCloser, screamCCFB bool)
 	if err != nil {
 		return err
 	}
-	return r.ReceiveRTPStreamFromGst(id, e, screamCCFB)
+	return r.receiveRTPStreamFromElement(id, e, screamCCFB)
 }
 
-func (r *RTPBin) ReceiveRTPStreamFromGst(id int, src *gst.Element, screamCCFB bool) error {
+func (r *RTPBin) receiveRTPStreamFromElement(id int, src *gst.Element, screamCCFB bool) error {
 	sink, ok := r.streams[id]
 	if !ok {
-		return errors.New("unknown stream, did you forget to call AddRTPSink first?")
+		return errors.New("unknown stream, did you forget to call addRTPSinkStream first?")
 	}
 	if err := r.pipeline.Add(src); err != nil {
 		return err
@@ -429,10 +430,10 @@ func (r *RTPBin) ReceiveRTCPFrom(rc io.ReadCloser) error {
 	if err != nil {
 		return err
 	}
-	return r.ReceiveRTCPFromGst(e)
+	return r.receiveRTCPFromElement(e)
 }
 
-func (r *RTPBin) ReceiveRTCPFromGst(src *gst.Element) error {
+func (r *RTPBin) receiveRTCPFromElement(src *gst.Element) error {
 	if err := r.pipeline.Add(src); err != nil {
 		return err
 	}
