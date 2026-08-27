@@ -175,9 +175,7 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {
 		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
-		fakeSource.SetTargetRate(uint64(ratebps))
-
-		return nil
+		return fakeSource.SetTargetBitrate(ratebps)
 	}
 
 	packetizer := &gopipe.RTPPacketizerFactory{

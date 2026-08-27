@@ -174,6 +174,21 @@ func EnableRTPSendTraceLogging() Option {
 	}
 }
 
+// videoRTCPFeedback is the feedback Pion registers with its own video codecs.
+// A codec added here gets the same, so that it is negotiated like any other.
+var videoRTCPFeedback = []webrtc.RTCPFeedback{
+	{Type: "goog-remb", Parameter: ""},
+	{Type: "ccm", Parameter: "fir"},
+	{Type: webrtc.TypeRTCPFBNACK, Parameter: ""},
+	{Type: webrtc.TypeRTCPFBNACK, Parameter: "pli"},
+}
+
+// AddExtraCodecs registers a video codec Pion does not know, so that it can be
+// negotiated and sent on a track.
+//
+// It has to be applied before the Enable* options: the feedback they register
+// is added to the codecs registered so far, so a codec added after them is
+// offered without congestion control feedback.
 func AddExtraCodecs(name string, clockRate uint32, payloadType uint8) Option {
 	return func(t *Transport) error {
 		return t.mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
@@ -182,7 +197,7 @@ func AddExtraCodecs(name string, clockRate uint32, payloadType uint8) Option {
 				ClockRate:    clockRate,
 				Channels:     0,
 				SDPFmtpLine:  "",
-				RTCPFeedback: []webrtc.RTCPFeedback{},
+				RTCPFeedback: videoRTCPFeedback,
 			},
 			PayloadType: webrtc.PayloadType(payloadType),
 		}, webrtc.RTPCodecTypeVideo)

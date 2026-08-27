@@ -34,6 +34,17 @@ func NewCodec(s string) (Codec, error) {
 	return H264, fmt.Errorf("unknown codec: %s", s)
 }
 
+// NewCodecFromMimeType parses a codec from a "<media>/<codec>" MIME type, as
+// negotiated by WebRTC. The media type is ignored, because every codec here is
+// a video codec.
+func NewCodecFromMimeType(mimeType string) (Codec, error) {
+	_, name, found := strings.Cut(mimeType, "/")
+	if !found {
+		return H264, fmt.Errorf("not a MIME type: %s", mimeType)
+	}
+	return NewCodec(name)
+}
+
 // String returns the canonical codec name, as used for RTP encoding names and
 // as the subtype of the media MIME type.
 func (c Codec) String() string {

@@ -192,9 +192,7 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {
 		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
-		encoder.SetTargetRate(uint64(ratebps))
-
-		return nil
+		return encoder.SetTargetBitrate(ratebps)
 	}
 
 	packetizer := &gopipe.RTPPacketizerFactory{

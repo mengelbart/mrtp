@@ -63,15 +63,17 @@ func (s *FakeSource) GetInfo() Info {
 	}
 }
 
-// setTargetBitrate sets the target bitrate to r bits per second.
-func (c *FakeSource) SetTargetRate(targetRate uint64) {
+// SetTargetBitrate implements media.Sender. It sets the target bitrate to
+// bitrate bits per second.
+func (c *FakeSource) SetTargetBitrate(bitrate uint) error {
 	// reduce target rate
-	decRate := uint64(0.9 * float64(targetRate))
+	decRate := uint64(0.9 * float64(bitrate))
 	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", decRate)
 
 	decRate = max(decRate, c.minTargetRateBps)
 	decRate = min(decRate, c.maxTargetRateBps)
 	c.targetBitrateBps.Store(decRate)
+	return nil
 }
 
 // Start begins the codec operation, generating frames at the configured frame rate.
