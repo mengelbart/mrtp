@@ -138,7 +138,7 @@ Usage:
 		webrtc.RegisterDefaultCodecs(),
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
 			if w.goPipe || w.fakeRtp {
-				codecType, err := codec.CodecTypeFromString(DefaultStreamSourceFactory.Codec())
+				codecType, err := codec.CodecTypeFromString(DefaultStreamSinkFactory.Codec())
 				if err != nil {
 					panic(err)
 				}
@@ -164,7 +164,7 @@ Usage:
 						panic(err)
 					}
 				} else {
-					fileSink, err := gopipe.NewY4MSink("./out.y4m", 30, 1) // TODO: this could read the fps from the y4m
+					fileSink, err := gopipe.NewY4MSink(DefaultStreamSinkFactory.SinkLocation(), 30, 1) // TODO: this could read the fps from the y4m
 					if err != nil {
 						panic(err)
 					}

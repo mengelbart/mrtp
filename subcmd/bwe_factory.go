@@ -68,7 +68,7 @@ type bweFlags struct {
 func (b *bweFlags) ConfigureFlags(fs *flag.FlagSet) {
 	fs.Uint64Var(&b.RefCongLevel, "nada-ref-cong-level", nada.XREF, "Reference congestion level in ms")
 	fs.Uint64Var(&b.QEPS, "nada-qeps", nada.QEPS, "Threshold for determining queuing delay buildup at receiver in ms")
-	fs.Float64Var(&b.MaxRampUpFactor, "nada-max-ramp-up-factor", nada.GAMMA_MAX, "Upper bound on rate increase ratio for accelerated ramp up")
+	fs.Float64Var(&b.MaxRampUpFactor, "nada-max-ramp-up-factor", 0.2, "Upper bound on rate increase ratio for accelerated ramp up")
 	fs.Float64Var(&b.MaxGradualUpdateFactor, "nada-max-gradual-update-factor", nada.GRAD_UPDATE_FACTOR, "Upper bound on rate increase ratio for gradual updates (decrease not limited)")
 	fs.Float64Var(&b.Kappa, "nada-kappa", nada.KAPPA, "Scaling parameter for gradual rate update calculation")
 	fs.Float64Var(&b.Eta, "nada-eta", nada.ETA, "Scaling parameter for gradual rate update calculation")
