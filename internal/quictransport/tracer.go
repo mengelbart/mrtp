@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	roqqlog "github.com/mengelbart/roq/qlog"
 	"github.com/quic-go/quic-go/qlog"
 	"github.com/quic-go/quic-go/qlogwriter"
 )
@@ -23,7 +24,9 @@ type tracerFactory struct {
 func (f *tracerFactory) newTracer(ctx context.Context, isClient bool, connID qlogwriter.ConnectionID) qlogwriter.Trace {
 	var qfs *qlogwriter.FileSeq
 	if len(f.qlogLabel) > 0 {
-		qfs = qlogTracer(isClient, connID, f.qlogLabel, nil)
+		// RoQ sessions on this connection pick the trace up through
+		// quic.Conn.QlogTrace and log their events into the same file.
+		qfs = qlogTracer(isClient, connID, f.qlogLabel, []string{qlog.EventSchema, roqqlog.EventSchema})
 	}
 	return &tracer{
 		qlogFileSeq: qfs,
@@ -67,10 +70,19 @@ func (t *tracer) AddProducer() qlogwriter.Recorder {
 	return &multiplexedRecorder{recorders: recorders}
 }
 
+// SupportsSchemas reports whether the qlog file this tracer writes declares
+// the given event schema. Producers of non-QUIC events, e.g. a roq session on
+// this connection, use it to decide whether to log into this trace.
 func (t *tracer) SupportsSchemas(schema string) bool {
-	return true
+	if t.qlogFileSeq == nil {
+		return false
+	}
+	return t.qlogFileSeq.SupportsSchemas(schema)
 }
 
+// record feeds the QUIC transport events the congestion control cares about
+// into the transport. Events of other schemas, e.g. the RoQ events of a
+// session on this connection, only go to the qlog file.
 func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
 	// TODO: Listen for relevant events
 	switch e := event.(type) {
@@ -100,6 +112,8 @@ func (t *tracer) record(ts time.Time, event qlogwriter.Event) {
 		t.transport.packetSent(ts, uint64(e.Header.PacketNumber), e.Raw.Length)
 	case qlog.PacketLost:
 		t.transport.packetLost(uint64(e.Header.PacketNumber))
+	default:
+		return
 	}
 	t.transport.updateCongestionControl()
 }

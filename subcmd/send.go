@@ -195,13 +195,12 @@ Flags:
 		}
 
 		// open roq connection
-		roqOpt := []roq.Option{roq.EnableRoqLogs("sender.roq.qlog")}
-		roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection(), roqOpt...)
+		roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection())
 		if err != nil {
 			return err
 		}
 		defer func() {
-			_ = roqTransport.CloseLogFile()
+			_ = roqTransport.Close()
 		}()
 
 		dcTransport, err := datachannels.New(quicConn.GetQuicConnection())

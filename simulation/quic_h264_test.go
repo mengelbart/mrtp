@@ -145,7 +145,7 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 	}
 	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
 		if flowID == uint64(rtpFlowID) || flowID == uint64(rtcpRecvFlowID) || flowID == uint64(rtcpSendFlowID) {
-			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQUICGoReceiveStream(rs))
 			return
 		}
 
@@ -165,7 +165,6 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 		time.Sleep(5 * time.Second)
 		rtpSink.Close()
 		roqTransport.Close()
-		roqTransport.CloseLogFile()
 	}()
 
 	appSink := gopipe.WriterFunc(func(b []byte, _ gopipe.Attributes) error {
@@ -227,7 +226,7 @@ func runH264Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.
 	}
 	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
 		if flowID == uint64(rtpFlowID) || flowID == uint64(rtcpRecvFlowID) || flowID == uint64(rtcpSendFlowID) {
-			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQuicGoReceiveStream(rs))
+			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQUICGoReceiveStream(rs))
 			return
 		}
 
@@ -270,7 +269,6 @@ func runH264Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.
 	wg.Go(func() {
 		// end receiver orderly on context cancellation
 		<-ctx.Done()
-		roqTransport.CloseLogFile()
 		roqTransport.Close()
 		rtpSrc.Close()
 		depacketizer.Close()
