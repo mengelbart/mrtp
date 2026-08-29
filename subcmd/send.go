@@ -203,7 +203,7 @@ Flags:
 			_ = roqTransport.Close()
 		}()
 
-		dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+		dcTransport, err := datachannels.New(ctx, quicConn.GetQuicConnection())
 		if err != nil {
 			return err
 		}
@@ -219,8 +219,8 @@ Flags:
 				return
 			}
 			if s.datachannel && dcTransport != nil {
-				if readErr := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
-					slog.Error("failed to read stream", "error", err)
+				if readErr := dcTransport.ReadStream(ctx, datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
+					slog.Error("failed to read stream", "error", readErr)
 				}
 				return
 			}
@@ -232,7 +232,7 @@ Flags:
 		// open dc connection
 		// var dataSource *data.DataBin
 		if s.datachannel {
-			dcSender, dcErr := dcTransport.NewDataChannelSender(uint64(s.dataChannelFlowID), 0, true)
+			dcSender, dcErr := dcTransport.NewDataChannelSender(ctx, uint64(s.dataChannelFlowID), 0, true)
 			if dcErr != nil {
 				return dcErr
 			}

@@ -170,7 +170,7 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 		return err
 	}
 
-	dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+	dcTransport, err := datachannels.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
 	}
@@ -187,8 +187,8 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 		}
 
 		if r.datachannel {
-			if readErr := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
-				slog.Error("failed to read stream", "error", err)
+			if readErr := dcTransport.ReadStream(ctx, datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
+				slog.Error("failed to read stream", "error", readErr)
 			}
 			return
 		}
@@ -202,7 +202,7 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 	if r.datachannel {
 		// setup data channel receiver
 		// quic transports has to be started before
-		dcReceiver, err := dcTransport.AddDataChannelReceiver(uint64(r.dataChannelFlowID))
+		dcReceiver, err := dcTransport.AddDataChannelReceiver(ctx, uint64(r.dataChannelFlowID))
 		if err != nil {
 			return err
 		}

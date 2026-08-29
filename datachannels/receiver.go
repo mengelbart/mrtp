@@ -2,6 +2,7 @@ package datachannels
 
 import (
 	"context"
+	"sync"
 
 	"github.com/mengelbart/quicdc"
 )
@@ -10,6 +11,8 @@ type Receiver struct {
 	dc *quicdc.DataChannel
 
 	rm *quicdc.DataChannelReadMessage
+
+	closeOnce sync.Once
 }
 
 func newReceiver(dc *quicdc.DataChannel) *Receiver {
@@ -31,6 +34,17 @@ func (r *Receiver) Read(buf []byte) (int, error) {
 	return r.rm.Read(buf)
 }
 
+// Close closes the pending message and the data channel. Repeated calls are
+// no-ops.
 func (r *Receiver) Close() error {
-	return r.rm.Close()
+	var err error
+	r.closeOnce.Do(func() {
+		if r.rm != nil {
+			err = r.rm.Close()
+		}
+		if closeErr := r.dc.Close(); err == nil {
+			err = closeErr
+		}
+	})
+	return err
 }

@@ -93,7 +93,7 @@ Flags:
 		return err
 	}
 
-	dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+	dcTransport, err := datachannels.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
 	}
@@ -103,15 +103,15 @@ Flags:
 		// no datagrams expected
 	}
 	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		err := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
-		if err != nil {
-			panic(fmt.Sprintf("forward stream with flowID: %v: %v", flowID, err))
+		if readErr := dcTransport.ReadStream(ctx, datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
+			slog.Error("failed to forward stream", "flowID", flowID, "error", readErr)
+			cancel()
 		}
 	}
 	quicConn.StartHandlers()
 
 	// blocks until we get OpenChannelOk
-	sender, err := dcTransport.NewDataChannelSender(uint64(s.dataChannelFlowID), 0, true)
+	sender, err := dcTransport.NewDataChannelSender(ctx, uint64(s.dataChannelFlowID), 0, true)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,8 @@ Flags:
 		return nil
 	}
 
-	select {}
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 func createDataSource(sender io.WriteCloser, sourceFile string, startDelaySeconds uint, rateLimited bool, chunkSource bool) (*data.DataBin, error) {

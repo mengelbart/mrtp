@@ -4,7 +4,6 @@ package simulation
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -81,7 +80,7 @@ func TestQUICdc(t *testing.T) {
 
 		// all connected, start sender and receiver
 		wg.Go(func() {
-			err = runDcReceiver(t, &wg, serverTransport)
+			err = runDcReceiver(t, ctx, &wg, serverTransport)
 			assert.NoError(t, err)
 		})
 
@@ -131,7 +130,7 @@ func createReceiver(ctx context.Context, conn net.PacketConn) (*quictransport.Tr
 }
 
 func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Transport) error {
-	dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+	dcTransport, err := datachannels.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
 	}
@@ -141,15 +140,14 @@ func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Tran
 		// no datagrams expected
 	}
 	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		err := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
-		if err != nil {
-			panic(fmt.Sprintf("forward stream with flowID: %v: %v", flowID, err))
+		if readErr := dcTransport.ReadStream(ctx, datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
+			slog.Error("failed to forward stream", "flowID", flowID, "error", readErr)
 		}
 	}
 	quicConn.StartHandlers()
 
 	// blocks until we get OpenChannelOk
-	sender, err := dcTransport.NewDataChannelSender(uint64(dataChannelFlowID), 0, true)
+	sender, err := dcTransport.NewDataChannelSender(ctx, uint64(dataChannelFlowID), 0, true)
 	assert.NoError(t, err)
 
 	opts := []data.DataBinOption{
@@ -172,8 +170,8 @@ func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Tran
 	return source.Run(ctx)
 }
 
-func runDcReceiver(t *testing.T, wg *sync.WaitGroup, quicConn *quictransport.Transport) error {
-	dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+func runDcReceiver(t *testing.T, ctx context.Context, wg *sync.WaitGroup, quicConn *quictransport.Transport) error {
+	dcTransport, err := datachannels.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
 	}
@@ -182,7 +180,7 @@ func runDcReceiver(t *testing.T, wg *sync.WaitGroup, quicConn *quictransport.Tra
 	quicConn.StartHandlers()
 
 	wg.Go(func() {
-		receiver, err := dcTransport.AddDataChannelReceiver(uint64(dataChannelFlowID))
+		receiver, err := dcTransport.AddDataChannelReceiver(ctx, uint64(dataChannelFlowID))
 		assert.NoError(t, err)
 		assert.NotNil(t, receiver)
 
@@ -200,9 +198,8 @@ func runDcReceiver(t *testing.T, wg *sync.WaitGroup, quicConn *quictransport.Tra
 	}
 
 	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		err := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
-		if err != nil {
-			panic(fmt.Sprintf("forward stream with flowID: %v: %v", flowID, err))
+		if readErr := dcTransport.ReadStream(ctx, datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
+			slog.Error("failed to forward stream", "flowID", flowID, "error", readErr)
 		}
 	}
 
