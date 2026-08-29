@@ -11,7 +11,7 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mengelbart/moqtransport v0.5.0
 	github.com/mengelbart/netsim v0.0.0-20260313101905-3800aab93f5e
-	github.com/mengelbart/quicdc v0.0.0-20260505120504-88f23d8ccc74
+	github.com/mengelbart/quicdc v0.1.0
 	github.com/mengelbart/roq v0.4.0
 	github.com/mengelbart/scream-go v0.5.0
 	github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241

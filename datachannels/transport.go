@@ -14,17 +14,39 @@ type Transport struct {
 
 	quicConn *quic.Conn
 
+	logger              *slog.Logger
+	maxReorderBufferLen int
+
 	mutex      sync.Mutex
 	dcChannels map[uint64]chan *quicdc.DataChannel
 }
 
 type Option func(*Transport) error
 
-func New(conn *quic.Conn, opts ...Option) (*Transport, error) {
+// SetLogger sets the logger the quicdc session and its data channels write to.
+func SetLogger(logger *slog.Logger) Option {
+	return func(t *Transport) error {
+		t.logger = logger
+		return nil
+	}
+}
+
+// SetMaxReorderBufferLen bounds how many out of order messages an ordered data
+// channel buffers, and sizes the window an unordered channel uses to detect
+// repeated sequence numbers.
+func SetMaxReorderBufferLen(n int) Option {
+	return func(t *Transport) error {
+		t.maxReorderBufferLen = n
+		return nil
+	}
+}
+
+func New(ctx context.Context, conn *quic.Conn, opts ...Option) (*Transport, error) {
 	t := &Transport{
 		dcChannels: make(map[uint64]chan *quicdc.DataChannel),
 		mutex:      sync.Mutex{},
 		quicConn:   conn,
+		logger:     slog.Default(),
 	}
 
 	for _, opt := range opts {
@@ -33,20 +55,40 @@ func New(conn *quic.Conn, opts ...Option) (*Transport, error) {
 		}
 	}
 
+	sessionOptions := []quicdc.Option{quicdc.WithLogger(t.logger)}
+	if t.maxReorderBufferLen > 0 {
+		sessionOptions = append(sessionOptions, quicdc.WithMaxReorderBufferLen(t.maxReorderBufferLen))
+	}
+
 	quicGoConn := NewQUICGoConnection(t.quicConn)
 
 	// create quicdc session
-	t.session = quicdc.NewSession(quicGoConn)
+	t.session = quicdc.NewSession(quicGoConn, sessionOptions...)
 
 	t.session.OnIncomingDataChannel(func(dc *quicdc.DataChannel) {
 		t.onIncomingDataChannel(dc)
 	})
 
+	go func() {
+		<-ctx.Done()
+		if err := t.Close(); err != nil {
+			t.logger.Error("failed to close data channel session", "error", err)
+		}
+	}()
+
 	return t, nil
 }
 
-func (t *Transport) NewDataChannelSender(channelID uint64, priority uint64, ordered bool) (*Sender, error) {
-	dc, err := t.session.OpenDataChannel(channelID, priority, ordered, 0, "", "")
+// Close closes all data channels of the session and the underlying QUIC
+// connection.
+func (t *Transport) Close() error {
+	return t.session.Close()
+}
+
+// NewDataChannelSender opens a data channel and blocks until the peer
+// acknowledges it or ctx is done.
+func (t *Transport) NewDataChannelSender(ctx context.Context, channelID uint64, priority uint64, ordered bool) (*Sender, error) {
+	dc, err := t.session.OpenDataChannel(ctx, channelID, priority, ordered, 0, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -54,29 +96,38 @@ func (t *Transport) NewDataChannelSender(channelID uint64, priority uint64, orde
 	return newSender(dc), nil
 }
 
-// ReadStream registers a QUIC stream to the quicdc session
+// ReadStream registers a QUIC stream to the quicdc session. The QUIC connection
+// is managed by the application, so quicdc's own accept loop does not run and
+// cannot tear the session down: any error ends the session here instead.
 func (t *Transport) ReadStream(ctx context.Context, stream quicdc.ReceiveStream, channelID uint64) error {
-	slog.Info("new dc stream", "streamID", stream.ID(), "flowID", channelID)
+	t.logger.Info("new dc stream", "streamID", stream.ID(), "flowID", channelID)
 
-	return t.session.ReadStream(ctx, stream, channelID)
+	if err := t.session.ReadStream(ctx, stream, channelID); err != nil {
+		if closeErr := t.Close(); closeErr != nil {
+			t.logger.Error("failed to close data channel session", "error", closeErr)
+		}
+		return err
+	}
+	return nil
 }
 
-func (t *Transport) AddDataChannelReceiver(channelID uint64) (*Receiver, error) {
-	var dcChan chan *quicdc.DataChannel
-
+// AddDataChannelReceiver waits for the peer to open the data channel with the
+// given ID. It returns when ctx is done.
+func (t *Transport) AddDataChannelReceiver(ctx context.Context, channelID uint64) (*Receiver, error) {
 	t.mutex.Lock()
-	if ch, ok := t.dcChannels[channelID]; ok {
-		dcChan = ch
-	} else {
-		dcChan = make(chan *quicdc.DataChannel)
+	dcChan, ok := t.dcChannels[channelID]
+	if !ok {
+		dcChan = make(chan *quicdc.DataChannel, 1)
 		t.dcChannels[channelID] = dcChan
 	}
 	t.mutex.Unlock()
 
-	// wating for data channel from callback
-	dc := <-dcChan
-
-	return newReceiver(dc), nil
+	select {
+	case dc := <-dcChan:
+		return newReceiver(dc), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // onIncomingDataChannel callback for new data channels
@@ -84,12 +135,15 @@ func (t *Transport) onIncomingDataChannel(dc *quicdc.DataChannel) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	if ch, ok := t.dcChannels[dc.ID()]; ok {
-		ch <- dc
-	} else {
-		// create new chan
-		dcChan := make(chan *quicdc.DataChannel)
+	dcChan, ok := t.dcChannels[dc.ID()]
+	if !ok {
+		dcChan = make(chan *quicdc.DataChannel, 1)
 		t.dcChannels[dc.ID()] = dcChan
-		dcChan <- dc
+	}
+
+	select {
+	case dcChan <- dc:
+	default:
+		t.logger.Warn("dropping data channel, ID is already in use", "flowID", dc.ID())
 	}
 }

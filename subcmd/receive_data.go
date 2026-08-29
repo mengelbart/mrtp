@@ -65,7 +65,7 @@ Flags:
 		return err
 	}
 
-	dcTransport, err := datachannels.New(quicConn.GetQuicConnection())
+	dcTransport, err := datachannels.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
 		return err
 	}
@@ -74,8 +74,8 @@ Flags:
 	quicConn.StartHandlers()
 
 	go func() {
-		if dataErr := r.startDataChannelReceiver(dcTransport); dataErr != nil {
-			slog.Error("failed to start data channel receiver", "error", err)
+		if dataErr := r.startDataChannelReceiver(ctx, dcTransport); dataErr != nil {
+			slog.Error("failed to start data channel receiver", "error", dataErr)
 		}
 	}()
 
@@ -85,30 +85,26 @@ Flags:
 	}
 
 	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		err := dcTransport.ReadStream(context.Background(), datachannels.NewQuicGoReceiveStream(rs), flowID)
-		if err != nil {
-			panic(fmt.Sprintf("forward stream with flowID: %v: %v", flowID, err))
+		if readErr := dcTransport.ReadStream(ctx, datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
+			slog.Error("failed to forward stream", "flowID", flowID, "error", readErr)
+			cancel()
 		}
 	}
 
-	select {}
+	<-ctx.Done()
+	return ctx.Err()
 }
 
-func (r *ReceiveData) startDataChannelReceiver(dcTransport *datachannels.Transport) error {
-	receiver, err := dcTransport.AddDataChannelReceiver(uint64(r.dataChannelFlowID))
+func (r *ReceiveData) startDataChannelReceiver(ctx context.Context, dcTransport *datachannels.Transport) error {
+	receiver, err := dcTransport.AddDataChannelReceiver(ctx, uint64(r.dataChannelFlowID))
 	if err != nil {
 		return err
 	}
 
 	sink, err := data.NewSink(receiver)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	err = sink.Run()
-	if err != nil {
-		panic(err)
-	}
-
-	return nil
+	return sink.Run()
 }
