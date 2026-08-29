@@ -5,6 +5,7 @@ import (
 
 	"github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/qlogwriter"
 )
 
 type QuicGoReceiveStream struct {
@@ -63,6 +64,8 @@ func (s *QuicGoSendStream) SetIncremental(i bool) {
 	s.stream.SetIncremental(i)
 }
 
+var _ roq.QlogConnection = &QUICGoConnection{}
+
 type QUICGoConnection struct {
 	conn *quic.Conn
 }
@@ -99,6 +102,10 @@ func (c *QUICGoConnection) AcceptUniStream(ctx context.Context) (roq.ReceiveStre
 	return &QuicGoReceiveStream{
 		stream: s,
 	}, nil
+}
+
+func (c *QUICGoConnection) QlogTrace() qlogwriter.Trace {
+	return c.conn.QlogTrace()
 }
 
 func (c *QUICGoConnection) CloseWithError(code uint64, reason string) error {

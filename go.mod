@@ -11,24 +11,23 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/mengelbart/moqtransport v0.5.0
 	github.com/mengelbart/netsim v0.0.0-20260313101905-3800aab93f5e
-	github.com/mengelbart/qlog v0.1.0
 	github.com/mengelbart/quicdc v0.0.0-20260505120504-88f23d8ccc74
-	github.com/mengelbart/roq v0.3.1-0.20260505095913-5c463299238d
+	github.com/mengelbart/roq v0.4.0
 	github.com/mengelbart/scream-go v0.5.0
 	github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241
 	github.com/pion/bwe v0.0.0-20260218143828-d4996fd96f96
-	github.com/pion/interceptor v0.1.44
+	github.com/pion/interceptor v0.1.47
 	github.com/pion/logging v0.2.5-0.20260131202752-62cbfd2e3ca2
-	github.com/pion/rtcp v1.2.16
-	github.com/pion/rtp v1.10.2
+	github.com/pion/rtcp v1.2.17
+	github.com/pion/rtp v1.10.5
 	github.com/pion/sdp/v2 v2.4.0
 	github.com/pion/transport/v4 v4.0.1
 	github.com/pion/webrtc/v4 v4.2.3
-	github.com/quic-go/quic-go v0.59.0
+	github.com/quic-go/quic-go v0.61.0
 	github.com/stretchr/testify v1.11.1
 	github.com/wlynxg/anet v0.0.5
-	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.43.0
+	golang.org/x/sync v0.22.0
+	golang.org/x/sys v0.47.0
 	golang.org/x/time v0.14.0
 )
 
@@ -41,6 +40,7 @@ require (
 	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
+	github.com/mengelbart/qlog v0.1.0 // indirect
 	github.com/pion/datachannel v1.6.0 // indirect
 	github.com/pion/dtls/v3 v3.0.10 // indirect
 	github.com/pion/ice/v4 v4.2.0 // indirect
@@ -54,15 +54,15 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c // indirect
-	golang.org/x/net v0.53.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/quic-go/quic-go v0.59.0 => github.com/mengelbart/quic-go v0.7.1-0.20260430134040-e17c3bf89daf
+replace github.com/quic-go/quic-go => github.com/mengelbart/quic-go v0.7.1-0.20260430134040-e17c3bf89daf
 
-replace github.com/pion/bwe v0.0.0-20260218143828-d4996fd96f96 => github.com/mengelbart/bwe v0.0.0-20260427191144-17142e7f1f92
+replace github.com/pion/bwe => github.com/mengelbart/bwe v0.0.0-20260427191144-17142e7f1f92
 
-replace github.com/pion/interceptor v0.1.44 => github.com/mengelbart/interceptor v0.0.0-20260603142058-a72def71ccfe
+replace github.com/pion/interceptor => github.com/mengelbart/interceptor v0.0.0-20260603142058-a72def71ccfe
