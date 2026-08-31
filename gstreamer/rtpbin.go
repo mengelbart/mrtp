@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-gst/go-glib/glib"
@@ -40,6 +41,11 @@ type RTPBin struct {
 	rtpbin   *gst.Element
 
 	rtcpFunnels map[int]*gst.Element
+
+	// readers are the transport sources feeding the appsrc elements. The
+	// pipeline owns their lifetime and closes them on teardown.
+	readers      []io.ReadCloser
+	closeReaders sync.Once
 
 	screamTx             *gst.Element
 	SetTargetRateEncoder func(ratebps uint) error
@@ -106,6 +112,13 @@ func (r *RTPBin) Run() error {
 // stop tears the pipeline down and makes a running Run return. It is safe to
 // call before Run, and more than once.
 func (r *RTPBin) stop() error {
+	r.closeReaders.Do(func() {
+		for _, rc := range r.readers {
+			if err := rc.Close(); err != nil {
+				slog.Error("failed to close transport reader", "error", err)
+			}
+		}
+	})
 	err := r.pipeline.BlockSetState(gst.StateNull)
 	r.mainloop.Quit()
 	return err
@@ -331,6 +344,7 @@ func (r *RTPBin) ReceiveRTPStreamFrom(id int, rc io.ReadCloser, screamCCFB bool)
 	if err != nil {
 		return err
 	}
+	r.readers = append(r.readers, rc)
 	return r.receiveRTPStreamFromElement(id, e, screamCCFB)
 }
 
@@ -430,6 +444,7 @@ func (r *RTPBin) ReceiveRTCPFrom(rc io.ReadCloser) error {
 	if err != nil {
 		return err
 	}
+	r.readers = append(r.readers, rc)
 	return r.receiveRTCPFromElement(e)
 }
 
@@ -523,6 +538,7 @@ func getAppSrcWithReadCloser(rc io.ReadCloser) (*gst.Element, error) {
 			buffer := make([]byte, length)
 			n, err := rc.Read(buffer)
 			if err != nil {
+				_ = rc.Close()
 				src.EndStream()
 				return
 			}
@@ -530,9 +546,6 @@ func getAppSrcWithReadCloser(rc io.ReadCloser) (*gst.Element, error) {
 			gstBuffer.Map(gst.MapWrite).WriteData(buffer[:n])
 			defer gstBuffer.Unmap()
 			src.PushBuffer(gstBuffer)
-		},
-		EnoughDataFunc: func(src *app.Source) {
-			_ = rc.Close()
 		},
 	})
 	return e, nil
