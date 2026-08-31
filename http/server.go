@@ -199,23 +199,33 @@ func (s *Server) ListenAndServe() error {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		if errors.Is(err, http.ErrServerClosed) {
-			h2Err := s.h2.Shutdown(ctx)
-			if err != nil {
-				err = errors.Join(err, h2Err)
+			if h1Err := s.h1.Shutdown(ctx); h1Err != nil {
+				err = errors.Join(err, h1Err)
 			}
-			h3Err := s.h3.Shutdown(ctx)
-			if err != nil {
-				err = errors.Join(err, h3Err)
+			if s.enableH2 {
+				if h2Err := s.h2.Shutdown(ctx); h2Err != nil {
+					err = errors.Join(err, h2Err)
+				}
+			}
+			if s.enableH3 {
+				if h3Err := s.h3.Shutdown(ctx); h3Err != nil {
+					err = errors.Join(err, h3Err)
+				}
 			}
 			return err
 		}
-		h2Err := s.h2.Close()
-		if err != nil {
-			err = errors.Join(err, h2Err)
+		if h1Err := s.h1.Close(); h1Err != nil {
+			err = errors.Join(err, h1Err)
 		}
-		h3Err := s.h3.Close()
-		if err != nil {
-			err = errors.Join(err, h3Err)
+		if s.enableH2 {
+			if h2Err := s.h2.Close(); h2Err != nil {
+				err = errors.Join(err, h2Err)
+			}
+		}
+		if s.enableH3 {
+			if h3Err := s.h3.Close(); h3Err != nil {
+				err = errors.Join(err, h3Err)
+			}
 		}
 		return err
 	})

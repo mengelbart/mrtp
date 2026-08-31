@@ -104,7 +104,7 @@ func (d *DataBin) startFileSource(ctx context.Context) error {
 	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
-			slog.Error("failed to close file", "error", err)
+			slog.Error("failed to close file", "error", closeErr)
 		}
 	}()
 
@@ -149,7 +149,7 @@ func (d *DataBin) startFileSource(ctx context.Context) error {
 			_, writeErr := d.wc.Write(buf[:n])
 			if writeErr != nil {
 				if closeErr := d.wc.Close(); closeErr != nil {
-					slog.Error("failed to close writer", "error", err)
+					slog.Error("failed to close writer", "error", closeErr)
 				}
 				d.running.Store(false)
 				return fmt.Errorf("failed to write to sink: %w", writeErr)
@@ -259,7 +259,7 @@ func (d *DataBin) startRandomSource(ctx context.Context) error {
 		case <-ctx.Done():
 			d.running.Store(false)
 			if closeErr := d.wc.Close(); closeErr != nil {
-				slog.Error("failed to close writer", "error", err)
+				slog.Error("failed to close writer", "error", closeErr)
 			}
 			return ctx.Err()
 		default:
@@ -270,7 +270,7 @@ func (d *DataBin) startRandomSource(ctx context.Context) error {
 			if err != nil {
 				d.running.Store(false)
 				if closeErr := d.wc.Close(); closeErr != nil {
-					slog.Error("failed to close writer", "error", err)
+					slog.Error("failed to close writer", "error", closeErr)
 				}
 				return err
 			}
