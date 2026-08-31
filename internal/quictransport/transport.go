@@ -336,7 +336,7 @@ func (t *Transport) updateBWE() uint {
 	if time.Since(t.lastBWEUpdate) < 20*time.Millisecond {
 		return 0
 	}
-	idx := 0
+	idx := len(t.packetFeedback)
 	for i, feedback := range t.packetFeedback {
 		if feedback.seqNr > t.highestAcked {
 			idx = i
