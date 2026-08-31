@@ -1,6 +1,7 @@
 package webrtc
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/pion/webrtc/v4"
@@ -17,8 +18,8 @@ type DCsender struct {
 	sendMore chan struct{}
 }
 
-// newDCsender blocks until the datachannel is open
-func newDCsender(dc *webrtc.DataChannel) *DCsender {
+// newDCsender blocks until the datachannel is open or ctx is done
+func newDCsender(ctx context.Context, dc *webrtc.DataChannel) (*DCsender, error) {
 	s := &DCsender{
 		dc:       dc,
 		dataChan: make(chan []byte),
@@ -42,9 +43,12 @@ func newDCsender(dc *webrtc.DataChannel) *DCsender {
 		}
 	})
 
-	<-connected
-
-	return s
+	select {
+	case <-connected:
+		return s, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (s *DCsender) sendLoop() error {

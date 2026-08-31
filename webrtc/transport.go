@@ -1,6 +1,7 @@
 package webrtc
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -288,23 +289,35 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 	return t, nil
 }
 
-func (t *Transport) NewDataChannelSender(label string) *DCsender {
+func (t *Transport) NewDataChannelSender(ctx context.Context, label string) (*DCsender, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	dc, err := t.pc.CreateDataChannel(label, nil)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-
-	return newDCsender(dc)
+	return newDCsender(ctx, dc)
 }
 
-func (t *Transport) NewDataChannelReceiver() *DCreceiver {
-	dcChan := make(chan *webrtc.DataChannel)
+// NewDataChannelReceiver blocks until the peer opens a data channel or ctx is
+// done.
+func (t *Transport) NewDataChannelReceiver(ctx context.Context) (*DCreceiver, error) {
+	// Buffered so the callback never blocks if ctx is done first.
+	dcChan := make(chan *webrtc.DataChannel, 1)
 	t.pc.OnDataChannel(func(dataChannel *webrtc.DataChannel) {
-		dcChan <- dataChannel
+		select {
+		case dcChan <- dataChannel:
+		default:
+		}
 	})
 
-	dc := <-dcChan
-	return newReceiver(dc)
+	select {
+	case dc := <-dcChan:
+		return newReceiver(dc), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (t *Transport) onNegotiationNeeded() {
