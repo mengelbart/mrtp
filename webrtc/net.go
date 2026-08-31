@@ -23,6 +23,13 @@ func SetRecvBufferSize(size int) NetOption {
 	}
 }
 
+func TrackECN(enabled bool) NetOption {
+	return func(n *Net) error {
+		n.trackECN = enabled
+		return nil
+	}
+}
+
 type ecnMapKey struct {
 	SSRC           uint32
 	SequenceNumber uint16
@@ -33,6 +40,7 @@ type Net struct {
 
 	setRecvBufferSize bool
 	recvBufferSize    int
+	trackECN          bool
 	ecnMap            *sync.Map
 }
 
@@ -113,7 +121,7 @@ func (n *Net) DialUDP(network string, laddr *net.UDPAddr, raddr *net.UDPAddr) (t
 			return nil, err
 		}
 	}
-	return newUDPConn(conn, n.setECN)
+	return newUDPConn(conn, n.ecnSetter())
 }
 
 // InterfaceByIndex implements transport.Net.
@@ -166,7 +174,7 @@ func (n *Net) ListenUDP(network string, locAddr *net.UDPAddr) (transport.UDPConn
 			return nil, err
 		}
 	}
-	return newUDPConn(conn, n.setECN)
+	return newUDPConn(conn, n.ecnSetter())
 }
 
 // ResolveIPAddr implements transport.Net.
@@ -184,12 +192,19 @@ func (n *Net) ResolveUDPAddr(network string, address string) (*net.UDPAddr, erro
 	return net.ResolveUDPAddr(network, address)
 }
 
+func (n *Net) ecnSetter() func(ssrc uint32, sequenceNumber uint16, ecn uint8) {
+	if !n.trackECN {
+		return nil
+	}
+	return n.setECN
+}
+
 func (n *Net) setECN(ssrc uint32, sequenceNumber uint16, ecn uint8) {
 	n.ecnMap.Store(ecnMapKey{SSRC: ssrc, SequenceNumber: sequenceNumber}, ecn)
 }
 
 func (n *Net) getECN(ssrc uint32, sequenceNumber uint16) uint8 {
-	val, ok := n.ecnMap.Load(ecnMapKey{SSRC: ssrc, SequenceNumber: sequenceNumber})
+	val, ok := n.ecnMap.LoadAndDelete(ecnMapKey{SSRC: ssrc, SequenceNumber: sequenceNumber})
 	if !ok {
 		slog.Info("ecn not found", "ssrc", ssrc, "sequenceNumber", sequenceNumber)
 		return 0

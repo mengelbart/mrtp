@@ -132,7 +132,10 @@ Usage:
 
 	signaler := webrtc.NewHTTPClientSignaler(fmt.Sprintf("http://%v:%v", w.remoteAddr, w.remotePort))
 
-	stdnet, err := webrtc.NewNet(webrtc.SetRecvBufferSize(10_000_000)) // 10MB
+	stdnet, err := webrtc.NewNet(
+		webrtc.SetRecvBufferSize(10_000_000), // 10MB
+		webrtc.TrackECN(w.pionCCFB),
+	)
 	if err != nil {
 		return err
 	}
