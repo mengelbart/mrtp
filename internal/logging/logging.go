@@ -18,7 +18,7 @@ const (
 	JSONFormat Format = "json"
 )
 
-func Configure(format Format, level slog.Level, writer io.Writer) {
+func Configure(format Format, level slog.Level, writer io.Writer) error {
 	if writer == nil {
 		writer = os.Stderr
 	}
@@ -33,8 +33,9 @@ func Configure(format Format, level slog.Level, writer io.Writer) {
 	case TextFormat:
 		slog.SetDefault(slog.New(slog.NewTextHandler(writer, ho)))
 	default:
-		panic(fmt.Sprintf("unexpected logging.format: %#v", format))
+		return fmt.Errorf("unknown log format %q, expected %q or %q", string(format), TextFormat, JSONFormat)
 	}
+	return nil
 }
 
 type RTPLogger struct {

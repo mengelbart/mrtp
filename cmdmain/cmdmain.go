@@ -92,7 +92,11 @@ func Main() {
 		}()
 		lf = f
 	}
-	logging.Configure(logging.Format(logFormat), slog.Level(logLevel), lf)
+	if err := logging.Configure(logging.Format(logFormat), slog.Level(logLevel), lf); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		flag.Usage()
+		os.Exit(1)
+	}
 
 	subCmd, ok := subCmds[flag.Arg(0)]
 	if !ok {
