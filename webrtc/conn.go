@@ -82,7 +82,7 @@ func (c *udpConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	if err != nil {
 		return n, addr, err
 	}
-	if !matchSRTP(p) {
+	if c.setECN == nil || !matchSRTP(p) {
 		return n, addr, nil
 	}
 
