@@ -9,11 +9,18 @@ import (
 	"log/slog"
 	"math"
 	"os"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
+)
+
+const (
+	chunkCount     = 15
+	chunkInterval  = 5 * time.Second
+	chunkWriteSize = 1000
+	chunkWrites    = 100
+	chunkSize      = chunkWriteSize * chunkWrites
 )
 
 type DataBinOption func(*DataBin) error
@@ -166,77 +173,86 @@ func (d *DataBin) startFileSource(ctx context.Context) error {
 	}
 }
 
+// startChunkSource emulates an application periodically sending small files. A chunk is
+// queued every chunkInterval regardless of how far the previous one got, so a slow link
+// builds a backlog instead of skipping chunks. Chunks are written back to back by this
+// goroutine, which is the only writer to d.wc, so the framing the sink reads stays intact.
 func (d *DataBin) startChunkSource(ctx context.Context) error {
 	if d.wc == nil {
 		return fmt.Errorf("data sink not set")
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(15)
+	queue := make(chan int, chunkCount)
+	go func() {
+		defer close(queue)
 
-	for i := range 15 {
-		select {
-		case <-ctx.Done():
+		ticker := time.NewTicker(chunkInterval)
+		defer ticker.Stop()
+
+		for i := range chunkCount {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			queue <- i
+		}
+	}()
+
+	for chunkNum := range queue {
+		if err := d.writeChunk(ctx, chunkNum); err != nil {
 			d.running.Store(false)
 			if closeErr := d.wc.Close(); closeErr != nil {
 				slog.Error("failed to close writer", "error", closeErr)
 			}
-			return ctx.Err()
-		case <-time.After(5 * time.Second):
+			return err
 		}
-
-		go func(chunkNum int) {
-			defer wg.Done()
-			d.running.Store(true)
-			defer d.running.Store(false)
-
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			sizeBuf := make([]byte, 8)
-			binary.BigEndian.PutUint64(sizeBuf, uint64(100*1000))
-			_, err := d.wc.Write(sizeBuf)
-			if err != nil {
-				slog.Error("DataSrc failed to write size", "error", err, "chunk-number", chunkNum)
-				return
-			}
-
-			if d.rateLimiter != nil {
-				err := d.rateLimiter.WaitN(ctx, 1000)
-				if err != nil {
-					return
-				}
-			}
-
-			buf := make([]byte, 1000)
-
-			slog.Info("DataSrc Chunk started", "chunk-number", chunkNum)
-
-			// webrtc dc breaks if we push everything at once
-			for range 100 {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-
-				_, writeErr := d.wc.Write(buf)
-				if writeErr != nil {
-					slog.Error("DataSrc failed to write to sink", "error", writeErr, "chunk-number", chunkNum)
-					return
-				}
-			}
-			slog.Info("DataSrc Chunk finised", "chunk-number", chunkNum)
-		}(i)
 	}
 
-	// Wait for all goroutines to complete before closing
-	wg.Wait()
 	d.running.Store(false)
+	if err := ctx.Err(); err != nil {
+		if closeErr := d.wc.Close(); closeErr != nil {
+			slog.Error("failed to close writer", "error", closeErr)
+		}
+		return err
+	}
 	return d.wc.Close()
+}
+
+func (d *DataBin) writeChunk(ctx context.Context, chunkNum int) error {
+	d.running.Store(true)
+	defer d.running.Store(false)
+
+	sizeBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(sizeBuf, uint64(chunkSize))
+	if _, err := d.wc.Write(sizeBuf); err != nil {
+		return fmt.Errorf("failed to write chunk size: %w", err)
+	}
+
+	slog.Info("DataSrc Chunk started", "chunk-number", chunkNum)
+
+	buf := make([]byte, chunkWriteSize)
+
+	// webrtc dc breaks if we push everything at once
+	for range chunkWrites {
+		if d.rateLimiter != nil {
+			if err := d.rateLimiter.WaitN(ctx, chunkWriteSize); err != nil {
+				return err
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if _, err := d.wc.Write(buf); err != nil {
+			return fmt.Errorf("failed to write to sink: %w", err)
+		}
+	}
+	slog.Info("DataSrc Chunk finished", "chunk-number", chunkNum)
+	return nil
 }
 
 func (d *DataBin) startRandomSource(ctx context.Context) error {
@@ -286,10 +302,6 @@ func (d *DataBin) startRandomSource(ctx context.Context) error {
 }
 
 func (d *DataBin) Run(ctx context.Context) error {
-	if d.useChunkSrc {
-		return d.startChunkSource(ctx)
-	}
-
 	if d.startDelay > 0 {
 		slog.Info("DataBin start delay", "duration", d.startDelay)
 		select {
@@ -297,6 +309,10 @@ func (d *DataBin) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-time.After(d.startDelay):
 		}
+	}
+
+	if d.useChunkSrc {
+		return d.startChunkSource(ctx)
 	}
 	d.running.Store(true)
 
