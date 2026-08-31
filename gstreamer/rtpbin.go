@@ -544,7 +544,7 @@ func getAppSrcWithReadCloser(rc io.ReadCloser) (*gst.Element, error) {
 			}
 			gstBuffer := gst.NewBufferWithSize(int64(n))
 			gstBuffer.Map(gst.MapWrite).WriteData(buffer[:n])
-			defer gstBuffer.Unmap()
+			gstBuffer.Unmap()
 			src.PushBuffer(gstBuffer)
 		},
 	})
