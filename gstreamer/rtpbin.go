@@ -420,7 +420,7 @@ func (r *RTPBin) receiveRTPStreamFromElement(id int, src *gst.Element, screamCCF
 	recvRTPSinkPad := r.rtpbin.GetRequestPad(fmt.Sprintf("recv_rtp_sink_%v", id))
 	sourcePad := capsfilter.GetStaticPad("src")
 	if ret := sourcePad.Link(recvRTPSinkPad); ret != gst.PadLinkOK {
-		return fmt.Errorf("failed to link transport source to recvRTPSinkPad: %v", err)
+		return fmt.Errorf("failed to link transport source to recvRTPSinkPad: %v", ret)
 	}
 	if !src.SyncStateWithParent() {
 		return errors.New("failed to synchronize src to pipeline state")
