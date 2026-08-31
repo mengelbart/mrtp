@@ -51,7 +51,9 @@ func configureLogging(t *testing.T) *os.File {
 		os.Exit(1)
 	}
 
-	logging.Configure(logging.Format(logging.JSONFormat), slog.Level(0), f)
+	if err := logging.Configure(logging.JSONFormat, slog.Level(0), f); err != nil {
+		t.Fatal(err)
+	}
 	return f
 }
 
