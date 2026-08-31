@@ -2,6 +2,7 @@ package webrtc
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"time"
 
@@ -20,15 +21,21 @@ func newUDPConn(conn *net.UDPConn, setECN func(ssrc uint32, sequenceNumber uint1
 		return nil, fmt.Errorf("datastream: failed to get raw connection: %w", err)
 	}
 
-	var errECNIP error
 	if err := rawConn.Control(func(fd uintptr) {
-		errECNIP = unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_RECVTOS, 1)
-		errECNIP = unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_RECVTCLASS, 1)
-
-		_ = unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_TOS, 0x02)
-		_ = unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_TCLASS, 0x02)
+		if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_RECVTOS, 1); err != nil {
+			slog.Warn("failed to set IP_RECVTOS", "error", err)
+		}
+		if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_RECVTCLASS, 1); err != nil {
+			slog.Warn("failed to set IPV6_RECVTCLASS", "error", err)
+		}
+		if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_TOS, 0x02); err != nil {
+			slog.Warn("failed to set IP_TOS", "error", err)
+		}
+		if err := unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_TCLASS, 0x02); err != nil {
+			slog.Warn("failed to set IPV6_TCLASS", "error", err)
+		}
 	}); err != nil {
-		return nil, fmt.Errorf("datastream: failed to set socket options: %w", errECNIP)
+		return nil, fmt.Errorf("datastream: failed to set socket options: %w", err)
 	}
 
 	return &udpConn{
