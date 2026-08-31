@@ -2,7 +2,6 @@ package subcmd
 
 import (
 	"flag"
-	"time"
 
 	"github.com/Willi-42/go-nada/nada"
 	"github.com/mengelbart/mrtp"
@@ -35,7 +34,7 @@ var BWEFactories = map[string]BWEFactory{
 			MinRate:                  uint64(config.MinTargetRate),
 			MaxRate:                  uint64(config.MaxTargetRate),
 			StartRate:                uint64(config.InitTargetRate),
-			FeedbackDelta:            uint64(20 / time.Millisecond), // convert to ms
+			FeedbackDelta:            uint64(20),
 			DeactivateQDelayWrapping: true,
 
 			RefCongLevel:           DefaultBweFlags.RefCongLevel,
