@@ -198,7 +198,9 @@ func (t *Transport) receiveUniStreams() {
 				// Stream was canceled; nothing to do
 				continue
 			}
-			panic(err)
+			slog.Error("failed to read flow ID, dropping stream", "error", err)
+			rs.CancelRead(0)
+			continue
 		}
 
 		go func() {
@@ -220,7 +222,8 @@ func (t *Transport) receiveDatagrams() {
 		// read flowID
 		flowID, _, err := quicvarint.Parse(dgram)
 		if err != nil {
-			panic(err)
+			slog.Error("failed to parse datagram flow ID, dropping datagram", "error", err)
+			continue
 		}
 
 		if t.HandleDatagram != nil {

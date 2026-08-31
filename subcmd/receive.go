@@ -193,7 +193,8 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 			return
 		}
 
-		panic(fmt.Sprint("unknown stream flowID ", flowID))
+		slog.Error("unknown stream flow ID, closing stream", "flow-id", flowID)
+		rs.CancelRead(0)
 	}
 
 	// start handler
