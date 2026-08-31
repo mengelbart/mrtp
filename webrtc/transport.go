@@ -278,9 +278,7 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 	pc.OnICECandidate(t.onICECandidate)
 	pc.OnTrack(t.onTrack)
 	pc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
-		t.logger.Info("connection state changed", "new_state", pcs)
-	})
-	pc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
+		t.logger.Debug("connection state changed", "new_state", pcs)
 		if pcs == webrtc.PeerConnectionStateConnected {
 			t.onConnected()
 		}
