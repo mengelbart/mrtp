@@ -89,12 +89,8 @@ func (t *Transport) handleSubscription(w *moqtransport.SubscribeResponseWriter, 
 		return
 	}
 	track := ns.findTrack(m.Track)
-	if t == nil {
+	if track == nil {
 		_ = w.Reject(moqtransport.ErrorCodeSubscribeTrackDoesNotExist, "track not found")
-		return
-	}
-	if !ok {
-		_ = w.Reject(moqtransport.ErrorCodeSubscribeInternal, "failed to prepare publisher")
 		return
 	}
 	track.subscribe(w)
