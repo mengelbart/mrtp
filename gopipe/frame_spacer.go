@@ -68,11 +68,11 @@ func (p *FrameSpacer) run() {
 			spaceTime := time.Duration(space) * time.Microsecond
 			slog.Info("pacing frame", "count", len(pkts.payloads), "space-time", spaceTime, "queue", len(p.pktChan))
 			ticker := time.NewTicker(spaceTime)
-			defer ticker.Stop()
 			var next []byte
 			for range ticker.C {
 				select {
 				case <-p.ctx.Done():
+					ticker.Stop()
 					return
 				default:
 				}
@@ -85,6 +85,7 @@ func (p *FrameSpacer) run() {
 					slog.Error("failed to send packet", "error", err)
 				}
 			}
+			ticker.Stop()
 		}
 	}
 }
