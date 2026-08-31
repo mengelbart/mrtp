@@ -189,7 +189,7 @@ func (s *ScreamInterceptor) loop() {
 		}
 		now := time.Now()
 		next := s.transmit(now)
-		until := time.Until(next)
+		until := max(time.Until(next), time.Millisecond)
 		timer.Reset(until)
 	}
 }
@@ -260,7 +260,7 @@ func (s *ScreamInterceptor) transmit(now time.Time) time.Time {
 		}
 	}
 	if next.IsZero() {
-		next = now
+		next = now.Add(time.Second)
 	}
 	return next
 }
