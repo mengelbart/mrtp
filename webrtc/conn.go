@@ -104,6 +104,12 @@ func (c *udpConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 				break
 			}
 		}
+		if msg.Header.Level == unix.IPPROTO_IPV6 && msg.Header.Type == unix.IPV6_TCLASS {
+			if len(msg.Data) >= 1 {
+				tos = msg.Data[0]
+				break
+			}
+		}
 	}
 	ecn := uint8(tos & 0x03)
 	ssrc, sn, err := parseRTPHeader(p[:n])
