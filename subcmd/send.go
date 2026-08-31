@@ -225,7 +225,8 @@ Flags:
 				return
 			}
 
-			panic(fmt.Sprint("unknown stream flowID ", flowID))
+			slog.Error("unknown stream flow ID, closing stream", "flow-id", flowID)
+			rs.CancelRead(0)
 		}
 		quicConn.StartHandlers()
 

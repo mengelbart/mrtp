@@ -3,6 +3,7 @@ package moq
 import (
 	"context"
 	"io"
+	"log/slog"
 	"sync"
 
 	"github.com/mengelbart/moqtransport"
@@ -14,7 +15,7 @@ type remoteTrack struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	reader io.Reader
-	writer io.Writer
+	writer *io.PipeWriter
 }
 
 func newRemoteTrack(track *moqtransport.RemoteTrack) (*remoteTrack, error) {
@@ -40,13 +41,15 @@ func (t *remoteTrack) run() {
 	for {
 		o, err := t.track.ReadObject(t.ctx)
 		if err != nil {
-			// TODO: Handle different error cases
-			panic(err)
+			slog.Info("remote track read stopped", "error", err)
+			t.writer.CloseWithError(err)
+			return
 		}
 		// TODO: Implement reorder buffer
 		if _, err = t.writer.Write(o.Payload); err != nil {
-			// TODO: How to handle?
-			panic(err)
+			slog.Error("failed to write remote track payload", "error", err)
+			t.writer.CloseWithError(err)
+			return
 		}
 	}
 }

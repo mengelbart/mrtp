@@ -188,22 +188,24 @@ func (d *rtpDepacketizer) processPackets() {
 		switch d.codec {
 		case mrtp.VP8:
 			payload, err = d.vp8Depacketizer.Unmarshal(pkt.Payload)
-			if err != nil {
-				panic(err)
-			}
 		case mrtp.VP9:
 			payload, err = d.vp9Depacketizer.Unmarshal(pkt.Payload)
-			if err != nil {
-				panic(err)
-			}
 		case mrtp.H264:
 			payload, err = d.h264Depacketizer.Unmarshal(pkt.Payload)
-			if err != nil {
-				panic(err)
-			}
 		case mrtp.Fake:
 			// just pass it through
 			payload = pkt.Payload
+		}
+		if err != nil {
+			// corrupt payload, drop the frame it belongs to
+			slog.Warn("failed to depacketize payload, dropping frame",
+				"codec", d.codec.String(),
+				"seqnr", pkt.SequenceNumber,
+				"error", err,
+			)
+			d.frameBuffer = d.frameBuffer[:0]
+			droppingFrame = true
+			continue
 		}
 
 		d.frameBuffer = append(d.frameBuffer, payload...)
