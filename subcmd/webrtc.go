@@ -37,6 +37,10 @@ var WebRTCExtraCodecs = []WebRTCCodecParameters{}
 // fakePayloadType is the payload type the FAKE codec is registered under.
 const fakePayloadType = 118
 
+// webrtcSetupTimeout bounds waiting for signalling to complete and for the peer
+// to open a data channel.
+const webrtcSetupTimeout = 30 * time.Second
+
 type WebRTC struct {
 	localAddr        string
 	remoteAddr       string
@@ -225,7 +229,10 @@ Usage:
 		webrtcOptions = append(webrtcOptions, webrtc.EnableSCReAM(initTargetRate, minTargetRate, int(w.maxTargetRate)))
 	}
 
-	connectedCtx, cancelConnectedCtx := context.WithCancel(context.Background())
+	setupCtx, cancelSetupCtx := context.WithTimeout(context.Background(), webrtcSetupTimeout)
+	defer cancelSetupCtx()
+	connectedCtx, cancelConnectedCtx := context.WithCancel(setupCtx)
+	defer cancelConnectedCtx()
 	webrtcOptions = append(webrtcOptions, webrtc.OnConnected(func() {
 		cancelConnectedCtx()
 	}))
@@ -263,7 +270,11 @@ Usage:
 	}()
 
 	if w.offer && w.datachannel {
-		dcSender := transport.NewDataChannelSender("data")
+		var dcSender *webrtc.DCsender
+		dcSender, err = transport.NewDataChannelSender(setupCtx, "data")
+		if err != nil {
+			return err
+		}
 		var dataSource *data.DataBin
 		dataSource, err = createDataSource(dcSender, w.dcSourceFile, w.dcStartDelay, false, w.dcChunks)
 		if err != nil {
@@ -275,7 +286,11 @@ Usage:
 			}
 		}()
 	} else if w.datachannel {
-		dcReceiver := transport.NewDataChannelReceiver()
+		var dcReceiver *webrtc.DCreceiver
+		dcReceiver, err = transport.NewDataChannelReceiver(setupCtx)
+		if err != nil {
+			return err
+		}
 		var dataSink *data.DataSink
 		dataSink, err = data.NewSink(dcReceiver)
 		if err != nil {
@@ -336,6 +351,9 @@ Usage:
 	}
 
 	<-connectedCtx.Done()
+	if err := setupCtx.Err(); err != nil {
+		return fmt.Errorf("peer connection not established within %v: %w", webrtcSetupTimeout, err)
+	}
 	// TODO(ME): Remove this sleep. Without it, we seem too be sending to early
 	// and scream will build up a queue and consequently drop some packets from
 	// the queue, which is likely to be the key frame. We then have to wait for
