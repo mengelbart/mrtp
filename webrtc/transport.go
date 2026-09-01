@@ -454,7 +454,10 @@ func (t *Transport) Write(pkt []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return len(pkt), t.pc.WriteRTCP(pkts)
+	if err := t.pc.WriteRTCP(pkts); err != nil {
+		return 0, err
+	}
+	return len(pkt), nil
 }
 
 func (t *Transport) Close() error {
