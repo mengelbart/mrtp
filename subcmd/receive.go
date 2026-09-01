@@ -118,7 +118,7 @@ Flags:
 		r.rtcpSendPort,
 		r.udpPort,
 	} {
-		if p > math.MaxUint32 {
+		if p > math.MaxUint16 {
 			return fmt.Errorf("invalid port number: %v", p)
 		}
 	}
