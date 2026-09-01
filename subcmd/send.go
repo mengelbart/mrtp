@@ -166,7 +166,6 @@ Flags:
 			quictransport.WithRole(quictransport.Role(s.roqServer)),
 			quictransport.SetLocalAddress(s.localAddr, s.udpPort),
 			quictransport.SetRemoteAddress(s.remoteAddr, s.udpPort),
-			quictransport.PacingFactor(s.pacingFactor),
 			quictransport.SetQLOGLabel("sender"),
 		}
 
@@ -319,13 +318,4 @@ func (s *Send) setupPlainRTP(pipeline media.Pipeline, config media.SenderConfig)
 	config.RTP = rtpSink
 	config.RTCP = media.RTCPFlow{Send: rtcpSink, Recv: rtcpSrc}
 	return pipeline.AddSender(config)
-}
-
-func (s *Send) pacingFactor() float64 {
-	if s.dataSource != nil && s.dataSource.Running() {
-		// slog.Info("pacing factor", "factor", 1.0, "s.dataSource", s.dataSource, "s.dataSource.Running()", s.dataSource.Running())
-		return 1.0
-	}
-	// slog.Info("pacing factor", "factor", 1.5, "s.dataSource", s.dataSource, "s.dataSource.Running()", s.dataSource.Running())
-	return 1.0
 }
