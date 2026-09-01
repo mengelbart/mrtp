@@ -3,9 +3,7 @@
 package gopipe
 
 import (
-	"context"
-	"log/slog"
-	"os"
+	"bytes"
 	"slices"
 	"sync"
 	"testing"
@@ -13,376 +11,119 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/pion/rtp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestDepacketizerVP8(t *testing.T) {
-	testDepacketizerWithCodec(t, mrtp.VP8)
+var depacketizerCodecs = []struct {
+	codec mrtp.Codec
+	// H264 payloads are rewritten with Annex-B start codes, so only the frame count is comparable
+	exactPayload bool
+}{
+	{mrtp.VP8, true},
+	{mrtp.VP9, true},
+	{mrtp.H264, false},
 }
 
-func TestDepacketizerVP9(t *testing.T) {
-	testDepacketizerWithCodec(t, mrtp.VP9)
-}
+func TestDepacketizerRoundtrip(t *testing.T) {
+	for _, tc := range depacketizerCodecs {
+		t.Run(tc.codec.String(), func(t *testing.T) {
+			frames := encodedFrames(t, tc.codec)
+			framePackets := packetizeFrames(t, tc.codec, frames)
 
-func TestDepacketizerH264(t *testing.T) {
-	testDepacketizerWithCodec(t, mrtp.H264)
-}
+			synctest.Test(t, func(t *testing.T) {
+				received := runDepacketizer(t, tc.codec, framePackets)
 
-func testDepacketizerWithCodec(t *testing.T, codec mrtp.Codec) {
-	// video file must exist
-	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
-		println("Video file not found. See simulation folder for more information.\n")
-		t.Skip("video not found")
+				assert.Len(t, received, len(frames))
+				if tc.exactPayload {
+					assert.Equal(t, frames, received)
+				}
+			})
+		})
 	}
+}
 
-	synctest.Test(t, func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+func TestDepacketizerRTPDrops(t *testing.T) {
+	droppedFrames := []int{3, 24, 25}
 
-		framesReceived := 0
+	for _, tc := range depacketizerCodecs {
+		t.Run(tc.codec.String(), func(t *testing.T) {
+			frames := encodedFrames(t, tc.codec)
+			framePackets := packetizeFrames(t, tc.codec, frames)
 
-		timeout := 10 * time.Millisecond
-		depacketizer, err := newRTPDepacketizer(timeout, codec, func(frame []byte, pts int64) {
-			slog.Info("got frame", "size", len(frame))
-			framesReceived++
+			want := make([][]byte, 0, len(frames)-len(droppedFrames))
+			for i, frame := range frames {
+				if slices.Contains(droppedFrames, i) {
+					framePackets[i] = nil
+					continue
+				}
+				want = append(want, frame)
+			}
+
+			synctest.Test(t, func(t *testing.T) {
+				received := runDepacketizer(t, tc.codec, framePackets)
+
+				assert.Len(t, received, len(want))
+				if tc.exactPayload {
+					assert.Equal(t, want, received)
+				}
+			})
 		})
-		assert.NoError(t, err)
+	}
+}
 
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			depacketizer.Run()
-		})
+func packetizeFrames(t *testing.T, c mrtp.Codec, frames [][]byte) [][][]byte {
+	t.Helper()
 
-		sink := WriterFunc(func(b []byte, _ Attributes) error {
-			return depacketizer.Write(b)
-		})
-
-		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
-		assert.NoError(t, err)
-		defer func() {
-			assert.NoError(t, file.Close())
-		}()
-
-		fileSrc, err := NewY4MSource(file)
-		assert.NoError(t, err)
-
-		i := fileSrc.GetInfo()
-		encoder := NewEncoder(codec)
-		packetizer := &RTPPacketizerFactory{
-			MTU:       1420,
-			PT:        96,
-			SSRC:      0,
-			ClockRate: 90_000,
-			Codec:     codec,
-		}
-		pacer := NewFrameSpacer(ctx)
-		defer func() {
-			assert.NoError(t, pacer.Close())
-		}()
-
-		frameInter := newFrameInterceptor(false, 0, nil)
-		rtpPipeline, err := Chain(i, sink, pacer, packetizer, encoder, frameInter)
-		assert.NoError(t, err)
-
-		assert.NoError(t, fileSrc.StartLive(ctx, rtpPipeline))
-
-		assert.Equal(t, frameInter.count, framesReceived)
-
-		assert.NoError(t, depacketizer.Close())
-		cancel()
-		synctest.Wait()
+	packets := make([][][]byte, 0, len(frames))
+	sink := WriterFunc(func(b []byte, _ Attributes) error {
+		packets[len(packets)-1] = append(packets[len(packets)-1], bytes.Clone(b))
+		return nil
 	})
-}
 
-func TestDepacketizerFrameIntegrityVP8(t *testing.T) {
-	testDepacketizerFrameIntegrityWithCodec(t, mrtp.VP8)
-}
-
-func TestDepacketizerFrameIntegrityVP9(t *testing.T) {
-	testDepacketizerFrameIntegrityWithCodec(t, mrtp.VP9)
-}
-
-func testDepacketizerFrameIntegrityWithCodec(t *testing.T, codec mrtp.Codec) {
-	// video file must exist
-	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
-		println("Video file not found. See simulation folder for more information.\n")
-		t.Skip("video not found")
+	factory := &RTPPacketizerFactory{
+		MTU:       1420,
+		PT:        96,
+		SSRC:      0,
+		ClockRate: 90_000,
+		Codec:     c,
 	}
+	packetizer, err := factory.Link(sink, Info{TimebaseNum: testFPSNum, TimebaseDen: testFPSDen})
+	require.NoError(t, err)
 
-	synctest.Test(t, func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	var pts int64
+	for _, frame := range frames {
+		packets = append(packets, nil)
+		require.NoError(t, packetizer.Write(frame, Attributes{PTS: pts}))
+		pts += testFrameDuration.Microseconds()
+	}
+	return packets
+}
 
-		const maxFrames = 30
+// runDepacketizer feeds one frame of RTP packets per frame duration and returns the assembled
+// frames. It must run inside a synctest bubble so the depacketizer timeouts cost no real time.
+func runDepacketizer(t *testing.T, c mrtp.Codec, framePackets [][][]byte) [][]byte {
+	t.Helper()
 
-		receivedFrames := make([][]byte, 0, maxFrames)
-
-		timeout := 10 * time.Millisecond
-		receivedFrameCount := 0
-		depacketizer, err := newRTPDepacketizer(timeout, codec, func(frame []byte, pts int64) {
-			if receivedFrameCount < maxFrames {
-				frameCopy := make([]byte, len(frame))
-				copy(frameCopy, frame)
-				receivedFrames = append(receivedFrames, frameCopy)
-			}
-			receivedFrameCount++
-		})
-		assert.NoError(t, err)
-
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			depacketizer.Run()
-		})
-
-		// sink writes to depacketizer
-		sink := WriterFunc(func(b []byte, _ Attributes) error {
-			return depacketizer.Write(b)
-		})
-
-		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
-		assert.NoError(t, err)
-		defer func() {
-			assert.NoError(t, file.Close())
-		}()
-
-		fileSrc, err := NewY4MSource(file)
-		assert.NoError(t, err)
-
-		i := fileSrc.GetInfo()
-
-		encoder := NewEncoder(codec)
-		packetizer := &RTPPacketizerFactory{
-			MTU:       1420,
-			PT:        96,
-			SSRC:      0,
-			ClockRate: 90_000,
-			Codec:     codec,
-		}
-		pacer := NewFrameSpacer(ctx)
-		defer func() {
-			assert.NoError(t, pacer.Close())
-		}()
-
-		frameInter := newFrameInterceptor(true, maxFrames, nil)
-
-		rtpPipeline, err := Chain(i, sink, pacer, packetizer, frameInter, encoder)
-		assert.NoError(t, err)
-
-		fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
-		frameDuration := time.Duration(float64(time.Second) / fps)
-
-		ticker := time.NewTicker(frameDuration)
-		defer ticker.Stop()
-
-		assert.NoError(t, fileSrc.StartLive(ctx, rtpPipeline))
-
-		time.Sleep(100 * time.Millisecond)
-
-		// verify frame counts match
-		assert.Equal(t, maxFrames, len(frameInter.sentFrames), "interceptor should have captured %d frames", maxFrames)
-		assert.Equal(t, maxFrames, len(receivedFrames), "should have received %d frames", maxFrames)
-		assert.Equal(t, frameInter.count, receivedFrameCount, "total sent and received frame counts should match")
-
-		// compare each frame
-		for i := 0; i < len(frameInter.sentFrames); i++ {
-			assert.Equal(t, len(frameInter.sentFrames[i]), len(receivedFrames[i]),
-				"frame %d: length mismatch", i)
-			assert.Equal(t, frameInter.sentFrames[i], receivedFrames[i],
-				"frame %d: content mismatch", i)
-			slog.Info("frame comparison", "index", i, "size", len(frameInter.sentFrames[i]), "match", true)
-		}
-
-		assert.NoError(t, depacketizer.Close())
-		wg.Wait()
-		synctest.Wait()
+	received := make([][]byte, 0, len(framePackets))
+	depacketizer, err := newRTPDepacketizer(depacketizerTimeout, c, func(frame []byte, _ int64) {
+		received = append(received, bytes.Clone(frame))
 	})
-}
+	require.NoError(t, err)
 
-func TestDepacketizerRTPdropsVP8(t *testing.T) {
-	testDepacketizerRTPdropsWithCodec(t, mrtp.VP8)
-}
+	var wg sync.WaitGroup
+	wg.Go(depacketizer.Run)
 
-func TestDepacketizerRTPdropsVP9(t *testing.T) {
-	testDepacketizerRTPdropsWithCodec(t, mrtp.VP9)
-}
-
-func testDepacketizerRTPdropsWithCodec(t *testing.T, codec mrtp.Codec) {
-	// video file must exist
-	if _, err := os.Stat("../simulation/Johnny_1280x720_60.y4m"); os.IsNotExist(err) {
-		println("Video file not found. See simulation folder for more information.\n")
-		t.Skip("video not found")
+	for _, packets := range framePackets {
+		for _, packet := range packets {
+			require.NoError(t, depacketizer.Write(packet))
+		}
+		time.Sleep(testFrameDuration)
 	}
+	synctest.Wait()
 
-	synctest.Test(t, func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	require.NoError(t, depacketizer.Close())
+	wg.Wait()
 
-		const maxFrames = 30
-		framesToBeDropped := []int{3, 24, 25}
-
-		maxReceiveFrames := maxFrames - len(framesToBeDropped)
-		receivedFrames := make([][]byte, 0, maxReceiveFrames)
-
-		timeout := 10 * time.Millisecond
-		receivedFrameCount := 0
-		depacketizer, err := newRTPDepacketizer(timeout, codec, func(frame []byte, pts int64) {
-			if receivedFrameCount < maxReceiveFrames {
-				frameCopy := make([]byte, len(frame))
-				copy(frameCopy, frame)
-				receivedFrames = append(receivedFrames, frameCopy)
-			}
-			receivedFrameCount++
-		})
-		assert.NoError(t, err)
-
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			depacketizer.Run()
-		})
-
-		// Sink writes to depacketizer
-		sink := WriterFunc(func(b []byte, _ Attributes) error {
-			return depacketizer.Write(b)
-		})
-
-		file, err := os.Open("../simulation/Johnny_1280x720_60.y4m")
-		assert.NoError(t, err)
-		defer func() {
-			assert.NoError(t, file.Close())
-		}()
-
-		fileSrc, err := NewY4MSource(file)
-		assert.NoError(t, err)
-
-		i := fileSrc.GetInfo()
-
-		encoder := NewEncoder(codec)
-		packetizer := &RTPPacketizerFactory{
-			MTU:       1420,
-			PT:        96,
-			SSRC:      0,
-			ClockRate: 90_000,
-			Codec:     codec,
-		}
-		pacer := NewFrameSpacer(ctx)
-		defer func() {
-			assert.NoError(t, pacer.Close())
-		}()
-
-		frameInter := newFrameInterceptor(true, maxFrames, framesToBeDropped)
-		dropInter := newRtpDropInterceptor()
-
-		rtpPipeline, err := Chain(i, sink, pacer, dropInter, packetizer, frameInter, encoder)
-		assert.NoError(t, err)
-
-		fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
-		frameDuration := time.Duration(float64(time.Second) / fps)
-
-		ticker := time.NewTicker(frameDuration)
-		defer ticker.Stop()
-
-		assert.NoError(t, fileSrc.StartLive(ctx, rtpPipeline))
-
-		time.Sleep(100 * time.Millisecond)
-
-		// verify frame counts match
-		assert.Equal(t, maxFrames, len(frameInter.sentFrames), "interceptor should have captured %d frames", maxFrames)
-		assert.Equal(t, maxReceiveFrames, len(receivedFrames), "received frame saver should have saved %d frames", maxReceiveFrames)
-
-		expectedReceivedFrames := frameInter.count - len(framesToBeDropped)
-		assert.Equal(t, expectedReceivedFrames, receivedFrameCount)
-
-		// compare each frame, skipping the dropped ones
-		receivedIdx := 0
-		for sentIdx := 0; sentIdx < len(frameInter.sentFrames); sentIdx++ {
-			frameNum := sentIdx
-			if slices.Contains(framesToBeDropped, frameNum) {
-				continue
-			}
-
-			assert.Less(t, receivedIdx, len(receivedFrames), "received index %d out of range", receivedIdx)
-			assert.Equal(t, len(frameInter.sentFrames[sentIdx]), len(receivedFrames[receivedIdx]))
-			assert.Equal(t, frameInter.sentFrames[sentIdx], receivedFrames[receivedIdx])
-			receivedIdx++
-		}
-
-		assert.NoError(t, depacketizer.Close())
-		wg.Wait()
-		synctest.Wait()
-	})
-}
-
-type frameInterceptor struct {
-	saveFrame        bool
-	sentFrames       [][]byte
-	maxSave          int
-	framesToBeMarked []int
-
-	count int
-}
-
-func newFrameInterceptor(saveFrame bool, maxSave int, framesToBeMarked []int) *frameInterceptor {
-	return &frameInterceptor{
-		saveFrame:        saveFrame,
-		sentFrames:       make([][]byte, 0),
-		maxSave:          maxSave,
-		framesToBeMarked: framesToBeMarked,
-	}
-}
-
-func (i *frameInterceptor) Link(w Sink, _ Info) (Sink, error) {
-	return WriterFunc(func(b []byte, a Attributes) error {
-		if i.saveFrame && len(i.sentFrames) < i.maxSave {
-			frameCopy := make([]byte, len(b))
-			copy(frameCopy, b)
-			i.sentFrames = append(i.sentFrames, frameCopy)
-		}
-
-		if slices.Contains(i.framesToBeMarked, i.count) {
-			a["DROP"] = true
-		}
-		i.count++
-
-		return w.Write(b, a)
-	}), nil
-}
-
-// rtpDropInterceptor drops all rtp packets of marked frames
-type rtpDropInterceptor struct{}
-
-func newRtpDropInterceptor() *rtpDropInterceptor {
-	return &rtpDropInterceptor{}
-}
-
-func (i *rtpDropInterceptor) Link(w Sink, _ Info) (Sink, error) {
-	var lastTS uint32
-	first := true
-	dropping := false
-	return WriterFunc(func(b []byte, a Attributes) error {
-		shouldDrop := false
-		if drop, ok := a["DROP"]; ok {
-			if dropBool, ok := drop.(bool); ok && dropBool {
-				shouldDrop = true
-			}
-		}
-
-		pkt := new(rtp.Packet)
-		if err := pkt.Unmarshal(b); err != nil {
-			return w.Write(b, a)
-		}
-
-		isFrameStart := first || pkt.Timestamp != lastTS
-		first = false
-		lastTS = pkt.Timestamp
-
-		if isFrameStart {
-			dropping = shouldDrop
-		}
-
-		if dropping {
-			return nil
-		}
-
-		return w.Write(b, a)
-	}), nil
+	return received
 }
