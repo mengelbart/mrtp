@@ -29,7 +29,7 @@ func NewFrameSpacer(ctx context.Context) *FrameSpacer {
 }
 
 func (p *FrameSpacer) Link(w Sink, i Info) (Sink, error) {
-	p.pktChan = make(chan packets, 1000000)
+	p.pktChan = make(chan packets, 1000)
 	p.writer = w
 	fps := float64(i.TimebaseNum) / float64(i.TimebaseDen)
 	p.frameDuration = time.Duration(float64(time.Second) / fps)
@@ -64,8 +64,14 @@ func (p *FrameSpacer) run() {
 				}
 				continue
 			}
+			if len(pkts.payloads) == 0 {
+				continue
+			}
 			space := 0.3 * float64(p.frameDuration.Microseconds()) / float64(len(pkts.payloads))
 			spaceTime := time.Duration(space) * time.Microsecond
+			if spaceTime <= 0 {
+				spaceTime = time.Microsecond
+			}
 			slog.Debug("pacing frame", "count", len(pkts.payloads), "space-time", spaceTime, "queue", len(p.pktChan))
 			ticker := time.NewTicker(spaceTime)
 			var next []byte
