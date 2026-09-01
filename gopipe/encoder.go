@@ -75,7 +75,7 @@ func (e *Encoder) Link(f Sink, i Info) (Sink, error) {
 			return err
 		}
 
-		slog.Info("encoder sink", "length", len(b), "pts", pts, "duration", frameDuration.Microseconds(), "frame-count", frameCount)
+		slog.Debug("encoder sink", "length", len(b), "pts", pts, "duration", frameDuration.Microseconds(), "frame-count", frameCount)
 
 		csr, err := getChromaSubsampling(a)
 		if err != nil {
@@ -105,7 +105,7 @@ func (e *Encoder) Link(f Sink, i Info) (Sink, error) {
 			}
 		}
 
-		slog.Info("encoder src", "length", len(encoded.Payload), "pts", pts, "duration", frameDuration.Microseconds(), "keyframe", encoded.IsKeyFrame, "frame-count", frameCount)
+		slog.Debug("encoder src", "length", len(encoded.Payload), "pts", pts, "duration", frameDuration.Microseconds(), "keyframe", encoded.IsKeyFrame, "frame-count", frameCount)
 		frameCount++
 
 		a[IsKeyFrame] = encoded.IsKeyFrame
