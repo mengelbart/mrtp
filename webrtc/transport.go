@@ -483,17 +483,8 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 		t.bwe.UpdateECNCounts(t.ect0, t.ect1, t.ecnce)
 		t.bwe.UpdateRTT(report.RTT)
 		tr := t.bwe.UpdateTargetRate(report.Arrival)
-		if tr > 0 {
-			if t.SetTargetRate != nil {
-				// set target rate of encoder
-				err := t.SetTargetRate(uint(tr))
-				if err != nil {
-					return err
-				}
-			}
-			if t.pacer != nil {
-				t.pacer.SetRate(t.pc.ID(), int(1.5*float64(tr)))
-			}
+		if err := t.applyTargetRate(float64(tr)); err != nil {
+			return err
 		}
 	}
 
@@ -511,19 +502,30 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 			if err != nil {
 				return err
 			}
-			if tr > 0 {
-				if t.SetTargetRate != nil {
-					// set target rate of encoder
-					err := t.SetTargetRate(uint(tr))
-					if err != nil {
-						return err
-					}
-				}
-				if t.pacer != nil {
-					t.pacer.SetRate(t.pc.ID(), int(1.5*float64(tr)))
-				}
+			if err := t.applyTargetRate(tr); err != nil {
+				return err
 			}
 		}
+	}
+	return nil
+}
+
+// applyTargetRate sets the encoder's target rate and configures the pacer to
+// run at pacingFactor times that rate, so the pacer's queue drains faster
+// than media arrives and doesn't itself become a source of latency.
+const pacingFactor = 1.5
+
+func (t *Transport) applyTargetRate(tr float64) error {
+	if tr <= 0 {
+		return nil
+	}
+	if t.SetTargetRate != nil {
+		if err := t.SetTargetRate(uint(tr)); err != nil {
+			return err
+		}
+	}
+	if t.pacer != nil {
+		t.pacer.SetRate(t.pc.ID(), int(pacingFactor*tr))
 	}
 	return nil
 }
