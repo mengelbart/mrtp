@@ -3,6 +3,7 @@
 package gstreamer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -52,6 +53,9 @@ type RTPBin struct {
 
 	screamTx             *gst.Element
 	SetTargetRateEncoder func(ratebps uint) error
+
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // EnableSCReAM adds a screamtx element, which runs SCReAM congestion control
@@ -81,6 +85,7 @@ func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	r := &RTPBin{
 		transports:           map[int]*gst.Element{},
 		streams:              map[int]rtpSinkBin{},
@@ -89,6 +94,8 @@ func NewRTPBin(opts ...RTPBinOption) (*RTPBin, error) {
 		rtpbin:               rtpbin,
 		rtcpFunnels:          map[int]*gst.Element{},
 		SetTargetRateEncoder: nil,
+		ctx:                  ctx,
+		cancel:               cancel,
 	}
 	for _, opt := range opts {
 		if err = opt(r); err != nil {
@@ -115,6 +122,7 @@ func (r *RTPBin) Run() error {
 // stop tears the pipeline down and makes a running Run return. It is safe to
 // call before Run, and more than once.
 func (r *RTPBin) stop() error {
+	r.cancel()
 	r.mu.Lock()
 	r.stopped = true
 	readers := r.readers
@@ -248,16 +256,24 @@ func (r *RTPBin) addRTPSourceStream(id int, src rtpSourceBin) error {
 		go func() {
 			statsHeader, err := r.screamTx.GetProperty("stats-header")
 			if err != nil {
-				panic(err)
+				slog.Error("failed to read scream stats-header", "error", err)
+				return
 			}
 			statsHeaderStr := statsHeader.(string)
 			keys := strings.Split(statsHeaderStr, ",")
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
 			for {
-				time.Sleep(100 * time.Millisecond)
+				select {
+				case <-r.ctx.Done():
+					return
+				case <-ticker.C:
+				}
 
 				rate, err := r.getTargetBitRate()
 				if err != nil {
-					panic(err)
+					slog.Error("failed to get scream target bitrate", "error", err)
+					continue
 				}
 				if rate == 0 {
 					// scream wants new key frame
@@ -265,11 +281,17 @@ func (r *RTPBin) addRTPSourceStream(id int, src rtpSourceBin) error {
 				}
 				stats, err := r.screamTx.GetProperty("stats")
 				if err != nil {
-					panic(err)
+					slog.Error("failed to read scream stats", "error", err)
+					continue
 				}
 				statsStr := stats.(string)
 				values := strings.Split(statsStr, ",")
+				if len(values) < len(keys) {
+					slog.Error("scream stats field count mismatch", "expected", len(keys), "got", len(values))
+					continue
+				}
 				anys := make([]any, 0, 2*len(keys))
+				parseErr := false
 				for i, key := range keys {
 					var val any
 					if strings.Contains(values[i], "Log") {
@@ -280,15 +302,22 @@ func (r *RTPBin) addRTPSourceStream(id int, src rtpSourceBin) error {
 						val, err = strconv.Atoi(strings.TrimSpace(values[i]))
 					}
 					if err != nil {
-						panic(err)
+						slog.Error("failed to parse scream stats value", "key", key, "error", err)
+						parseErr = true
+						break
 					}
 					anys = append(anys, strings.TrimSpace(key), val)
 				}
+				if parseErr {
+					continue
+				}
 				slog.Info("SCReAM stats", anys...)
 
-				err = r.SetTargetRateEncoder(rate * 1000)
-				if err != nil {
-					panic(err)
+				if r.SetTargetRateEncoder == nil {
+					continue
+				}
+				if err := r.SetTargetRateEncoder(rate * 1000); err != nil {
+					slog.Error("failed to set target rate on encoder", "error", err)
 				}
 			}
 		}()
