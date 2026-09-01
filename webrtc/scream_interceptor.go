@@ -142,6 +142,7 @@ type ScreamInterceptor struct {
 	rtcpRxQueue    chan *rxPacket
 	removeStream   chan uint32
 	closed         chan struct{}
+	closeOnce      sync.Once
 	onClose        func(string)
 	wg             sync.WaitGroup
 }
@@ -332,11 +333,13 @@ func (s *ScreamInterceptor) BindRTCPReader(reader interceptor.RTCPReader) interc
 
 // Close implements interceptor.Interceptor.
 func (s *ScreamInterceptor) Close() error {
-	close(s.closed)
-	s.wg.Wait()
-	if s.onClose != nil {
-		s.onClose(s.id)
-	}
+	s.closeOnce.Do(func() {
+		close(s.closed)
+		s.wg.Wait()
+		if s.onClose != nil {
+			s.onClose(s.id)
+		}
+	})
 	return nil
 }
 
