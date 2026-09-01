@@ -177,7 +177,7 @@ func (d *rtpDepacketizer) processPackets() {
 		}
 
 		// log packet
-		slog.Info("rtp to pts mapping",
+		slog.Debug("rtp to pts mapping",
 			"rtp-timestamp", pkt.Timestamp,
 			"sequence-number", pkt.SequenceNumber,
 			"unwrapped-sequence-number", d.unwrapper.Unwrap(pkt.SequenceNumber),

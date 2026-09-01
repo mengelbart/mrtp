@@ -42,7 +42,7 @@ func (p *FrameSpacer) Write(pkt []byte, attr Attributes) error {
 }
 
 func (p *FrameSpacer) WriteAll(pkts [][]byte, attr Attributes) error {
-	slog.Info("spacer got packets", "count", len(pkts))
+	slog.Debug("spacer got packets", "count", len(pkts))
 	p.pktChan <- packets{
 		payloads:   pkts,
 		attributes: attr,
@@ -66,7 +66,7 @@ func (p *FrameSpacer) run() {
 			}
 			space := 0.3 * float64(p.frameDuration.Microseconds()) / float64(len(pkts.payloads))
 			spaceTime := time.Duration(space) * time.Microsecond
-			slog.Info("pacing frame", "count", len(pkts.payloads), "space-time", spaceTime, "queue", len(p.pktChan))
+			slog.Debug("pacing frame", "count", len(pkts.payloads), "space-time", spaceTime, "queue", len(p.pktChan))
 			ticker := time.NewTicker(spaceTime)
 			var next []byte
 			for range ticker.C {

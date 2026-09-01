@@ -206,7 +206,7 @@ func (n *Net) setECN(ssrc uint32, sequenceNumber uint16, ecn uint8) {
 func (n *Net) getECN(ssrc uint32, sequenceNumber uint16) uint8 {
 	val, ok := n.ecnMap.LoadAndDelete(ecnMapKey{SSRC: ssrc, SequenceNumber: sequenceNumber})
 	if !ok {
-		slog.Info("ecn not found", "ssrc", ssrc, "sequenceNumber", sequenceNumber)
+		slog.Debug("ecn not found", "ssrc", ssrc, "sequenceNumber", sequenceNumber)
 		return 0
 	}
 	return val.(uint8)
