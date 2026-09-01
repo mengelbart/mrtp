@@ -122,8 +122,8 @@ Flags:
 		os.Exit(1)
 	}
 
-	if len(fs.Args()) > 1 {
-		fmt.Fprintf(os.Stderr, "error: unknown extra arguments: %v\n", flag.Args()[1:])
+	if len(fs.Args()) > 0 {
+		fmt.Fprintf(os.Stderr, "error: unknown extra arguments: %v\n", fs.Args())
 		fs.Usage()
 		os.Exit(1)
 	}
