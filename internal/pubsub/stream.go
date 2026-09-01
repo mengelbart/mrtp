@@ -2,7 +2,7 @@ package pubsub
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"sync"
 )
 
@@ -64,7 +64,7 @@ func (s *stream) process() {
 		case msg := <-s.queue:
 			s.fanout(msg)
 		case <-s.closed:
-			log.Printf("closing topic: %s", s.name)
+			slog.Info("closing topic", "name", s.name)
 			return
 		}
 	}

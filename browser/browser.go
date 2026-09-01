@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -88,7 +87,9 @@ func (c *Controller) Run() error {
 	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer cancel()
 
-	taskCtx, cancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
+	taskCtx, cancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(func(format string, args ...any) {
+		slog.Info(fmt.Sprintf(format, args...))
+	}))
 	defer cancel()
 
 	// catch logs from browser
@@ -168,7 +169,7 @@ func (c *Controller) Run() error {
 
 	go func() {
 		if serveErr := localSignalServer.ListenAndServe(); serveErr != nil && serveErr != http.ErrServerClosed {
-			log.Printf("browser signaling server stopped: %v", serveErr)
+			slog.Error("browser signaling server stopped", "error", serveErr)
 		}
 	}()
 
@@ -183,7 +184,7 @@ func (c *Controller) Run() error {
 
 	go func() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			log.Printf("http server error: %v", err)
+			slog.Error("http server error", "error", err)
 		}
 	}()
 
@@ -198,7 +199,7 @@ func (c *Controller) Run() error {
 	if c.datachannel {
 		go func() {
 			if err := c.StartDataChannel(taskCtx); err != nil {
-				log.Printf("failed to start data channel: %v", err)
+				slog.Error("failed to start data channel", "error", err)
 			}
 		}()
 	}
