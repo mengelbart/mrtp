@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"sync/atomic"
 
 	"github.com/mengelbart/mrtp/media"
 )
@@ -105,7 +106,8 @@ var errNoRTPEndpoint = errors.New("stream has no RTP endpoint, and the pipeline 
 type pipeline struct {
 	factory *factory
 	bin     *RTPBin
-	nextID  int
+
+	nextID atomic.Int64
 }
 
 // AddSender implements media.Pipeline.
@@ -201,9 +203,7 @@ func (p *pipeline) Close() error {
 }
 
 func (p *pipeline) claimID() int {
-	id := p.nextID
-	p.nextID++
-	return id
+	return int(p.nextID.Add(1) - 1)
 }
 
 func (p *pipeline) addRTPSink(id int, writer io.WriteCloser) error {
