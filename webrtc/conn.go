@@ -13,6 +13,7 @@ import (
 type udpConn struct {
 	conn   *net.UDPConn
 	setECN func(ssrc uint32, sequenceNumber uint16, ecn uint8)
+	oobBuf []byte
 }
 
 func newUDPConn(conn *net.UDPConn, setECN func(ssrc uint32, sequenceNumber uint16, ecn uint8)) (*udpConn, error) {
@@ -41,6 +42,7 @@ func newUDPConn(conn *net.UDPConn, setECN func(ssrc uint32, sequenceNumber uint1
 	return &udpConn{
 		conn:   conn,
 		setECN: setECN,
+		oobBuf: make([]byte, 1500),
 	}, nil
 }
 
@@ -80,24 +82,21 @@ func (c *udpConn) Read(b []byte) (n int, err error) {
 	return c.conn.Read(b)
 }
 
+// ReadFrom reuses an internal out-of-band buffer and must not be called
+// concurrently.
 func (c *udpConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	oobBuf := make([]byte, 1500)
-
 	var oobn int
 
-	n, oobn, _, addr, err = c.conn.ReadMsgUDP(p, oobBuf)
+	n, oobn, _, addr, err = c.conn.ReadMsgUDP(p, c.oobBuf)
 	if err != nil {
 		return n, addr, err
 	}
-	if c.setECN == nil || !matchSRTP(p) {
+	if c.setECN == nil || !matchSRTP(p[:n]) {
 		return n, addr, nil
 	}
 
 	// check meta data for ecn
-	packetOOB := make([]byte, oobn)
-	copy(packetOOB, oobBuf[:oobn])
-
-	msgs, err := unix.ParseSocketControlMessage(packetOOB[:oobn])
+	msgs, err := unix.ParseSocketControlMessage(c.oobBuf[:oobn])
 	if err != nil {
 		return n, addr, err
 	}
