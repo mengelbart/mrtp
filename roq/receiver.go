@@ -13,7 +13,7 @@ type Receiver struct {
 	logger *logging.RTPLogger
 }
 
-func newReciever(flow *roq.ReceiveFlow, logRTPpackets bool) *Receiver {
+func newReceiver(flow *roq.ReceiveFlow, logRTPpackets bool) *Receiver {
 	receiver := &Receiver{
 		flow: flow,
 	}

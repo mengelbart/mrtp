@@ -481,7 +481,7 @@ func (r *RTPBin) receiveRTPStreamFromElement(id int, src *gst.Element, screamCCF
 		}
 		screamRxRTCPSrcPad := screamrx.GetStaticPad("rtcp_src")
 		if ret := screamRxRTCPSrcPad.Link(funnel.GetRequestPad("sink_1")); ret != gst.PadLinkOK {
-			return fmt.Errorf("faield to link screamrx RTCP src pad to funnel: %v", ret)
+			return fmt.Errorf("failed to link screamrx RTCP src pad to funnel: %v", ret)
 		}
 	} else {
 		if err = src.Link(capsfilter); err != nil {
