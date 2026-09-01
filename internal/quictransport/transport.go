@@ -24,6 +24,7 @@ type Transport struct {
 	ctx           context.Context
 	netConn       net.PacketConn
 	quicTransport *quic.Transport
+	quicListener  *quic.Listener
 	quicConn      *quic.Conn
 	role          Role
 	localAddress  string
@@ -124,9 +125,9 @@ func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transpor
 
 		var err error
 		if t.netConn != nil {
-			t.quicTransport, t.quicConn, err = OpenServerConnWithNet(ctx, quicConfig, tlsNextProtos, t.netConn)
+			t.quicTransport, t.quicListener, t.quicConn, err = OpenServerConnWithNet(ctx, quicConfig, tlsNextProtos, t.netConn)
 		} else {
-			t.quicConn, err = OpenServerConn(ctx, t.localAddress, quicConfig, tlsNextProtos)
+			t.quicListener, t.quicConn, err = OpenServerConn(ctx, t.localAddress, quicConfig, tlsNextProtos)
 		}
 		if err != nil {
 			return nil, err
@@ -175,6 +176,9 @@ func (t *Transport) Close() {
 	t.running.Store(false)
 	if t.quicConn != nil {
 		_ = t.quicConn.CloseWithError(0, "bye")
+	}
+	if t.quicListener != nil {
+		_ = t.quicListener.Close()
 	}
 	if t.quicTransport != nil {
 		_ = t.quicTransport.Close()

@@ -9,31 +9,41 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
-func OpenServerConn(ctx context.Context, localAddress string, quicConfig *quic.Config, tlsNextProtos []string) (*quic.Conn, error) {
-	tlsConfig, err := generateTLSConfig("", "", nil, tlsNextProtos)
-	if err != nil {
-		return nil, err
-	}
-	listener, err := quic.ListenAddr(localAddress, tlsConfig, quicConfig)
-	if err != nil {
-		return nil, err
-	}
-	conn, err := listener.Accept(ctx)
-	return conn, err
-}
-
-func OpenServerConnWithNet(ctx context.Context, quicConfig *quic.Config, tlsNextProtos []string, netConn net.PacketConn) (*quic.Transport, *quic.Conn, error) {
+func OpenServerConn(ctx context.Context, localAddress string, quicConfig *quic.Config, tlsNextProtos []string) (*quic.Listener, *quic.Conn, error) {
 	tlsConfig, err := generateTLSConfig("", "", nil, tlsNextProtos)
 	if err != nil {
 		return nil, nil, err
+	}
+	listener, err := quic.ListenAddr(localAddress, tlsConfig, quicConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+	conn, err := listener.Accept(ctx)
+	if err != nil {
+		_ = listener.Close()
+		return nil, nil, err
+	}
+	return listener, conn, nil
+}
+
+func OpenServerConnWithNet(ctx context.Context, quicConfig *quic.Config, tlsNextProtos []string, netConn net.PacketConn) (*quic.Transport, *quic.Listener, *quic.Conn, error) {
+	tlsConfig, err := generateTLSConfig("", "", nil, tlsNextProtos)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	q := &quic.Transport{Conn: netConn}
 	listener, err := q.Listen(tlsConfig, quicConfig)
 	if err != nil {
-		return nil, nil, err
+		_ = q.Close()
+		return nil, nil, nil, err
 	}
 	conn, err := listener.Accept(ctx)
-	return q, conn, err
+	if err != nil {
+		_ = listener.Close()
+		_ = q.Close()
+		return nil, nil, nil, err
+	}
+	return q, listener, conn, nil
 }
 
 func OpenClientConn(ctx context.Context, remoteAddress string, quicConfig *quic.Config, tlsNextProtos []string) (*quic.Conn, error) {
@@ -58,5 +68,9 @@ func OpenClientConnWithNet(ctx context.Context, remoteAddress string, quicConfig
 		InsecureSkipVerify: true,
 		NextProtos:         tlsNextProtos,
 	}, quicConfig)
-	return q, quicConn, err
+	if err != nil {
+		_ = q.Close()
+		return nil, nil, err
+	}
+	return q, quicConn, nil
 }

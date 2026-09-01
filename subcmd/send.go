@@ -193,6 +193,7 @@ Flags:
 		if err != nil {
 			return err
 		}
+		defer quicConn.Close()
 
 		// open roq connection
 		roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection())

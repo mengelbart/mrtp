@@ -245,6 +245,11 @@ Usage:
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if closeErr := transport.Close(); closeErr != nil {
+			slog.Error("failed to close WebRTC transport", "error", closeErr)
+		}
+	}()
 	signalingHandler := webrtc.NewHTTPSignalingHandler(transport)
 	router := httprouter.New()
 	router.HandlerFunc("POST", "/candidate", withCORS(nethttp.HandlerFunc(signalingHandler.HandleCandidate)))

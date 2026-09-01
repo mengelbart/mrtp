@@ -142,7 +142,11 @@ Flags:
 	}()
 
 	if r.roqServer || r.roqClient {
-		err = r.setupRoQ(ctx, pipeline, receiverConfig)
+		var closeRoQ func()
+		closeRoQ, err = r.setupRoQ(ctx, pipeline, receiverConfig)
+		if closeRoQ != nil {
+			defer closeRoQ()
+		}
 	} else {
 		err = r.setupPlainRTP(pipeline, receiverConfig)
 	}
@@ -152,7 +156,7 @@ Flags:
 	return pipeline.Run(ctx)
 }
 
-func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config media.ReceiverConfig) error {
+func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config media.ReceiverConfig) (func(), error) {
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(r.roqServer)),
 		quictransport.SetLocalAddress(r.localAddr, r.udpPort),
@@ -162,17 +166,24 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 
 	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicOptions...)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	cleanup := func() { quicConn.Close() }
 
 	roqTransport, err := roq.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
-		return err
+		return cleanup, err
+	}
+	cleanup = func() {
+		if closeErr := roqTransport.Close(); closeErr != nil {
+			slog.Error("failed to close RoQ session", "error", closeErr)
+		}
+		quicConn.Close()
 	}
 
 	dcTransport, err := datachannels.New(ctx, quicConn.GetQuicConnection())
 	if err != nil {
-		return err
+		return cleanup, err
 	}
 
 	// set handlers for datagrams and streams
@@ -205,12 +216,12 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 		// quic transports has to be started before
 		dcReceiver, err := dcTransport.AddDataChannelReceiver(ctx, uint64(r.dataChannelFlowID))
 		if err != nil {
-			return err
+			return cleanup, err
 		}
 
 		dataSink, err := data.NewSink(dcReceiver)
 		if err != nil {
-			return err
+			return cleanup, err
 		}
 
 		go func() {
@@ -222,20 +233,20 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 
 	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(r.rtpFlowID), r.traceRTP)
 	if err != nil {
-		return err
+		return cleanup, err
 	}
 	rtcpSink, err := roqTransport.NewSendFlow(uint64(r.rtcpSendFlowID), roq.SendMode(r.roqMapping), false)
 	if err != nil {
-		return err
+		return cleanup, err
 	}
 	rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(r.rtcpRecvFlowID), false)
 	if err != nil {
-		return err
+		return cleanup, err
 	}
 
 	config.RTP = roqSource{ReadCloser: rtpSrc, conn: quicConn}
 	config.RTCP = media.RTCPFlow{Send: rtcpSink, Recv: rtcpSrc}
-	return pipeline.AddReceiver(config)
+	return cleanup, pipeline.AddReceiver(config)
 }
 
 // roqSource is a RoQ receive flow that also reports the round trip time of the
