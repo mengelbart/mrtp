@@ -48,20 +48,20 @@ func (c *Channel) publish(stream string, msg Message) error {
 	return t.publish(msg)
 }
 
-func (b *Channel) subscribe(stream string, subscriber *Subscriber) (int, error) {
-	b.lock.Lock()
-	defer b.lock.Unlock()
-	t, ok := b.streams[stream]
+func (c *Channel) subscribe(stream string, subscriber *Subscriber) (int, error) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	t, ok := c.streams[stream]
 	if !ok {
 		return 0, errors.New("unknown topic")
 	}
 	return t.subscribe(subscriber), nil
 }
 
-func (b *Channel) unsubscribe(stream string, id int) error {
-	b.lock.Lock()
-	defer b.lock.Unlock()
-	t, ok := b.streams[stream]
+func (c *Channel) unsubscribe(stream string, id int) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	t, ok := c.streams[stream]
 	if !ok {
 		return errors.New("unknown topic")
 	}
@@ -69,12 +69,12 @@ func (b *Channel) unsubscribe(stream string, id int) error {
 	return nil
 }
 
-func (b *Channel) Close() error {
+func (c *Channel) Close() error {
 	log.Println("closing broker")
-	b.lock.Lock()
-	defer b.lock.Unlock()
-	b.closed = true
-	for _, t := range b.streams {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.closed = true
+	for _, t := range c.streams {
 		if err := t.Close(); err != nil {
 			log.Println(err)
 		}

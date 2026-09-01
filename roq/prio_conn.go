@@ -26,15 +26,15 @@ func (s *QuicGoReceiveStream) CancelRead(c uint64) {
 	s.stream.CancelRead(quic.StreamErrorCode(c))
 }
 
-func (c *QuicGoReceiveStream) Read(p []byte) (n int, err error) {
-	return c.stream.Read(p)
+func (s *QuicGoReceiveStream) Read(p []byte) (n int, err error) {
+	return s.stream.Read(p)
 }
 
 type QuicGoSendStream struct {
 	stream *quic.SendStream
 }
 
-func NewQuicstream(stream *quic.SendStream) *QuicGoSendStream {
+func NewQuicGoSendStream(stream *quic.SendStream) *QuicGoSendStream {
 	return &QuicGoSendStream{
 		stream: stream,
 	}
