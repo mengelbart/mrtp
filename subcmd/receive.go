@@ -64,8 +64,8 @@ func (r *Receive) Exec(cmd string, args []string) error {
 	fs.UintVar(&r.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 	fs.UintVar(&r.udpPort, "rtp-port", 5000, "UDP Port number for outgoing RTP stream")
 	fs.UintVar(&r.rtpFlowID, "rtp-flow-id", 0, "RTP Flow ID when using RTP over QUIC")
-	fs.UintVar(&r.rtcpSendPort, "rtcp-send-porto", 5002, "UDP port for outgoing RTCP stream")
-	fs.UintVar(&r.rtcpRecvPort, "rtcp-recv-porto", 5001, "UDP port for incoming RTCP stream")
+	fs.UintVar(&r.rtcpSendPort, "rtcp-send-port", 5002, "UDP port for outgoing RTCP stream")
+	fs.UintVar(&r.rtcpRecvPort, "rtcp-recv-port", 5001, "UDP port for incoming RTCP stream")
 	fs.UintVar(&r.rtcpSendFlowID, "rtcp-send-flow-id", 1, "RTCP Sender Flow ID when using RTP over QUIC")
 	fs.UintVar(&r.rtcpRecvFlowID, "rtcp-recv-flow-id", 2, "RTCP Receiver Flow ID when using RTP over QUIC")
 
