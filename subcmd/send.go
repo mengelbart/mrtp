@@ -24,8 +24,6 @@ func init() {
 	cmdmain.RegisterSubCmd("send", func() cmdmain.SubCmd { return new(Send) })
 }
 
-var dcPercentage uint
-
 type Send struct {
 	localAddr         string
 	remoteAddr        string
@@ -39,6 +37,7 @@ type Send struct {
 	dcSourceFile      string
 	dcStartDelay      uint
 	dcChunks          bool
+	dcPercentage      uint
 	dataChannelFlowID uint
 	udpPort           uint
 	rtcpSendPort      uint
@@ -77,7 +76,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.UintVar(&s.rtcpRecvPort, "rtcp-recv-port", 5002, "UDP port for incoming RTCP stream")
 	fs.UintVar(&s.rtcpSendFlowID, "rtcp-send-flow-id", 2, "RTCP Sender Flow ID when using RTP over QUIC")
 	fs.UintVar(&s.rtcpRecvFlowID, "rtcp-recv-flow-id", 1, "RTCP Receiver Flow ID when using RTP over QUIC")
-	fs.UintVar(&dcPercentage, "dc-tr-share", 50, "Percentage of target rate to be used for data channel (RoQ only)")
+	fs.UintVar(&s.dcPercentage, "dc-tr-share", 50, "Percentage of target rate to be used for data channel (RoQ only)")
 	fs.StringVar(&s.transport, "transport", DefaultTransport,
 		fmt.Sprintf("Transport for plain RTP, ignored when RoQ is enabled or when the media pipeline moves the packets itself (%v)", strings.Join(transportNames, ", ")))
 
@@ -274,7 +273,7 @@ Flags:
 
 			var mediaTargetRate uint
 			if s.datachannel && s.dataSource != nil && s.dataSource.Running() {
-				mediaTargetRate = ratebps * (100 - dcPercentage) / 100
+				mediaTargetRate = ratebps * (100 - s.dcPercentage) / 100
 			} else {
 				mediaTargetRate = uint(0.8 * float64(ratebps))
 			}
