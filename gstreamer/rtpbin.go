@@ -33,19 +33,22 @@ type rtpSinkBin interface {
 }
 
 type RTPBin struct {
-	transports map[int]*gst.Element
-	streams    map[int]rtpSinkBin
-
 	pipeline *gst.Pipeline
 	mainloop *glib.MainLoop
 	rtpbin   *gst.Element
 
+	// mu guards transports, streams, rtcpFunnels and readers, which are
+	// written by AddSender/AddReceiver and read from the rtpbin's own
+	// pad-added callback, both of which can run concurrently.
+	mu          sync.Mutex
+	transports  map[int]*gst.Element
+	streams     map[int]rtpSinkBin
 	rtcpFunnels map[int]*gst.Element
-
 	// readers are the transport sources feeding the appsrc elements. The
 	// pipeline owns their lifetime and closes them on teardown.
-	readers      []io.ReadCloser
-	closeReaders sync.Once
+	readers []io.ReadCloser
+	// stopped is set by stop and makes addReader reject new readers.
+	stopped bool
 
 	screamTx             *gst.Element
 	SetTargetRateEncoder func(ratebps uint) error
@@ -112,13 +115,16 @@ func (r *RTPBin) Run() error {
 // stop tears the pipeline down and makes a running Run return. It is safe to
 // call before Run, and more than once.
 func (r *RTPBin) stop() error {
-	r.closeReaders.Do(func() {
-		for _, rc := range r.readers {
-			if err := rc.Close(); err != nil {
-				slog.Error("failed to close transport reader", "error", err)
-			}
+	r.mu.Lock()
+	r.stopped = true
+	readers := r.readers
+	r.readers = nil
+	r.mu.Unlock()
+	for _, rc := range readers {
+		if err := rc.Close(); err != nil {
+			slog.Error("failed to close transport reader", "error", err)
 		}
-	})
+	}
 	err := r.pipeline.BlockSetState(gst.StateNull)
 	r.mainloop.Quit()
 	return err
@@ -136,7 +142,9 @@ func (r *RTPBin) setupRTPPipeline() error {
 			if _, err := fmt.Sscanf(pad.GetName(), "recv_rtp_src_%d_%d_%d", &id, &ssrc, &pt); err != nil {
 				return
 			}
+			r.mu.Lock()
 			stream, ok := r.streams[id]
+			r.mu.Unlock()
 			if !ok {
 				slog.Error("stream not found", "id", id)
 				return
@@ -163,7 +171,9 @@ func (r *RTPBin) setupRTPPipeline() error {
 			if _, err := fmt.Sscanf(pad.GetName(), "send_rtp_src_%d", &id); err != nil {
 				return
 			}
+			r.mu.Lock()
 			sink := r.transports[id]
+			r.mu.Unlock()
 			if err := r.pipeline.Add(sink); err != nil {
 				return
 			}
@@ -198,6 +208,8 @@ func (r *RTPBin) AddRTPTransportSink(id int, wc io.WriteCloser) error {
 }
 
 func (r *RTPBin) addRTPTransportSinkElement(id int, sink *gst.Element) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if _, ok := r.transports[id]; ok {
 		return errors.New("duplicate stream id")
 	}
@@ -301,14 +313,19 @@ func (r *RTPBin) sendRTCPForStreamElement(id int, sink *gst.Element) error {
 	if sendRTCPSrcPad == nil {
 		return errors.New("failed to request RTCP src pad")
 	}
+	r.mu.Lock()
 	funnel, ok := r.rtcpFunnels[id]
 	if !ok {
 		var err error
 		funnel, err = gst.NewElement("funnel")
 		if err != nil {
+			r.mu.Unlock()
 			return err
 		}
 		r.rtcpFunnels[id] = funnel
+	}
+	r.mu.Unlock()
+	if !ok {
 		if err := r.pipeline.Add(funnel); err != nil {
 			return err
 		}
@@ -332,6 +349,8 @@ func (r *RTPBin) sendRTCPForStreamElement(id int, sink *gst.Element) error {
 }
 
 func (r *RTPBin) addRTPSinkStream(id int, sink rtpSinkBin) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if _, ok := r.streams[id]; ok {
 		return errors.New("duplicate stream id")
 	}
@@ -340,16 +359,35 @@ func (r *RTPBin) addRTPSinkStream(id int, sink rtpSinkBin) error {
 }
 
 func (r *RTPBin) ReceiveRTPStreamFrom(id int, rc io.ReadCloser, screamCCFB bool) error {
+	if err := r.addReader(rc); err != nil {
+		return err
+	}
 	e, err := getAppSrcWithReadCloser(rc)
 	if err != nil {
 		return err
 	}
-	r.readers = append(r.readers, rc)
 	return r.receiveRTPStreamFromElement(id, e, screamCCFB)
 }
 
+// addReader takes ownership of rc, which is closed on teardown. It returns an
+// error if the pipeline is already stopping, in which case rc is closed.
+func (r *RTPBin) addReader(rc io.ReadCloser) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.stopped {
+		if err := rc.Close(); err != nil {
+			slog.Error("failed to close transport reader", "error", err)
+		}
+		return errors.New("pipeline is stopped")
+	}
+	r.readers = append(r.readers, rc)
+	return nil
+}
+
 func (r *RTPBin) receiveRTPStreamFromElement(id int, src *gst.Element, screamCCFB bool) error {
+	r.mu.Lock()
 	sink, ok := r.streams[id]
+	r.mu.Unlock()
 	if !ok {
 		return errors.New("unknown stream, did you forget to call addRTPSinkStream first?")
 	}
@@ -396,13 +434,18 @@ func (r *RTPBin) receiveRTPStreamFromElement(id int, src *gst.Element, screamCCF
 			panic(fmt.Sprintf("failed to link pads: %v", ret))
 		}
 
+		r.mu.Lock()
 		funnel, ok = r.rtcpFunnels[id]
 		if !ok {
 			funnel, err = gst.NewElement("funnel")
 			if err != nil {
+				r.mu.Unlock()
 				return err
 			}
 			r.rtcpFunnels[id] = funnel
+		}
+		r.mu.Unlock()
+		if !ok {
 			if err = r.pipeline.Add(funnel); err != nil {
 				return err
 			}
@@ -440,11 +483,13 @@ func (r *RTPBin) receiveRTPStreamFromElement(id int, src *gst.Element, screamCCF
 }
 
 func (r *RTPBin) ReceiveRTCPFrom(rc io.ReadCloser) error {
+	if err := r.addReader(rc); err != nil {
+		return err
+	}
 	e, err := getAppSrcWithReadCloser(rc)
 	if err != nil {
 		return err
 	}
-	r.readers = append(r.readers, rc)
 	return r.receiveRTCPFromElement(e)
 }
 
