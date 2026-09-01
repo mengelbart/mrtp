@@ -2,7 +2,7 @@ package pubsub
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"sync"
 )
 
@@ -70,15 +70,15 @@ func (c *Channel) unsubscribe(stream string, id int) error {
 }
 
 func (c *Channel) Close() error {
-	log.Println("closing broker")
+	slog.Info("closing broker")
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.closed = true
 	for _, t := range c.streams {
 		if err := t.Close(); err != nil {
-			log.Println(err)
+			slog.Error("closing stream", "error", err)
 		}
 	}
-	log.Println("channel closed")
+	slog.Info("channel closed")
 	return nil
 }
