@@ -32,7 +32,6 @@ type Transport struct {
 
 	running atomic.Bool
 
-	pacingFactor    func() float64
 	bwe             mrtp.BWE
 	lastBWEUpdate   time.Time
 	inFlightPackets []packetFeedback
@@ -82,13 +81,6 @@ func SetRemoteAddress(address string, port uint) Option {
 	}
 }
 
-func PacingFactor(factor func() float64) Option {
-	return func(t *Transport) error {
-		t.pacingFactor = factor
-		return nil
-	}
-}
-
 func SetQLOGLabel(label string) Option {
 	return func(t *Transport) error {
 		t.qlogLabel = label
@@ -98,9 +90,8 @@ func SetQLOGLabel(label string) Option {
 
 func New(ctx context.Context, tlsNextProtos []string, opts ...Option) (*Transport, error) {
 	t := &Transport{
-		role:         RoleServer,
-		ctx:          ctx,
-		pacingFactor: func() float64 { return 1.0 },
+		role: RoleServer,
+		ctx:  ctx,
 	}
 
 	for _, opt := range opts {
@@ -334,7 +325,7 @@ func (t *Transport) updateCongestionControl() {
 					slog.Error("Error setting source target rate:", "error", err)
 				}
 			}
-			t.quicConn.SetPacingRate(uint64(t.pacingFactor() * float64(target)))
+			t.quicConn.SetPacingRate(uint64(target))
 		}
 	}
 }
