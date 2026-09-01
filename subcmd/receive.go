@@ -99,13 +99,13 @@ Flags:
 	}
 
 	if r.roqMapping > 2 {
-		fmt.Fprintf(os.Stderr, "Invalid %v value, must be 0, 1 or 2\n", r.roqMapping)
+		fmt.Fprintf(os.Stderr, "Invalid -roq-mapping value %v, must be 0, 1 or 2\n", r.roqMapping)
 		fs.Usage()
 		os.Exit(1)
 	}
 
 	if (r.datachannel || r.roqMapping != 0) && (!r.roqServer && !r.roqClient) {
-		fmt.Fprintf(os.Stderr, "Flag -%v, -%v and only valid for RoQ\n", "dc", "roq-mapping")
+		fmt.Fprintf(os.Stderr, "Flags -%v and -%v are only valid for RoQ\n", "dc", "roq-mapping")
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -161,7 +161,7 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 		quictransport.WithRole(quictransport.Role(r.roqServer)),
 		quictransport.SetLocalAddress(r.localAddr, r.udpPort),
 		quictransport.SetRemoteAddress(r.remoteAddr, r.udpPort),
-		quictransport.SetQLOGLabel("reicever"),
+		quictransport.SetQLOGLabel("receiver"),
 	}
 
 	quicConn, err := quictransport.New(ctx, []string{roqALPN}, quicOptions...)

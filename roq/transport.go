@@ -49,7 +49,7 @@ func (t *Transport) NewReceiveFlow(id uint64, logRTPpackets bool) (*Receiver, er
 	if err != nil {
 		return nil, err
 	}
-	return newReciever(flow, logRTPpackets), nil
+	return newReceiver(flow, logRTPpackets), nil
 }
 
 func (t *Transport) Close() error {

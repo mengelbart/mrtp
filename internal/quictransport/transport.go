@@ -157,7 +157,7 @@ func (t *Transport) StartHandlers() {
 	go t.receiveUniStreams() // already opened feedback stream; do not have to worry about that here
 }
 
-// GetQuicDataChannel returns the underlying quic connection.
+// GetQuicConnection returns the underlying quic connection.
 func (t *Transport) GetQuicConnection() *quic.Conn {
 	return t.quicConn
 }
