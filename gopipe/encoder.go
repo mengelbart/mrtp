@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/mengelbart/mrtp"
@@ -29,6 +30,8 @@ type Encoder struct {
 	x264Enc *codec.X264encoder
 
 	codec mrtp.Codec
+
+	mu sync.Mutex
 }
 
 func NewEncoder(c mrtp.Codec) *Encoder {
@@ -88,21 +91,23 @@ func (e *Encoder) Link(f Sink, i Info) (Sink, error) {
 
 		ySize := i.Width * i.Height
 		uSize := ySize / 4
+		if uint(len(b)) < ySize+2*uSize {
+			return fmt.Errorf("encoder: frame buffer too short: got %v bytes, want at least %v", len(b), ySize+2*uSize)
+		}
 		image.Y = b[:ySize]
 		image.Cb = b[ySize : ySize+uSize]
 		image.Cr = b[ySize+uSize:]
 
+		e.mu.Lock()
 		var encoded *codec.Frame
 		if e.vpxEnc != nil {
 			encoded, err = e.vpxEnc.Encode(image, pts, frameDuration)
-			if err != nil {
-				return err
-			}
 		} else if e.x264Enc != nil {
 			encoded, err = e.x264Enc.Encode(image)
-			if err != nil {
-				return err
-			}
+		}
+		e.mu.Unlock()
+		if err != nil {
+			return err
 		}
 
 		slog.Debug("encoder src", "length", len(encoded.Payload), "pts", pts, "duration", frameDuration.Microseconds(), "keyframe", encoded.IsKeyFrame, "frame-count", frameCount)
@@ -119,6 +124,8 @@ func (e *Encoder) SetTargetBitrate(bitrate uint) error {
 	targetRate := uint64(0.9 * float64(bitrate))
 	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", targetRate)
 
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if e.vpxEnc != nil {
 		e.vpxEnc.SetTargetRate(targetRate)
 	} else if e.x264Enc != nil {
