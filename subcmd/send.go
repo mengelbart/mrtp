@@ -161,8 +161,6 @@ Flags:
 		}
 	}()
 
-	var mediaSender media.Sender
-
 	if s.roqServer || s.roqClient {
 		quicOptions := []quictransport.Option{
 			quictransport.WithRole(quictransport.Role(s.roqServer)),
@@ -251,24 +249,6 @@ Flags:
 			}()
 		}
 
-		// set rate callbacks
-		quicConn.SetSourceTargetRate = func(ratebps uint) error {
-			slog.Info("NEW_TARGET_RATE", "rate", ratebps)
-
-			var mediaTargetRate uint
-			if s.datachannel && s.dataSource != nil && s.dataSource.Running() {
-				mediaTargetRate = ratebps * (100 - dcPercentage) / 100
-			} else {
-				mediaTargetRate = uint(0.8 * float64(ratebps))
-			}
-			err := mediaSender.SetTargetBitrate(mediaTargetRate)
-			if err != nil {
-				panic(err)
-			}
-
-			return nil
-		}
-
 		rtpSink, err := roqTransport.NewSendFlow(uint64(s.rtpFlowID), roq.SendMode(s.roqMapping), s.traceRTP)
 		if err != nil {
 			return err
@@ -284,13 +264,26 @@ Flags:
 
 		senderConfig.RTP = rtpSink
 		senderConfig.RTCP = media.RTCPFlow{Send: rtcpSink, Recv: rtcpSrc}
-		mediaSender, err = pipeline.AddSender(senderConfig)
+		mediaSender, err := pipeline.AddSender(senderConfig)
 		if err != nil {
 			return err
 		}
 
+		// set rate callbacks
+		quicConn.SetSourceTargetRate = func(ratebps uint) error {
+			slog.Info("NEW_TARGET_RATE", "rate", ratebps)
+
+			var mediaTargetRate uint
+			if s.datachannel && s.dataSource != nil && s.dataSource.Running() {
+				mediaTargetRate = ratebps * (100 - dcPercentage) / 100
+			} else {
+				mediaTargetRate = uint(0.8 * float64(ratebps))
+			}
+			return mediaSender.SetTargetBitrate(mediaTargetRate)
+		}
+
 	} else {
-		mediaSender, err = s.setupPlainRTP(pipeline, senderConfig)
+		_, err := s.setupPlainRTP(pipeline, senderConfig)
 		if err != nil {
 			return err
 		}
