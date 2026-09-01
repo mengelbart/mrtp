@@ -46,13 +46,6 @@ func newSender(ctx context.Context, flow *roq.SendFlow, mode SendMode, logRTPpac
 	return sender, nil
 }
 
-func cancelClose(stream *roq.RTPSendStream) {
-	// time.AfterFunc(200*time.Millisecond, func() {
-	// 	stream.CancelStream(5)
-	// })
-	_ = stream.Close()
-}
-
 func (s *Sender) Write(data []byte) (int, error) {
 	// log rtp packet
 	if s.logger != nil {
@@ -67,7 +60,7 @@ func (s *Sender) Write(data []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		defer cancelClose(stream)
+		defer func() { _ = stream.Close() }()
 		return stream.WriteRTPBytes(data)
 	case SendModeSingleStream:
 		return s.stream.WriteRTPBytes(data)
