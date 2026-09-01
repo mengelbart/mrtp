@@ -48,7 +48,7 @@ func (t *LocalTrack) Write(data []byte) (int, error) {
 			continue
 		}
 	}
-	return 0, nil
+	return len(data), nil
 }
 
 func (t *LocalTrack) Close() error {
