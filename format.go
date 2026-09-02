@@ -9,6 +9,10 @@ import (
 // A Format says what an edge carries, with the parameters an element needs in
 // order to configure itself for it. Each format pairs with one payload type by
 // convention, so an element asserts the format it expects in [Sink.Negotiate].
+//
+// Formats are compared with ==, by the elements that merge several inputs into
+// one output, so a format is a comparable value: a struct of scalars, not a
+// pointer and not a struct holding a slice or a map.
 type Format interface {
 	fmt.Stringer
 }
