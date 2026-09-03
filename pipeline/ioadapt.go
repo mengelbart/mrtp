@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 
 	"github.com/mengelbart/mrtp"
 )
@@ -118,4 +119,140 @@ var (
 	_ mrtp.Sink[mrtp.DataChunk]   = (*writerSink[mrtp.DataChunk])(nil)
 	_ mrtp.Source[mrtp.DataChunk] = (*readerSource[mrtp.DataChunk])(nil)
 	_ mrtp.Driver                 = (*readerSource[mrtp.DataChunk])(nil)
+)
+
+// WriterFromSink makes an [mrtp.Sink] the end of an io.WriteCloser, one packet
+// per Write, and bytes is where a payload keeps its buffer. It negotiates
+// format f once, at construction.
+//
+// It is the inverse of [SinkFromWriter].
+func WriterFromSink[T any](down mrtp.Sink[T], f mrtp.Format, bytes func(*T) *[]byte) (io.WriteCloser, error) {
+	if err := down.Negotiate(f); err != nil {
+		return nil, err
+	}
+	return &sinkWriter[T]{
+		down:  down,
+		bytes: bytes,
+		pool: NewPool(
+			func() *T {
+				var value T
+				return &value
+			},
+			func(value *T) {
+				buffer := bytes(value)
+				*buffer = (*buffer)[:0]
+			},
+		),
+	}, nil
+}
+
+type sinkWriter[T any] struct {
+	down   mrtp.Sink[T]
+	bytes  func(*T) *[]byte
+	pool   *Pool[T]
+	closed sync.Once
+}
+
+func (w *sinkWriter[T]) Write(p []byte) (int, error) {
+	packet := w.pool.Get()
+	buffer := w.bytes(packet.Value())
+	*buffer = append((*buffer)[:0], p...)
+	if err := w.down.Write(packet); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (w *sinkWriter[T]) Close() error {
+	var err error
+	w.closed.Do(func() {
+		err = errors.Join(w.down.EndOfStream(), w.down.Close())
+	})
+	return err
+}
+
+// SinkReader is a pushing input read out as a byte stream.
+type SinkReader[T any] interface {
+	mrtp.Sink[T]
+	io.ReadCloser
+}
+
+// ReaderFromSource makes a pushing upstream the start of an io.ReadCloser, one
+// packet per Read, and bytes is where a payload keeps its buffer. It takes any
+// format, because a reader takes bytes and configures nothing.
+//
+// It buffers nothing: a packet is handed straight to the next Read, so the
+// upstream blocks in Write until the reader takes it. That is what keeps a
+// pulling consumer's demand as the back pressure on the source.
+//
+// It is the inverse of [SourceFromReader].
+func ReaderFromSource[T any](bytes func(*T) *[]byte) SinkReader[T] {
+	return &sourceReader[T]{
+		bytes:  bytes,
+		items:  make(chan mrtp.Packet[T]),
+		eos:    make(chan struct{}),
+		closed: make(chan struct{}),
+	}
+}
+
+type sourceReader[T any] struct {
+	bytes func(*T) *[]byte
+
+	items chan mrtp.Packet[T]
+	eos   chan struct{}
+
+	closed  chan struct{}
+	closing sync.Once
+}
+
+func (r *sourceReader[T]) Negotiate(mrtp.Format) error {
+	return nil
+}
+
+// Write implements mrtp.Sink. It blocks until a Read takes the packet, or
+// until the reader is closed, which releases the packet.
+func (r *sourceReader[T]) Write(p mrtp.Packet[T]) error {
+	select {
+	case r.items <- p:
+		return nil
+	case <-r.closed:
+		p.Release()
+		return io.ErrClosedPipe
+	}
+}
+
+// EndOfStream implements mrtp.Sink. Read reports io.EOF from here on.
+func (r *sourceReader[T]) EndOfStream() error {
+	close(r.eos)
+	return nil
+}
+
+// Read implements io.Reader. It returns one packet per call, and
+// io.ErrShortBuffer rather than a truncated packet if p is too small.
+func (r *sourceReader[T]) Read(p []byte) (int, error) {
+	select {
+	case packet := <-r.items:
+		defer packet.Release()
+		buffer := *r.bytes(packet.Value())
+		if len(p) < len(buffer) {
+			return 0, io.ErrShortBuffer
+		}
+		return copy(p, buffer), nil
+	case <-r.eos:
+		return 0, io.EOF
+	case <-r.closed:
+		return 0, io.ErrClosedPipe
+	}
+}
+
+// Close implements mrtp.Element and io.Closer. It unblocks a pending Write and
+// a pending Read, and may be called more than once.
+func (r *sourceReader[T]) Close() error {
+	r.closing.Do(func() { close(r.closed) })
+	return nil
+}
+
+var (
+	_ io.WriteCloser             = (*sinkWriter[mrtp.DataChunk])(nil)
+	_ SinkReader[mrtp.DataChunk] = (*sourceReader[mrtp.DataChunk])(nil)
 )
