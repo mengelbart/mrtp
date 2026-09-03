@@ -247,7 +247,7 @@ Flags:
 			}()
 		}
 
-		rtpSink, err := roqTransport.NewSendFlow(uint64(s.rtpFlowID), roq.SendMode(s.roqMapping), s.traceRTP)
+		rtpFlow, err := roqTransport.NewSendFlow(uint64(s.rtpFlowID), roq.SendMode(s.roqMapping), s.traceRTP)
 		if err != nil {
 			return err
 		}
@@ -260,8 +260,8 @@ Flags:
 			return err
 		}
 
-		senderConfig.RTP = rtpSink
-		senderConfig.RTCP = media.RTCPFlow{Send: rtcpSink, Recv: rtcpSrc}
+		senderConfig.Media = rtpSink(rtpFlow)
+		senderConfig.Control = media.ControlFlow{Send: rtcpSink, Recv: rtcpSrc}
 		mediaSender, err := pipeline.AddSender(senderConfig)
 		if err != nil {
 			return err
@@ -301,7 +301,7 @@ func (s *Send) setupPlainRTP(pipeline media.Pipeline, config media.SenderConfig)
 		return nil, fmt.Errorf("unknown transport %q, available: %v", s.transport, transportNames)
 	}
 
-	rtpSink, err := udp.Dial(address(s.remoteAddr, uint16(s.udpPort)), s.traceRTP)
+	rtpConn, err := udp.Dial(address(s.remoteAddr, uint16(s.udpPort)), s.traceRTP)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +314,7 @@ func (s *Send) setupPlainRTP(pipeline media.Pipeline, config media.SenderConfig)
 		return nil, err
 	}
 
-	config.RTP = rtpSink
-	config.RTCP = media.RTCPFlow{Send: rtcpSink, Recv: rtcpSrc}
+	config.Media = rtpSink(rtpConn)
+	config.Control = media.ControlFlow{Send: rtcpSink, Recv: rtcpSrc}
 	return pipeline.AddSender(config)
 }

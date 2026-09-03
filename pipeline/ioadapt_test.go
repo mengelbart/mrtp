@@ -145,3 +145,108 @@ func TestSourceFromReaderStopsOnCancel(t *testing.T) {
 		t.Fatalf("Run returned %v, want the cancellation", err)
 	}
 }
+
+func TestWriterFromSinkWritesOnePacketPerCall(t *testing.T) {
+	sink := &chunkCollector{}
+	w, err := WriterFromSink(sink, mrtp.Data{}, chunkBytes)
+	must(t, err)
+
+	for _, data := range [][]byte{{1, 2}, {3}} {
+		n, err := w.Write(data)
+		must(t, err)
+		if n != len(data) {
+			t.Fatalf("Write reported %v bytes, want %v", n, len(data))
+		}
+	}
+	if len(sink.got) != 2 || !slices.Equal(sink.got[0], []byte{1, 2}) || !slices.Equal(sink.got[1], []byte{3}) {
+		t.Fatalf("the sink got %v", sink.got)
+	}
+	if pool := w.(*sinkWriter[mrtp.DataChunk]).pool; pool.Outstanding() != 0 {
+		t.Fatalf("%v packets were never released", pool.Outstanding())
+	}
+
+	// The appsink closes it on end of stream and teardown closes it again.
+	must(t, w.Close())
+	must(t, w.Close())
+	if sink.eos != 1 {
+		t.Fatalf("the sink saw %v ends of stream, want 1", sink.eos)
+	}
+}
+
+func TestWriterFromSinkRejectsAnUnnegotiableFormat(t *testing.T) {
+	want := errors.New("no")
+	if _, err := WriterFromSink[mrtp.DataChunk](rejectingSink{want}, mrtp.Data{}, chunkBytes); !errors.Is(err, want) {
+		t.Fatalf("WriterFromSink returned %v, want the sink's rejection", err)
+	}
+}
+
+// rejectingSink negotiates nothing.
+type rejectingSink struct{ err error }
+
+func (s rejectingSink) Negotiate(mrtp.Format) error               { return s.err }
+func (s rejectingSink) Write(p mrtp.Packet[mrtp.DataChunk]) error { p.Release(); return nil }
+func (s rejectingSink) EndOfStream() error                        { return nil }
+func (s rejectingSink) Close() error                              { return nil }
+
+func TestReaderFromSourceHandsEachPacketToOneRead(t *testing.T) {
+	src := &packetReader{packets: [][]byte{{1, 2, 3}, {4}}}
+	reader := ReaderFromSource(chunkBytes)
+
+	g := NewGraph()
+	must(t, g.Connect(SourceFromReader(src, mrtp.Data{}, 16, chunkBytes), reader))
+
+	done := make(chan error, 1)
+	go func() { done <- g.Run(context.Background()) }()
+
+	var got [][]byte
+	buf := make([]byte, 16)
+	for {
+		n, err := reader.Read(buf)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		must(t, err)
+		got = append(got, slices.Clone(buf[:n]))
+	}
+	must(t, <-done)
+	if len(got) != 2 || !slices.Equal(got[0], []byte{1, 2, 3}) || !slices.Equal(got[1], []byte{4}) {
+		t.Fatalf("the reader got %v", got)
+	}
+	must(t, g.Close())
+}
+
+func TestReaderFromSourceRejectsAShortBuffer(t *testing.T) {
+	reader := ReaderFromSource(chunkBytes)
+	pool := NewPool(func() *mrtp.DataChunk { return &mrtp.DataChunk{} }, nil)
+	p := pool.Get()
+	p.Value().Data = []byte{1, 2, 3}
+	go func() { _ = reader.Write(p) }()
+
+	if _, err := reader.Read(make([]byte, 2)); !errors.Is(err, io.ErrShortBuffer) {
+		t.Fatalf("Read returned %v, want io.ErrShortBuffer", err)
+	}
+	if pool.Outstanding() != 0 {
+		t.Fatal("the reader kept the packet it could not deliver")
+	}
+}
+
+func TestReaderFromSourceCloseUnblocksAWrite(t *testing.T) {
+	reader := ReaderFromSource(chunkBytes)
+	pool := NewPool(func() *mrtp.DataChunk { return &mrtp.DataChunk{} }, nil)
+
+	written := make(chan error, 1)
+	go func() { written <- reader.Write(pool.Get()) }()
+
+	// Nothing reads, so the write is parked until the reader goes away.
+	must(t, reader.Close())
+	must(t, reader.Close())
+	if err := <-written; !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("Write returned %v, want io.ErrClosedPipe", err)
+	}
+	if pool.Outstanding() != 0 {
+		t.Fatal("the reader kept the packet it could not deliver")
+	}
+	if _, err := reader.Read(make([]byte, 16)); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("Read returned %v, want io.ErrClosedPipe", err)
+	}
+}

@@ -23,9 +23,6 @@ func init() {
 }
 
 const (
-	// readBufferSize is the size of the buffer one RTP packet is read into.
-	readBufferSize = math.MaxUint16
-
 	// rtcpBufferSize is the size of the buffer one RTCP packet is read into.
 	rtcpBufferSize = math.MaxUint16
 
@@ -95,18 +92,19 @@ type stream struct {
 
 // AddSender implements media.Pipeline.
 func (p *mediaPipeline) AddSender(config media.SenderConfig) (media.Sender, error) {
-	if config.RTP == nil {
-		return nil, fmt.Errorf("stream %q has no RTP endpoint to send to", config.Name)
+	if config.Media == nil {
+		return nil, fmt.Errorf("stream %q has no media sink to send to", config.Name)
 	}
-	if config.PayloadType < 0 || config.PayloadType > math.MaxInt8 {
-		return nil, fmt.Errorf("invalid payload type %v: the RTP payload type field is 7 bits, so it must be in [0, %v]", config.PayloadType, math.MaxInt8)
+	format, err := media.RTPFormat(config.Codec, config.PayloadType)
+	if err != nil {
+		return nil, err
 	}
 	packetizer := NewRTPPacketizer(
 		uint16(p.factory.mtu),
-		uint8(config.PayloadType),
-		0, // TODO: Set SSRC to a random value, or allow the user to set it.
-		uint32(config.Codec.ClockRate()),
-		config.Codec,
+		format.PayloadType,
+		format.SSRC, // TODO: Set SSRC to a random value, or allow the user to set it.
+		format.ClockRate,
+		format.Codec,
 	)
 
 	source, sender, err := p.newSource(config)
@@ -124,7 +122,7 @@ func (p *mediaPipeline) AddSender(config media.SenderConfig) (media.Sender, erro
 	g.Terminal(source.driver)
 
 	p.addCloser(closerFunc(g.Close))
-	p.drainRTCP(config.RTCP)
+	p.drainRTCP(config.Control)
 	p.addStream(&stream{terminal: true, run: g.Run})
 	return sender, nil
 }
@@ -194,34 +192,27 @@ func (p *mediaPipeline) sendTail(g *pipeline.Graph, packetizer *RTPPacketizer, c
 		(*mrtp.RTPPacket).Marker, frameDuration,
 	))
 	pump := pipeline.NewPump[mrtp.RTPPacket]()
-	out := pipeline.SinkFromWriter(nopWriteCloser{config.RTP}, rtpBytes)
 
 	return errors.Join(
 		g.Connect(packetizer, queue),
 		g.Attach(queue, pump),
-		g.Connect(pump, out),
+		g.Connect(pump, config.Media),
 	)
 }
 
 // AddReceiver implements media.Pipeline.
 func (p *mediaPipeline) AddReceiver(config media.ReceiverConfig) error {
-	if config.RTP == nil {
-		return fmt.Errorf("stream %q has no RTP endpoint to receive from", config.Name)
+	if config.Media == nil {
+		return fmt.Errorf("stream %q has no media source to receive from", config.Name)
 	}
-	source := pipeline.SourceFromReader(nopReadCloser{config.RTP}, mrtp.RTP{
-		Codec:       config.Codec,
-		PayloadType: uint8(config.PayloadType),
-		ClockRate:   uint32(config.Codec.ClockRate()),
-	}, readBufferSize, rtpBytes)
 
 	// The depacketizer waits for a missing packet, so how long it is worth
 	// waiting depends on the round trip time. A transport that does not know
 	// its RTT leaves it at the fixed -go-depacketizer-timeout.
-	rtt, _ := config.RTP.(mrtp.RTTSource)
-	depacketizer := NewRTPDepacketizer(p.factory.depacketizerTimeout, rtt)
+	depacketizer := NewRTPDepacketizer(p.factory.depacketizerTimeout, config.RTT)
 
 	g := pipeline.NewGraph()
-	if err := g.Connect(source, depacketizer); err != nil {
+	if err := g.Connect(config.Media, depacketizer); err != nil {
 		return err
 	}
 	if err := p.receiveTail(g, depacketizer, config); err != nil {
@@ -229,7 +220,7 @@ func (p *mediaPipeline) AddReceiver(config media.ReceiverConfig) error {
 	}
 
 	p.addCloser(closerFunc(g.Close))
-	p.drainRTCP(config.RTCP)
+	p.drainRTCP(config.Control)
 	p.addStream(&stream{run: g.Run})
 	return nil
 }
@@ -274,7 +265,7 @@ func (p *mediaPipeline) receiveTail(g *pipeline.Graph, depacketizer *RTPDepacket
 //
 // It is not part of the stream's graph: an RTCP read failing must not take the
 // media down with it.
-func (p *mediaPipeline) drainRTCP(flow media.RTCPFlow) {
+func (p *mediaPipeline) drainRTCP(flow media.ControlFlow) {
 	if flow.Recv == nil {
 		return
 	}
@@ -371,22 +362,6 @@ func (p *mediaPipeline) addCloser(c io.Closer) {
 	defer p.mu.Unlock()
 	p.closers = append(p.closers, c)
 }
-
-// rtpBytes says where an RTP packet keeps its buffer, for the io adapters.
-func rtpBytes(p *mrtp.RTPPacket) *[]byte {
-	return &p.Data
-}
-
-// The RTP endpoints belong to the transport that handed them over, so the
-// graph reads and writes them but does not close them.
-
-type nopWriteCloser struct{ io.Writer }
-
-func (nopWriteCloser) Close() error { return nil }
-
-type nopReadCloser struct{ io.Reader }
-
-func (nopReadCloser) Close() error { return nil }
 
 type closerFunc func() error
 

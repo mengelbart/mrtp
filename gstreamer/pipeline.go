@@ -7,12 +7,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"math"
+	"sync"
 	"sync/atomic"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/media"
+	"github.com/mengelbart/mrtp/pipeline"
 )
 
 func init() {
@@ -75,7 +77,7 @@ func (f *factory) NewPipeline() (media.Pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &pipeline{factory: f, bin: bin}, nil
+	return &mediaPipeline{factory: f, bin: bin}, nil
 }
 
 // rtcpPorts returns the RTCP ports of one stream. An unset port is derived
@@ -102,16 +104,24 @@ func (f *factory) rtcpPorts(sending bool) (send, recv uint) {
 // for -transport gst-udp without -gst-udp looks like from here.
 var errNoRTPEndpoint = errors.New("stream has no RTP endpoint, and the pipeline was not given -gst-udp")
 
-// pipeline adapts RTPBin to media.Pipeline.
-type pipeline struct {
+// mediaPipeline adapts RTPBin to media.Pipeline.
+type mediaPipeline struct {
 	factory *factory
 	bin     *RTPBin
 
 	nextID atomic.Int64
+
+	lock sync.Mutex
+	// ctx is nil until Run is called. Graphs added before that wait in
+	// pending, graphs added afterwards start immediately.
+	ctx     context.Context
+	cancel  context.CancelFunc
+	pending []*pipeline.Graph
+	graphs  []*pipeline.Graph
 }
 
 // AddSender implements media.Pipeline.
-func (p *pipeline) AddSender(config media.SenderConfig) (media.Sender, error) {
+func (p *mediaPipeline) AddSender(config media.SenderConfig) (media.Sender, error) {
 	options := []StreamSourceOption{
 		StreamSourceCodec(config.Codec),
 		StreamSourcePayloadType(config.PayloadType),
@@ -131,7 +141,7 @@ func (p *pipeline) AddSender(config media.SenderConfig) (media.Sender, error) {
 
 	// The transport has to be known before the stream is added: adding the
 	// stream requests the pad that the transport is linked to.
-	if err = p.addRTPSink(id, config.RTP); err != nil {
+	if err = p.addRTPSink(id, config); err != nil {
 		return nil, err
 	}
 	if p.factory.scream {
@@ -144,14 +154,14 @@ func (p *pipeline) AddSender(config media.SenderConfig) (media.Sender, error) {
 	if err = p.bin.addRTPSourceStream(id, source); err != nil {
 		return nil, err
 	}
-	if err = p.addRTCP(id, config.RTCP, true); err != nil {
+	if err = p.addRTCP(id, config.Control, true); err != nil {
 		return nil, err
 	}
 	return &sender{source: source}, nil
 }
 
 // AddReceiver implements media.Pipeline.
-func (p *pipeline) AddReceiver(config media.ReceiverConfig) error {
+func (p *mediaPipeline) AddReceiver(config media.ReceiverConfig) error {
 	sinkType, location := Autovideosink, ""
 	switch config.SinkLocation {
 	case media.SinkDisplay:
@@ -175,19 +185,36 @@ func (p *pipeline) AddReceiver(config media.ReceiverConfig) error {
 	if err = p.bin.addRTPSinkStream(id, sink); err != nil {
 		return err
 	}
-	if err = p.addRTPSource(id, config.RTP); err != nil {
+	if err = p.addRTPSource(id, config.Media); err != nil {
 		return err
 	}
-	return p.addRTCP(id, config.RTCP, false)
+	return p.addRTCP(id, config.Control, false)
 }
 
 // Run implements media.Pipeline.
-func (p *pipeline) Run(ctx context.Context) error {
+func (p *mediaPipeline) Run(ctx context.Context) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	p.lock.Lock()
+	if p.ctx != nil {
+		p.lock.Unlock()
+		return errors.New("pipeline is already running")
+	}
+	p.ctx, p.cancel = runCtx, cancel
+	pending := p.pending
+	p.pending = nil
+	p.lock.Unlock()
+
+	for _, g := range pending {
+		p.launch(runCtx, g)
+	}
+
 	stopped := make(chan struct{})
 	defer close(stopped)
 	go func() {
 		select {
-		case <-ctx.Done():
+		case <-runCtx.Done():
 			if stopErr := p.bin.stop(); stopErr != nil {
 				slog.Error("failed to stop media pipeline", "error", stopErr)
 			}
@@ -198,15 +225,24 @@ func (p *pipeline) Run(ctx context.Context) error {
 }
 
 // Close implements media.Pipeline.
-func (p *pipeline) Close() error {
-	return p.bin.stop()
+func (p *mediaPipeline) Close() error {
+	p.lock.Lock()
+	graphs := p.graphs
+	p.graphs = nil
+	p.lock.Unlock()
+
+	err := p.bin.stop()
+	for _, g := range graphs {
+		err = errors.Join(err, g.Close())
+	}
+	return err
 }
 
-func (p *pipeline) claimID() int {
+func (p *mediaPipeline) claimID() int {
 	return int(p.nextID.Add(1) - 1)
 }
 
-func (p *pipeline) addRTPSink(id int, writer io.WriteCloser) error {
+func (p *mediaPipeline) addRTPSink(id int, config media.SenderConfig) error {
 	if p.factory.udp {
 		sink, err := newUDPSinkElement(p.factory.udpRemote, p.factory.udpRTPPort, p.factory.udpTraceRTP)
 		if err != nil {
@@ -214,31 +250,80 @@ func (p *pipeline) addRTPSink(id int, writer io.WriteCloser) error {
 		}
 		return p.bin.addRTPTransportSinkElement(id, sink)
 	}
-	if writer == nil {
+	if config.Media == nil {
 		return errNoRTPEndpoint
+	}
+	format, err := media.RTPFormat(config.Codec, config.PayloadType)
+	if err != nil {
+		return err
+	}
+	writer, err := pipeline.WriterFromSink(config.Media, format, rtpBytes)
+	if err != nil {
+		return err
 	}
 	return p.bin.AddRTPTransportSink(id, writer)
 }
 
-func (p *pipeline) addRTPSource(id int, reader io.ReadCloser) error {
+func (p *mediaPipeline) addRTPSource(id int, source mrtp.Source[mrtp.RTPPacket]) error {
 	if p.factory.udp {
-		source, err := newUDPSrcElement(p.factory.udpLocal, p.factory.udpRTPPort,
+		src, err := newUDPSrcElement(p.factory.udpLocal, p.factory.udpRTPPort,
 			p.factory.udpTraceRTP, p.factory.udpRecvBuffer)
 		if err != nil {
 			return err
 		}
-		return p.bin.receiveRTPStreamFromElement(id, source, p.factory.ccfb)
+		return p.bin.receiveRTPStreamFromElement(id, src, p.factory.ccfb)
 	}
-	if reader == nil {
+	if source == nil {
 		return errNoRTPEndpoint
 	}
-	return p.bin.ReceiveRTPStreamFrom(id, reader, p.factory.ccfb)
+	reader := pipeline.ReaderFromSource(rtpBytes)
+	g := pipeline.NewGraph()
+	if err := g.Connect(source, reader); err != nil {
+		return err
+	}
+	if err := p.bin.ReceiveRTPStreamFrom(id, reader, p.factory.ccfb); err != nil {
+		return err
+	}
+	p.addGraph(g)
+	return nil
+}
+
+// addGraph runs a stream's graph, or queues it until Run starts. A graph
+// failing stops the whole pipeline.
+func (p *mediaPipeline) addGraph(g *pipeline.Graph) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.graphs = append(p.graphs, g)
+	if p.ctx == nil {
+		p.pending = append(p.pending, g)
+		return
+	}
+	p.launch(p.ctx, g)
+}
+
+func (p *mediaPipeline) launch(ctx context.Context, g *pipeline.Graph) {
+	go func() {
+		if err := g.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("media transport graph failed", "error", err)
+			p.lock.Lock()
+			cancel := p.cancel
+			p.lock.Unlock()
+			if cancel != nil {
+				cancel()
+			}
+		}
+	}()
+}
+
+// rtpBytes says where an RTP packet keeps its buffer, for the io adapters.
+func rtpBytes(p *mrtp.RTPPacket) *[]byte {
+	return &p.Data
 }
 
 // addRTCP attaches the RTCP flow of one stream. sending tells the two
 // directions apart, which only matters for the ports the pipeline's own UDP
 // elements use, see factory.rtcpPorts.
-func (p *pipeline) addRTCP(id int, flow media.RTCPFlow, sending bool) error {
+func (p *mediaPipeline) addRTCP(id int, flow media.ControlFlow, sending bool) error {
 	if p.factory.udp {
 		return p.addUDPRTCP(id, sending)
 	}
@@ -253,7 +338,7 @@ func (p *pipeline) addRTCP(id int, flow media.RTCPFlow, sending bool) error {
 	return nil
 }
 
-func (p *pipeline) addUDPRTCP(id int, sending bool) error {
+func (p *mediaPipeline) addUDPRTCP(id int, sending bool) error {
 	sendPort, recvPort := p.factory.rtcpPorts(sending)
 	sink, err := newUDPSinkElement(p.factory.udpRemote, sendPort, false)
 	if err != nil {

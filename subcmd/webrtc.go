@@ -168,8 +168,12 @@ Usage:
 				panic(configErr)
 			}
 			receiverConfig.PayloadType = int(receiver.PayloadType())
-			receiverConfig.RTP = receiver
-			receiverConfig.RTCP = media.RTCPFlow{
+			source, configErr := rtpSource(receiver, receiverConfig)
+			if configErr != nil {
+				panic(configErr)
+			}
+			receiverConfig.Media = source
+			receiverConfig.Control = media.ControlFlow{
 				Send: transport,
 				Recv: receiver.RTCPReceiver(),
 			}
@@ -315,15 +319,15 @@ Usage:
 			Max:     w.maxTargetRate,
 		}
 
-		var rtpSink *webrtc.RTPSender
-		rtpSink, err = transport.AddLocalTrackWithCodec(senderConfig.Codec.MimeType())
+		var track *webrtc.RTPSender
+		track, err = transport.AddLocalTrackWithCodec(senderConfig.Codec.MimeType())
 		if err != nil {
 			return err
 		}
-		senderConfig.RTP = rtpSink
-		senderConfig.RTCP = media.RTCPFlow{
+		senderConfig.Media = rtpSink(track)
+		senderConfig.Control = media.ControlFlow{
 			Send: transport,
-			Recv: rtpSink.RTCPReceiver(),
+			Recv: track.RTCPReceiver(),
 		}
 
 		// TODO(ME): Cannot enable SCReAM here because WebRTC rewrites the SSRCs
