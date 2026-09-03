@@ -74,12 +74,11 @@ type VPXEncoder struct {
 }
 
 type Config struct {
-	Codec       mrtp.Codec
-	Width       uint
-	Height      uint
-	TimebaseNum int
-	TimebaseDen int
-	TargetRate  uint64
+	Codec      mrtp.Codec
+	Width      uint
+	Height     uint
+	FrameRate  mrtp.FrameRate
+	TargetRate uint64
 }
 
 func NewVPXEncoder(c Config) (*VPXEncoder, error) {
@@ -95,8 +94,9 @@ func NewVPXEncoder(c Config) (*VPXEncoder, error) {
 	// general vpx settings
 	cfg.g_w = C.uint(c.Width)
 	cfg.g_h = C.uint(c.Height)
-	cfg.g_timebase.num = C.int(c.TimebaseNum)
-	cfg.g_timebase.den = C.int(c.TimebaseDen)
+	// vpx times frames in ticks of g_timebase, the inverse of a frame rate
+	cfg.g_timebase.num = C.int(c.FrameRate.Den)
+	cfg.g_timebase.den = C.int(c.FrameRate.Num)
 	cfg.rc_end_usage = C.VPX_CBR
 	cfg.rc_target_bitrate = C.uint(c.TargetRate) / 1000
 	cfg.g_error_resilient = C.vpx_codec_er_flags_t(0)

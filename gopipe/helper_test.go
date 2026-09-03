@@ -4,7 +4,6 @@ package gopipe
 
 import (
 	"bytes"
-	"io"
 	"log/slog"
 	"os"
 	"testing"
@@ -12,11 +11,12 @@ import (
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/internal/testvideo"
+	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/stretchr/testify/require"
 )
 
 // The resolution and bitrate are chosen so encoded frames span several RTP packets, which
-// exercises reassembly and gets the jitter buffer past its 50 packet emit threshold.
+// exercises reassembly and gets the depacketizer past its lateness threshold.
 const (
 	testWidth   = 640
 	testHeight  = 480
@@ -47,42 +47,98 @@ func newTestSource(t *testing.T) *Y4MSource {
 	return src
 }
 
+// collector is a Sink that keeps a copy of every payload it is handed, and
+// asserts that the packets it was given were its to release.
+type collector[T any] struct {
+	bytes func(*T) *[]byte
+	items [][]byte
+	eos   bool
+}
+
+func newCollector[T any](bytes func(*T) *[]byte) *collector[T] {
+	return &collector[T]{bytes: bytes}
+}
+
+func (c *collector[T]) Negotiate(mrtp.Format) error { return nil }
+
+func (c *collector[T]) Write(p mrtp.Packet[T]) error {
+	defer p.Release()
+	c.items = append(c.items, bytes.Clone(*c.bytes(p.Value())))
+	return nil
+}
+
+func (c *collector[T]) EndOfStream() error {
+	c.eos = true
+	return nil
+}
+
+func (c *collector[T]) Close() error { return nil }
+
+func encodedBytes(f *mrtp.EncodedFrame) *[]byte { return &f.Data }
+
 // encodedFrames returns the synthetic stream encoded with c.
 func encodedFrames(t *testing.T, c mrtp.Codec) [][]byte {
 	t.Helper()
 
 	src := newTestSource(t)
-
-	frames := make([][]byte, 0, testFrames)
-	sink := WriterFunc(func(b []byte, _ Attributes) error {
-		frames = append(frames, bytes.Clone(b))
-		return nil
-	})
+	frames := newCollector(encodedBytes)
 
 	encoder := NewEncoder(c)
 	defer func() {
 		require.NoError(t, encoder.Close())
 	}()
 
-	chain, err := Chain(src.GetInfo(), sink, encoder)
-	require.NoError(t, err)
+	require.NoError(t, encoder.Negotiate(src.Format()))
+	require.NoError(t, encoder.Connect(frames))
 	require.NoError(t, encoder.SetTargetBitrate(testBitrate))
 
-	var pts int64
+	pool := rawFramePool(t, src.Format().(mrtp.RawVideo))
+	var pts time.Duration
 	for {
-		frame, attr, err := src.getFrame()
-		if err == io.EOF {
+		packet := pool.Get()
+		value := packet.Value()
+		if !readFrame(t, src, value) {
+			packet.Release()
 			break
 		}
-		require.NoError(t, err)
+		value.PTS = pts
+		value.Duration = testFrameDuration
+		pts += testFrameDuration
 
-		attr[PTS] = pts
-		attr[FrameDuration] = testFrameDuration
-		pts += testFrameDuration.Microseconds()
-
-		require.NoError(t, chain.Write(frame, attr))
+		require.NoError(t, encoder.Write(packet))
 	}
-	require.Len(t, frames, testFrames)
+	require.Len(t, frames.items, testFrames)
 
-	return frames
+	return frames.items
+}
+
+// rawFramePool is a pool of frames in format f.
+func rawFramePool(t *testing.T, f mrtp.RawVideo) *pipeline.Pool[mrtp.RawFrame] {
+	t.Helper()
+
+	ySize, cSize, err := planeSizes(f)
+	require.NoError(t, err)
+	return pipeline.NewPool(func() *mrtp.RawFrame {
+		buffer := make([]byte, ySize+2*cSize)
+		return &mrtp.RawFrame{
+			Y:  buffer[:ySize],
+			Cb: buffer[ySize : ySize+cSize],
+			Cr: buffer[ySize+cSize:],
+		}
+	}, nil)
+}
+
+// readFrame fills frame's planes from the source, reporting whether there was
+// a frame left to read.
+func readFrame(t *testing.T, src *Y4MSource, frame *mrtp.RawFrame) bool {
+	t.Helper()
+
+	raw, _, err := src.reader.ReadNextFrame()
+	if err != nil {
+		return false
+	}
+	n := copy(frame.Y, raw)
+	n += copy(frame.Cb, raw[n:])
+	copy(frame.Cr, raw[n:])
+	return true
 }

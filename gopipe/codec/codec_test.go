@@ -26,12 +26,11 @@ func TestEncodeDecodeRoundtrip(t *testing.T) {
 	for _, c := range []mrtp.Codec{mrtp.VP8, mrtp.VP9, mrtp.H264} {
 		t.Run(c.String(), func(t *testing.T) {
 			encode, setRate, closeEncoder := newTestEncoder(t, Config{
-				Codec:       c,
-				Width:       testWidth,
-				Height:      testHeight,
-				TimebaseNum: testFPSNum,
-				TimebaseDen: testFPSDen,
-				TargetRate:  testBitrate,
+				Codec:      c,
+				Width:      testWidth,
+				Height:     testHeight,
+				FrameRate:  mrtp.FrameRate{Num: testFPSNum, Den: testFPSDen},
+				TargetRate: testBitrate,
 			})
 			defer closeEncoder()
 

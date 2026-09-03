@@ -4,13 +4,16 @@ package simulation
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/internal/logging"
+	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/netsim"
 )
 
@@ -61,3 +64,25 @@ func createFakeConfig(t *testing.T, testName string) error {
 	config := `{"name": "simulation_` + testName + `","applications": [{"name": "receiver","namespace": "ns1"},{"name": "sender","namespace": "ns4"}],"duration": 100,"time": "2000-01-01T01:00:00.01+01:00"}` + "\n"
 	return os.WriteFile(filepath.Join(t.ArtifactDir(), "config.json"), []byte(config), 0o644)
 }
+
+// rtpBytes says where an RTP packet keeps its buffer, for the io adapters.
+func rtpBytes(p *mrtp.RTPPacket) *[]byte {
+	return &p.Data
+}
+
+// quicRTT reports a QUIC connection's round trip time as an mrtp.RTTSource, so
+// the depacketizer can scale how long it waits for a missing packet.
+type quicRTT struct{ *quictransport.Transport }
+
+func (r quicRTT) RTT() time.Duration { return r.GetRTT() }
+
+// The transport flows are closed by the code that opened them, so the graph
+// reads and writes them but does not close them.
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
+
+type nopReadCloser struct{ io.Reader }
+
+func (nopReadCloser) Close() error { return nil }

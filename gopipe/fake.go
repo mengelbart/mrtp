@@ -2,131 +2,184 @@ package gopipe
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/pion/logging"
+	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/pipeline"
 )
 
-type FakeSink struct {
+// DiscardSink drops everything it is given.
+type DiscardSink[T any] struct{}
+
+func NewDiscardSink[T any]() *DiscardSink[T] {
+	return &DiscardSink[T]{}
 }
 
-func NewFakeSink() (*FakeSink, error) {
-	return &FakeSink{}, nil
-}
-
-func (s *FakeSink) Close() error {
+// Negotiate implements mrtp.Sink.
+func (s *DiscardSink[T]) Negotiate(mrtp.Format) error {
 	return nil
 }
 
-func (a *FakeSink) Write(b []byte, attrs Attributes) error {
+// Write implements mrtp.Sink.
+func (s *DiscardSink[T]) Write(p mrtp.Packet[T]) error {
+	p.Release()
 	return nil
 }
 
-// FakeSource implements a simple codec that produces frames at a constant rate
-// with sizes exactly matching the target bitrate.
+// EndOfStream implements mrtp.Sink.
+func (s *DiscardSink[T]) EndOfStream() error {
+	return nil
+}
+
+// Close implements mrtp.Element.
+func (s *DiscardSink[T]) Close() error {
+	return nil
+}
+
+// fakeWidth, fakeHeight and fakeFPS are the picture the Fake codec claims to
+// produce. Its frames carry no media, so only the frame rate has any effect.
+const (
+	fakeWidth  = 1920
+	fakeHeight = 1080
+	fakeFPS    = 30
+)
+
+// FakeSource produces frames at a constant rate whose sizes exactly match the
+// target bitrate.
 type FakeSource struct {
-	logger logging.LeveledLogger
-
 	minTargetRateBps uint64
 	maxTargetRateBps uint64
 	targetBitrateBps atomic.Uint64
-	fps              int
-
-	done chan struct{}
 
 	runTime time.Duration
+	done    chan struct{}
+	stop    sync.Once
+
+	pool *pipeline.Pool[mrtp.EncodedFrame]
+	down mrtp.Sink[mrtp.EncodedFrame]
 }
 
 // NewFakeSource creates a new FakeSource with the specified target bitrate.
 func NewFakeSource(runTime time.Duration, minTargetRateBps, maxTargetRateBps, initTargetBitrateBps uint64) *FakeSource {
-	fs := &FakeSource{
-		logger:           logging.NewDefaultLoggerFactory().NewLogger("perfect_codec"),
+	s := &FakeSource{
 		minTargetRateBps: minTargetRateBps,
 		maxTargetRateBps: maxTargetRateBps,
-		fps:              30,
-		done:             make(chan struct{}),
 		runTime:          runTime,
+		done:             make(chan struct{}),
+		pool: pipeline.NewPool(
+			func() *mrtp.EncodedFrame { return &mrtp.EncodedFrame{} },
+			func(f *mrtp.EncodedFrame) { f.Data = f.Data[:0] },
+		),
 	}
-	fs.targetBitrateBps.Store(initTargetBitrateBps)
+	s.targetBitrateBps.Store(initTargetBitrateBps)
 
-	return fs
+	return s
 }
 
-func (s *FakeSource) GetInfo() Info {
-	return Info{
-		Width:       1920,
-		Height:      1080,
-		TimebaseNum: 30,
-		TimebaseDen: 1,
+// Format implements mrtp.Source.
+func (s *FakeSource) Format() mrtp.Format {
+	return mrtp.EncodedVideo{
+		Codec:  mrtp.Fake,
+		Width:  fakeWidth,
+		Height: fakeHeight,
 	}
+}
+
+// FrameDuration is how long one generated frame lasts.
+func (s *FakeSource) FrameDuration() time.Duration {
+	return time.Second / fakeFPS
+}
+
+// Connect implements mrtp.Source.
+func (s *FakeSource) Connect(down mrtp.Sink[mrtp.EncodedFrame]) error {
+	if s.down != nil {
+		return errors.New("gopipe: fake source is already connected")
+	}
+	s.down = down
+	return nil
 }
 
 // SetTargetBitrate implements media.Sender. It sets the target bitrate to
 // bitrate bits per second.
-func (c *FakeSource) SetTargetBitrate(bitrate uint) error {
+func (s *FakeSource) SetTargetBitrate(bitrate uint) error {
 	// reduce target rate
 	decRate := uint64(0.9 * float64(bitrate))
 	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", decRate)
 
-	decRate = max(decRate, c.minTargetRateBps)
-	decRate = min(decRate, c.maxTargetRateBps)
-	c.targetBitrateBps.Store(decRate)
+	decRate = max(decRate, s.minTargetRateBps)
+	decRate = min(decRate, s.maxTargetRateBps)
+	s.targetBitrateBps.Store(decRate)
 	return nil
 }
 
-// Start begins the codec operation, generating frames at the configured frame rate.
-func (c *FakeSource) StartLive(ctx context.Context, pipeline Sink) error {
-	fps := float64(30) / float64(1)
-	msToNextFrame := time.Duration(float64(time.Second) / fps)
+// Run implements mrtp.Driver. It generates frames at the configured frame rate
+// until the run time is up.
+func (s *FakeSource) Run(ctx context.Context) error {
+	if s.down == nil {
+		return errors.New("gopipe: fake source runs with its output wired")
+	}
+	frameDuration := s.FrameDuration()
+	maxFrame := int(s.runTime / frameDuration)
+	frameCount := 0
 
-	maxFrame := c.runTime / msToNextFrame
-	FrameCount := 0
-
-	pts := int64(0)
-	ticker := time.NewTicker(msToNextFrame)
+	var pts time.Duration
+	ticker := time.NewTicker(frameDuration)
+	defer ticker.Stop()
 
 	lastSent := time.Now().UnixMicro()
 
-	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-s.done:
+			return nil
 
 		case <-ticker.C:
-			if FrameCount >= int(maxFrame) {
-				return nil
+			if frameCount >= maxFrame {
+				return s.down.EndOfStream()
 			}
-			FrameCount++
+			frameCount++
 
-			size := int(c.targetBitrateBps.Load()) / (8.0 * c.fps)
-			buf := make([]byte, size)
+			size := int(s.targetBitrateBps.Load()) / (8 * fakeFPS)
 
 			now := time.Now().UnixMicro()
-			slog.Info("generate frame", "frame", FrameCount, "size", size, "rate (probably)", c.targetBitrateBps.Load(), "time last", now-lastSent)
+			slog.Info("generate frame", "frame", frameCount, "size", size, "rate (probably)", s.targetBitrateBps.Load(), "time last", now-lastSent)
 			lastSent = now
 
-			attr := Attributes{}
-			attr[PTS] = pts
-			attr[FrameDuration] = msToNextFrame
+			packet := s.pool.Get()
+			value := packet.Value()
+			if cap(value.Data) < size {
+				value.Data = make([]byte, size)
+			} else {
+				value.Data = value.Data[:size]
+				clear(value.Data)
+			}
+			value.PTS = pts
+			value.Duration = frameDuration
+			value.Keyframe = false
 
-			pts += msToNextFrame.Microseconds()
+			pts += frameDuration
 
-			err := pipeline.Write(buf, attr)
-			if err != nil {
+			if err := s.down.Write(packet); err != nil {
 				return err
 			}
-		case <-c.done:
-			return nil
 		}
 	}
 }
 
-// Close stops the codec and cleans up resources.
-func (c *FakeSource) Close() error {
-	close(c.done)
-
+// Close implements mrtp.Element.
+func (s *FakeSource) Close() error {
+	s.stop.Do(func() { close(s.done) })
 	return nil
 }
+
+var (
+	_ mrtp.Source[mrtp.EncodedFrame] = (*FakeSource)(nil)
+	_ mrtp.Driver                    = (*FakeSource)(nil)
+	_ mrtp.Sink[mrtp.RawFrame]       = (*DiscardSink[mrtp.RawFrame])(nil)
+)

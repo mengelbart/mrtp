@@ -3,119 +3,151 @@
 package gopipe
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"log/slog"
 	"sync"
-	"time"
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe/codec"
+	"github.com/mengelbart/mrtp/pipeline"
 )
 
-func getFrameDuration(attrs Attributes) (time.Duration, error) {
-	fdAttr, ok := attrs[FrameDuration]
-	if !ok {
-		return 0, fmt.Errorf("FrameDuration attribute not found")
-	}
-	fdVal, ok := fdAttr.(time.Duration)
-	if !ok {
-		return 0, fmt.Errorf("FrameDuration attribute is not time.Duration")
-	}
-	return fdVal, nil
-}
-
+// Encoder encodes raw frames into coded frames.
 type Encoder struct {
 	vpxEnc  *codec.VPXEncoder
 	x264Enc *codec.X264encoder
 
-	codec mrtp.Codec
+	codec  mrtp.Codec
+	format mrtp.RawVideo
+	// picture is the image handed to the codec. Its planes are swapped for the
+	// current frame's on every Write, so the strides are computed once.
+	picture image.YCbCr
 
-	mu sync.Mutex
+	pool       *pipeline.Pool[mrtp.EncodedFrame]
+	down       mrtp.Sink[mrtp.EncodedFrame]
+	frameCount int // logging: plot script requires this field
+
+	lock sync.Mutex
 }
 
 func NewEncoder(c mrtp.Codec) *Encoder {
 	return &Encoder{
 		codec: c,
+		pool: pipeline.NewPool(
+			func() *mrtp.EncodedFrame { return &mrtp.EncodedFrame{} },
+			func(f *mrtp.EncodedFrame) { f.Data = f.Data[:0] },
+		),
 	}
 }
 
-func (e *Encoder) Link(f Sink, i Info) (Sink, error) {
+// Negotiate implements mrtp.Sink. It configures the codec for the picture the
+// source produces.
+func (e *Encoder) Negotiate(f mrtp.Format) error {
+	raw, ok := f.(mrtp.RawVideo)
+	if !ok {
+		return fmt.Errorf("encoder takes raw video, not %v", f)
+	}
+	if e.vpxEnc != nil || e.x264Enc != nil {
+		return errors.New("encoder cannot be reconfigured")
+	}
+	e.format = raw
+	e.picture = *image.NewYCbCr(
+		image.Rect(0, 0, int(raw.Width), int(raw.Height)),
+		raw.Subsampling,
+	)
+
 	conf := codec.Config{
-		Codec:       e.codec,
-		Width:       i.Width,
-		Height:      i.Height,
-		TargetRate:  750_000,
-		TimebaseNum: i.TimebaseNum,
-		TimebaseDen: i.TimebaseDen,
+		Codec:      e.codec,
+		Width:      raw.Width,
+		Height:     raw.Height,
+		TargetRate: 750_000,
+		FrameRate:  raw.FrameRate,
 	}
 	switch e.codec {
 	case mrtp.VP8, mrtp.VP9:
 		enc, err := codec.NewVPXEncoder(conf)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		e.vpxEnc = enc
 	case mrtp.H264:
 		enc, err := codec.NewX264encoder(conf)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		e.x264Enc = enc
 	default:
-		return nil, fmt.Errorf("unsupported codec: %v", e.codec)
+		return fmt.Errorf("unsupported codec: %v", e.codec)
+	}
+	return nil
+}
+
+// Format implements mrtp.Source.
+func (e *Encoder) Format() mrtp.Format {
+	return mrtp.EncodedVideo{
+		Codec:  e.codec,
+		Width:  e.format.Width,
+		Height: e.format.Height,
+	}
+}
+
+// Connect implements mrtp.Source.
+func (e *Encoder) Connect(down mrtp.Sink[mrtp.EncodedFrame]) error {
+	if e.down != nil {
+		return errors.New("gopipe: encoder is already connected")
+	}
+	e.down = down
+	return nil
+}
+
+// Write implements mrtp.Sink.
+func (e *Encoder) Write(packet mrtp.Packet[mrtp.RawFrame]) error {
+	defer packet.Release()
+
+	frame := packet.Value()
+	pts := frame.PTS.Microseconds()
+
+	slog.Debug("encoder sink", "length", len(frame.Y)+len(frame.Cb)+len(frame.Cr), "pts", pts, "duration", frame.Duration.Microseconds(), "frame-count", e.frameCount)
+
+	e.picture.Y = frame.Y
+	e.picture.Cb = frame.Cb
+	e.picture.Cr = frame.Cr
+
+	e.lock.Lock()
+	var (
+		encoded *codec.Frame
+		err     error
+	)
+	if e.vpxEnc != nil {
+		encoded, err = e.vpxEnc.Encode(&e.picture, pts, frame.Duration)
+	} else if e.x264Enc != nil {
+		encoded, err = e.x264Enc.Encode(&e.picture)
+	} else {
+		err = errors.New("encoder wrote before it was negotiated")
+	}
+	e.lock.Unlock()
+	if err != nil {
+		return err
 	}
 
-	frameCount := 0 // logging: plot script requires this field
+	slog.Debug("encoder src", "length", len(encoded.Payload), "pts", pts, "duration", frame.Duration.Microseconds(), "keyframe", encoded.IsKeyFrame, "frame-count", e.frameCount)
+	e.frameCount++
 
-	return WriterFunc(func(b []byte, a Attributes) error {
-		frameDuration, err := getFrameDuration(a)
-		if err != nil {
-			return err
-		}
-		pts, err := getPTS(a)
-		if err != nil {
-			return err
-		}
+	out := e.pool.Get()
+	value := out.Value()
+	value.Data = append(value.Data[:0], encoded.Payload...)
+	value.PTS = frame.PTS
+	value.Duration = frame.Duration
+	value.Keyframe = encoded.IsKeyFrame
 
-		slog.Debug("encoder sink", "length", len(b), "pts", pts, "duration", frameDuration.Microseconds(), "frame-count", frameCount)
+	return e.down.Write(out)
+}
 
-		csr, err := getChromaSubsampling(a)
-		if err != nil {
-			return err
-		}
-		image := image.NewYCbCr(
-			image.Rect(0, 0, int(i.Width), int(i.Height)),
-			csr,
-		)
-
-		ySize := i.Width * i.Height
-		uSize := ySize / 4
-		if uint(len(b)) < ySize+2*uSize {
-			return fmt.Errorf("encoder: frame buffer too short: got %v bytes, want at least %v", len(b), ySize+2*uSize)
-		}
-		image.Y = b[:ySize]
-		image.Cb = b[ySize : ySize+uSize]
-		image.Cr = b[ySize+uSize:]
-
-		e.mu.Lock()
-		var encoded *codec.Frame
-		if e.vpxEnc != nil {
-			encoded, err = e.vpxEnc.Encode(image, pts, frameDuration)
-		} else if e.x264Enc != nil {
-			encoded, err = e.x264Enc.Encode(image)
-		}
-		e.mu.Unlock()
-		if err != nil {
-			return err
-		}
-
-		slog.Debug("encoder src", "length", len(encoded.Payload), "pts", pts, "duration", frameDuration.Microseconds(), "keyframe", encoded.IsKeyFrame, "frame-count", frameCount)
-		frameCount++
-
-		a[IsKeyFrame] = encoded.IsKeyFrame
-		return f.Write(encoded.Payload, a)
-	}), nil
+// EndOfStream implements mrtp.Sink.
+func (e *Encoder) EndOfStream() error {
+	return e.down.EndOfStream()
 }
 
 // SetTargetBitrate implements media.Sender.
@@ -124,8 +156,8 @@ func (e *Encoder) SetTargetBitrate(bitrate uint) error {
 	targetRate := uint64(0.9 * float64(bitrate))
 	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", targetRate)
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.lock.Lock()
+	defer e.lock.Unlock()
 	if e.vpxEnc != nil {
 		e.vpxEnc.SetTargetRate(targetRate)
 	} else if e.x264Enc != nil {
@@ -134,6 +166,7 @@ func (e *Encoder) SetTargetBitrate(bitrate uint) error {
 	return nil
 }
 
+// Close implements mrtp.Element.
 func (e *Encoder) Close() error {
 	if e.vpxEnc != nil {
 		return e.vpxEnc.Close()
@@ -142,3 +175,8 @@ func (e *Encoder) Close() error {
 	}
 	return nil
 }
+
+var (
+	_ mrtp.Sink[mrtp.RawFrame]       = (*Encoder)(nil)
+	_ mrtp.Source[mrtp.EncodedFrame] = (*Encoder)(nil)
+)

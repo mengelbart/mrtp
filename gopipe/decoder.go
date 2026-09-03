@@ -3,75 +3,154 @@
 package gopipe
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe/codec"
+	"github.com/mengelbart/mrtp/pipeline"
 )
 
+// Decoder decodes coded frames into raw frames. The picture size is not on the
+// wire, so the decoder negotiates its output once it has decoded a frame, and
+// again whenever the picture changes.
 type Decoder struct {
 	x264dec *codec.H264Decoder
 	vpxdec  *codec.VPXDecoder
+
+	codec  mrtp.Codec
+	format mrtp.RawVideo
+	pool   *pipeline.Pool[mrtp.RawFrame]
+	down   mrtp.Sink[mrtp.RawFrame]
 }
 
 func NewDecoder(c mrtp.Codec) (*Decoder, error) {
+	d := &Decoder{codec: c}
 	switch c {
 	case mrtp.H264:
 		dec, err := codec.NewH264Decoder()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create H264 decoder: %w", err)
 		}
-		return &Decoder{
-			x264dec: dec,
-		}, nil
+		d.x264dec = dec
 	case mrtp.VP8, mrtp.VP9:
 		dec, err := codec.NewVPXDecoder(c)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create H264 decoder: %w", err)
+			return nil, fmt.Errorf("failed to create VPX decoder: %w", err)
 		}
-		return &Decoder{
-			vpxdec: dec,
-		}, nil
+		d.vpxdec = dec
 	default:
 		return nil, fmt.Errorf("unsupported codec: %v", c)
 	}
+	return d, nil
 }
 
-func (d *Decoder) Link(next Sink, i Info) (Sink, error) {
-	return WriterFunc(func(encFrame []byte, attrs Attributes) error {
-		pts, err := getPTS(attrs)
-		if err != nil {
-			return err
-		}
-
-		var decFrame *codec.DecodedFrame
-		if d.x264dec != nil {
-			decFrame, err = d.x264dec.Decode(encFrame)
-		} else if d.vpxdec != nil {
-			decFrame, err = d.vpxdec.Decode(encFrame)
-		} else {
-			return fmt.Errorf("no decoder available")
-		}
-		if err != nil {
-			return fmt.Errorf("failed to decode frame: %w", err)
-		}
-
-		slog.Info("decoder src", "length", len(decFrame.Data), "pts", pts)
-
-		// merge attributes
-		if attrs == nil {
-			attrs = make(Attributes)
-		}
-
-		attrs[Width] = decFrame.Width
-		attrs[Height] = decFrame.Height
-		attrs[ChromaSubsampling] = decFrame.ChromaSubsampling
-
-		return next.Write(decFrame.Data, attrs)
-	}), nil
+// Negotiate implements mrtp.Sink.
+func (d *Decoder) Negotiate(f mrtp.Format) error {
+	encoded, ok := f.(mrtp.EncodedVideo)
+	if !ok {
+		return fmt.Errorf("decoder takes encoded video, not %v", f)
+	}
+	if encoded.Codec != d.codec {
+		return fmt.Errorf("decoder is configured for %v, not %v", d.codec, encoded.Codec)
+	}
+	return nil
 }
 
+// Format implements mrtp.Source. It is the zero picture until the first frame
+// is decoded, which is when the real one is negotiated downstream.
+func (d *Decoder) Format() mrtp.Format {
+	return d.format
+}
+
+// Connect implements mrtp.Source.
+func (d *Decoder) Connect(down mrtp.Sink[mrtp.RawFrame]) error {
+	if d.down != nil {
+		return errors.New("gopipe: decoder is already connected")
+	}
+	d.down = down
+	return nil
+}
+
+// Write implements mrtp.Sink.
+func (d *Decoder) Write(packet mrtp.Packet[mrtp.EncodedFrame]) error {
+	defer packet.Release()
+
+	frame := packet.Value()
+
+	var (
+		decoded *codec.DecodedFrame
+		err     error
+	)
+	if d.x264dec != nil {
+		decoded, err = d.x264dec.Decode(frame.Data)
+	} else if d.vpxdec != nil {
+		decoded, err = d.vpxdec.Decode(frame.Data)
+	} else {
+		return errors.New("no decoder available")
+	}
+	if err != nil {
+		return fmt.Errorf("failed to decode frame: %w", err)
+	}
+
+	slog.Info("decoder src", "length", len(decoded.Data), "pts", frame.PTS.Microseconds())
+
+	if err := d.reformat(decoded); err != nil {
+		return err
+	}
+
+	out := d.pool.Get()
+	value := out.Value()
+	if len(decoded.Data) < len(value.Y)+len(value.Cb)+len(value.Cr) {
+		out.Release()
+		return fmt.Errorf("decoder: short frame: got %v bytes, want %v",
+			len(decoded.Data), len(value.Y)+len(value.Cb)+len(value.Cr))
+	}
+	n := copy(value.Y, decoded.Data)
+	n += copy(value.Cb, decoded.Data[n:])
+	copy(value.Cr, decoded.Data[n:])
+	value.PTS = frame.PTS
+	value.Duration = frame.Duration
+
+	return d.down.Write(out)
+}
+
+// reformat negotiates the picture downstream, and builds the pool it is drawn
+// from, whenever the decoded picture differs from the current format.
+func (d *Decoder) reformat(frame *codec.DecodedFrame) error {
+	format := mrtp.RawVideo{
+		Width:       uint(frame.Width),
+		Height:      uint(frame.Height),
+		Subsampling: frame.ChromaSubsampling,
+		// the wire carries no frame rate, so the sink picks its own
+		FrameRate: d.format.FrameRate,
+	}
+	if format == d.format {
+		return nil
+	}
+	ySize, cSize, err := planeSizes(format)
+	if err != nil {
+		return err
+	}
+	d.format = format
+	d.pool = pipeline.NewPool(func() *mrtp.RawFrame {
+		buffer := make([]byte, ySize+2*cSize)
+		return &mrtp.RawFrame{
+			Y:  buffer[:ySize],
+			Cb: buffer[ySize : ySize+cSize],
+			Cr: buffer[ySize+cSize:],
+		}
+	}, nil)
+	return d.down.Negotiate(format)
+}
+
+// EndOfStream implements mrtp.Sink.
+func (d *Decoder) EndOfStream() error {
+	return d.down.EndOfStream()
+}
+
+// Close implements mrtp.Element.
 func (d *Decoder) Close() error {
 	if d.x264dec != nil {
 		d.x264dec.Close()
@@ -81,3 +160,8 @@ func (d *Decoder) Close() error {
 	}
 	return nil
 }
+
+var (
+	_ mrtp.Sink[mrtp.EncodedFrame] = (*Decoder)(nil)
+	_ mrtp.Source[mrtp.RawFrame]   = (*Decoder)(nil)
+)
