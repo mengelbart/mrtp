@@ -3,14 +3,13 @@
 package gopipe
 
 import (
-	"bytes"
 	"slices"
-	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -51,79 +50,88 @@ func TestDepacketizerRTPDrops(t *testing.T) {
 			frames := encodedFrames(t, tc.codec)
 			framePackets := packetizeFrames(t, tc.codec, frames)
 
-			want := make([][]byte, 0, len(frames)-len(droppedFrames))
+			kept := make([][]byte, 0, len(frames)-len(droppedFrames))
 			for i, frame := range frames {
 				if slices.Contains(droppedFrames, i) {
 					framePackets[i] = nil
 					continue
 				}
-				want = append(want, frame)
+				kept = append(kept, frame)
 			}
 
 			synctest.Test(t, func(t *testing.T) {
 				received := runDepacketizer(t, tc.codec, framePackets)
 
-				assert.Len(t, received, len(want))
+				assert.Len(t, received, len(kept))
 				if tc.exactPayload {
-					assert.Equal(t, want, received)
+					assert.Equal(t, kept, received)
 				}
 			})
 		})
 	}
 }
 
+// packetizeFrames returns the RTP packets of each frame.
 func packetizeFrames(t *testing.T, c mrtp.Codec, frames [][]byte) [][][]byte {
 	t.Helper()
 
 	packets := make([][][]byte, 0, len(frames))
-	sink := WriterFunc(func(b []byte, _ Attributes) error {
-		packets[len(packets)-1] = append(packets[len(packets)-1], bytes.Clone(b))
-		return nil
-	})
+	sink := newCollector(rtpBytes)
 
-	factory := &RTPPacketizerFactory{
-		MTU:       1420,
-		PT:        96,
-		SSRC:      0,
-		ClockRate: 90_000,
-		Codec:     c,
-	}
-	packetizer, err := factory.Link(sink, Info{TimebaseNum: testFPSNum, TimebaseDen: testFPSDen})
-	require.NoError(t, err)
+	packetizer := NewRTPPacketizer(1420, 96, 0, 90_000, c)
+	require.NoError(t, packetizer.Negotiate(mrtp.EncodedVideo{Codec: c}))
+	require.NoError(t, packetizer.Connect(sink))
 
-	var pts int64
+	pool := pipeline.NewPool(
+		func() *mrtp.EncodedFrame { return &mrtp.EncodedFrame{} },
+		func(f *mrtp.EncodedFrame) { f.Data = f.Data[:0] },
+	)
+	var pts time.Duration
 	for _, frame := range frames {
-		packets = append(packets, nil)
-		require.NoError(t, packetizer.Write(frame, Attributes{PTS: pts}))
-		pts += testFrameDuration.Microseconds()
+		sink.items = nil
+		packet := pool.Get()
+		value := packet.Value()
+		value.Data = append(value.Data[:0], frame...)
+		value.PTS = pts
+		value.Duration = testFrameDuration
+		pts += testFrameDuration
+
+		require.NoError(t, packetizer.Write(packet))
+		packets = append(packets, sink.items)
 	}
 	return packets
 }
 
-// runDepacketizer feeds one frame of RTP packets per frame duration and returns the assembled
-// frames. It must run inside a synctest bubble so the depacketizer timeouts cost no real time.
+// runDepacketizer feeds one frame of RTP packets per frame duration and returns the
+// assembled frames. It must run inside a synctest bubble so the depacketizer timeouts cost
+// no real time.
 func runDepacketizer(t *testing.T, c mrtp.Codec, framePackets [][][]byte) [][]byte {
 	t.Helper()
 
-	received := make([][]byte, 0, len(framePackets))
-	depacketizer, err := newRTPDepacketizer(depacketizerTimeout, c, func(frame []byte, _ int64) {
-		received = append(received, bytes.Clone(frame))
-	})
-	require.NoError(t, err)
+	received := newCollector(encodedBytes)
+	depacketizer := NewRTPDepacketizer(depacketizerTimeout, nil)
+	require.NoError(t, depacketizer.Negotiate(mrtp.RTP{
+		Codec:       c,
+		PayloadType: 96,
+		ClockRate:   90_000,
+	}))
+	require.NoError(t, depacketizer.Connect(received))
 
-	var wg sync.WaitGroup
-	wg.Go(depacketizer.Run)
-
+	pool := pipeline.NewPool(
+		func() *mrtp.RTPPacket { return &mrtp.RTPPacket{} },
+		func(p *mrtp.RTPPacket) { p.Data = p.Data[:0] },
+	)
 	for _, packets := range framePackets {
 		for _, packet := range packets {
-			require.NoError(t, depacketizer.Write(packet))
+			p := pool.Get()
+			value := p.Value()
+			value.Data = append(value.Data[:0], packet...)
+			require.NoError(t, depacketizer.Write(p))
 		}
 		time.Sleep(testFrameDuration)
 	}
 	synctest.Wait()
-
 	require.NoError(t, depacketizer.Close())
-	wg.Wait()
 
-	return received
+	return received.items
 }

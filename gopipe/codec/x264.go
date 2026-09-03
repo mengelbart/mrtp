@@ -25,8 +25,8 @@ func NewX264encoder(c Config) (*X264encoder, error) {
 		i_csp:        C.X264_CSP_I420,
 		i_width:      C.int(c.Width),
 		i_height:     C.int(c.Height),
-		i_fps_num:    C.uint(c.TimebaseNum),
-		i_fps_den:    C.uint(c.TimebaseDen),
+		i_fps_num:    C.uint(c.FrameRate.Num),
+		i_fps_den:    C.uint(c.FrameRate.Den),
 		i_keyint_max: C.int(60), // intra-refresh cycle: 60 frames
 	}
 	param.rc.i_bitrate = C.int(c.TargetRate / 1000) // convert to kbps

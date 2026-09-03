@@ -4,6 +4,7 @@ package simulation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -16,6 +17,7 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/internal/quictransport"
+	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/mengelbart/netsim"
 	roqProtocol "github.com/mengelbart/roq"
@@ -160,15 +162,8 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		roqTransport.Close()
 	}()
 
-	appSink := gopipe.WriterFunc(func(b []byte, _ gopipe.Attributes) error {
-		_, err := rtpSink.Write(b)
-		return err
-	})
-
 	fakeSource := gopipe.NewFakeSource(100*time.Second, 250_000, 8_000_000, 750_000)
 	defer fakeSource.Close()
-
-	i := fakeSource.GetInfo()
 
 	// set rate callbacks
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {
@@ -177,22 +172,26 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		return fakeSource.SetTargetBitrate(ratebps)
 	}
 
-	packetizer := &gopipe.RTPPacketizerFactory{
-		MTU:       1420,
-		PT:        96,
-		SSRC:      0,
-		ClockRate: 90_000,
-		Codec:     mrtp.Fake,
-	}
-	pacer := gopipe.NewFrameSpacer(ctx)
-	defer pacer.Close()
+	packetizer := gopipe.NewRTPPacketizer(1420, 96, 0, 90_000, mrtp.Fake)
+	queue := pipeline.NewQueue(1000, pipeline.PaceFrames(
+		(*mrtp.RTPPacket).Marker,
+		fakeSource.FrameDuration(),
+	))
+	pump := pipeline.NewPump[mrtp.RTPPacket]()
+	appSink := pipeline.SinkFromWriter(nopWriteCloser{rtpSink}, rtpBytes)
 
-	rtpPipeline, err := gopipe.Chain(i, appSink, pacer, packetizer)
-	if err != nil {
+	g := pipeline.NewGraph()
+	if err := errors.Join(
+		g.Connect(fakeSource, packetizer),
+		g.Connect(packetizer, queue),
+		g.Attach(queue, pump),
+		g.Connect(pump, appSink),
+	); err != nil {
 		return err
 	}
+	g.Terminal(fakeSource)
 
-	return fakeSource.StartLive(ctx, rtpPipeline)
+	return g.Run(ctx)
 }
 
 func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
@@ -225,20 +224,18 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	}
 	defer rtpSrc.Close()
 
-	fakeSink, err := gopipe.NewFakeSink()
-	if err != nil {
-		return err
-	}
+	depacketizer := gopipe.NewRTPDepacketizer(150*time.Millisecond, quicRTT{quicConn})
+	source := pipeline.SourceFromReader(nopReadCloser{rtpSrc}, mrtp.RTP{
+		Codec:       mrtp.Fake,
+		PayloadType: 96,
+		ClockRate:   90_000,
+	}, 150000, rtpBytes)
 
-	maxTimeout := 150 * time.Millisecond
-	depacketizer, err := gopipe.NewRTPDepacketizer(maxTimeout, mrtp.Fake)
-	if err != nil {
-		return err
-	}
-	defer depacketizer.Close()
-
-	rtpPipeline, err := gopipe.Chain(gopipe.Info{}, fakeSink, depacketizer)
-	if err != nil {
+	g := pipeline.NewGraph()
+	if err := errors.Join(
+		g.Connect(source, depacketizer),
+		g.Connect(depacketizer, gopipe.NewDiscardSink[mrtp.EncodedFrame]()),
+	); err != nil {
 		return err
 	}
 
@@ -247,33 +244,11 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 		<-ctx.Done()
 		roqTransport.Close()
 		rtpSrc.Close()
-		depacketizer.Close()
 	})
 
-	buf := make([]byte, 150000)
-	for {
-		select {
-		case <-ctx.Done():
-			println("receiver: context cancelled, exiting")
-			return nil
-		default:
-		}
-
-		depacketizer.UpdateRTT(quicConn.GetRTT())
-
-		n, err := rtpSrc.Read(buf)
-		if err != nil {
-			if err == context.Canceled {
-				return nil
-			}
-
-			println("receiver: read error:", err)
-			return err
-		}
-
-		err = rtpPipeline.Write(buf[:n], gopipe.Attributes{})
-		if err != nil {
-			return err
-		}
+	if err := g.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		println("receiver: read error:", err)
+		return err
 	}
+	return nil
 }

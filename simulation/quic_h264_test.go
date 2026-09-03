@@ -4,6 +4,7 @@ package simulation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
@@ -17,6 +18,7 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/internal/quictransport"
+	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/mengelbart/netsim"
 	roqProtocol "github.com/mengelbart/roq"
@@ -167,11 +169,6 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 		roqTransport.Close()
 	}()
 
-	appSink := gopipe.WriterFunc(func(b []byte, _ gopipe.Attributes) error {
-		_, err := rtpSink.Write(b)
-		return err
-	})
-
 	file, err := os.Open("Johnny_1280x720_60.y4m")
 	if err != nil {
 		return err
@@ -184,7 +181,6 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 	}
 
 	sendCodec := mrtp.H264
-	i := fileSrc.GetInfo()
 	encoder := gopipe.NewEncoder(sendCodec)
 
 	// set rate callbacks
@@ -194,22 +190,28 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 		return encoder.SetTargetBitrate(ratebps)
 	}
 
-	packetizer := &gopipe.RTPPacketizerFactory{
-		MTU:       1420,
-		PT:        96,
-		SSRC:      0,
-		ClockRate: 90_000,
-		Codec:     sendCodec,
-	}
-	pacer := gopipe.NewFrameSpacer(ctx)
-	defer pacer.Close()
+	packetizer := gopipe.NewRTPPacketizer(1420, 96, 0, 90_000, sendCodec)
+	format := fileSrc.Format().(mrtp.RawVideo)
+	queue := pipeline.NewQueue(1000, pipeline.PaceFrames(
+		(*mrtp.RTPPacket).Marker,
+		format.FrameRate.Duration(),
+	))
+	pump := pipeline.NewPump[mrtp.RTPPacket]()
+	appSink := pipeline.SinkFromWriter(nopWriteCloser{rtpSink}, rtpBytes)
 
-	rtpPipeline, err := gopipe.Chain(i, appSink, pacer, packetizer, encoder)
-	if err != nil {
+	g := pipeline.NewGraph()
+	if err := errors.Join(
+		g.Connect(fileSrc, encoder),
+		g.Connect(encoder, packetizer),
+		g.Connect(packetizer, queue),
+		g.Attach(queue, pump),
+		g.Connect(pump, appSink),
+	); err != nil {
 		return err
 	}
+	g.Terminal(fileSrc)
 
-	return fileSrc.StartLive(ctx, rtpPipeline)
+	return g.Run(ctx)
 }
 
 func runH264Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.Transport, wg *sync.WaitGroup) error {
@@ -254,15 +256,19 @@ func runH264Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.
 	}
 	defer fileSink.Close()
 
-	maxTimeout := 150 * time.Millisecond
-	depacketizer, err := gopipe.NewRTPDepacketizer(maxTimeout, recvCodec)
-	if err != nil {
-		return err
-	}
-	defer depacketizer.Close()
+	depacketizer := gopipe.NewRTPDepacketizer(150*time.Millisecond, quicRTT{quicConn})
+	source := pipeline.SourceFromReader(nopReadCloser{rtpSrc}, mrtp.RTP{
+		Codec:       recvCodec,
+		PayloadType: 96,
+		ClockRate:   90_000,
+	}, 150000, rtpBytes)
 
-	rtpPipeline, err := gopipe.Chain(gopipe.Info{}, fileSink, decoder, depacketizer)
-	if err != nil {
+	g := pipeline.NewGraph()
+	if err := errors.Join(
+		g.Connect(source, depacketizer),
+		g.Connect(depacketizer, decoder),
+		g.Connect(decoder, fileSink),
+	); err != nil {
 		return err
 	}
 
@@ -271,33 +277,11 @@ func runH264Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.
 		<-ctx.Done()
 		roqTransport.Close()
 		rtpSrc.Close()
-		depacketizer.Close()
 	})
 
-	buf := make([]byte, 150000)
-	for {
-		select {
-		case <-ctx.Done():
-			println("receiver: context cancelled, exiting")
-			return nil
-		default:
-		}
-
-		depacketizer.UpdateRTT(quicConn.GetRTT())
-
-		n, err := rtpSrc.Read(buf)
-		if err != nil {
-			if err == context.Canceled {
-				return nil
-			}
-
-			println("receiver: read error:", err)
-			return err
-		}
-
-		err = rtpPipeline.Write(buf[:n], gopipe.Attributes{})
-		if err != nil {
-			return err
-		}
+	if err := g.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		println("receiver: read error:", err)
+		return err
 	}
+	return nil
 }
