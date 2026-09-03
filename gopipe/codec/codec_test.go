@@ -83,7 +83,7 @@ func newTestEncoder(t *testing.T, c Config) (
 		enc, err := NewX264encoder(c)
 		require.NoError(t, err)
 		encode := func(img *image.YCbCr, _ int64, _ time.Duration) (*Frame, error) {
-			return enc.Encode(img)
+			return enc.Encode(img, 0, 0)
 		}
 		return encode, enc.SetTargetRate, func() { assert.NoError(t, enc.Close()) }
 	}

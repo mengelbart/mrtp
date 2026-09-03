@@ -8,16 +8,22 @@ import (
 	"image"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe/codec"
 	"github.com/mengelbart/mrtp/pipeline"
 )
 
+type encoder interface {
+	Encode(image *image.YCbCr, pts int64, duration time.Duration) (*codec.Frame, error)
+	SetTargetRate(bitrate uint64)
+	Close() error
+}
+
 // Encoder encodes raw frames into coded frames.
 type Encoder struct {
-	vpxEnc  *codec.VPXEncoder
-	x264Enc *codec.X264encoder
+	e encoder
 
 	codec  mrtp.Codec
 	format mrtp.RawVideo
@@ -49,7 +55,7 @@ func (e *Encoder) Negotiate(f mrtp.Format) error {
 	if !ok {
 		return fmt.Errorf("encoder takes raw video, not %v", f)
 	}
-	if e.vpxEnc != nil || e.x264Enc != nil {
+	if e.e != nil {
 		return errors.New("encoder cannot be reconfigured")
 	}
 	e.format = raw
@@ -71,13 +77,13 @@ func (e *Encoder) Negotiate(f mrtp.Format) error {
 		if err != nil {
 			return err
 		}
-		e.vpxEnc = enc
+		e.e = enc
 	case mrtp.H264:
 		enc, err := codec.NewX264encoder(conf)
 		if err != nil {
 			return err
 		}
-		e.x264Enc = enc
+		e.e = enc
 	default:
 		return fmt.Errorf("unsupported codec: %v", e.codec)
 	}
@@ -116,17 +122,7 @@ func (e *Encoder) Write(packet mrtp.Packet[mrtp.RawFrame]) error {
 	e.picture.Cr = frame.Cr
 
 	e.lock.Lock()
-	var (
-		encoded *codec.Frame
-		err     error
-	)
-	if e.vpxEnc != nil {
-		encoded, err = e.vpxEnc.Encode(&e.picture, pts, frame.Duration)
-	} else if e.x264Enc != nil {
-		encoded, err = e.x264Enc.Encode(&e.picture)
-	} else {
-		err = errors.New("encoder wrote before it was negotiated")
-	}
+	encoded, err := e.e.Encode(&e.picture, pts, frame.Duration)
 	e.lock.Unlock()
 	if err != nil {
 		return err
@@ -158,20 +154,16 @@ func (e *Encoder) SetTargetBitrate(bitrate uint) error {
 
 	e.lock.Lock()
 	defer e.lock.Unlock()
-	if e.vpxEnc != nil {
-		e.vpxEnc.SetTargetRate(targetRate)
-	} else if e.x264Enc != nil {
-		e.x264Enc.SetTargetRate(targetRate)
+	if e.e != nil {
+		e.e.SetTargetRate(targetRate)
 	}
 	return nil
 }
 
 // Close implements mrtp.Element.
 func (e *Encoder) Close() error {
-	if e.vpxEnc != nil {
-		return e.vpxEnc.Close()
-	} else if e.x264Enc != nil {
-		return e.x264Enc.Close()
+	if e.e != nil {
+		return e.e.Close()
 	}
 	return nil
 }

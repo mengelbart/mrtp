@@ -12,12 +12,16 @@ import (
 	"github.com/mengelbart/mrtp/pipeline"
 )
 
+type decoder interface {
+	Decode(encFrame []byte) (*codec.DecodedFrame, error)
+	Close()
+}
+
 // Decoder decodes coded frames into raw frames. The picture size is not on the
 // wire, so the decoder negotiates its output once it has decoded a frame, and
 // again whenever the picture changes.
 type Decoder struct {
-	x264dec *codec.H264Decoder
-	vpxdec  *codec.VPXDecoder
+	d decoder
 
 	codec  mrtp.Codec
 	format mrtp.RawVideo
@@ -33,13 +37,13 @@ func NewDecoder(c mrtp.Codec) (*Decoder, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create H264 decoder: %w", err)
 		}
-		d.x264dec = dec
+		d.d = dec
 	case mrtp.VP8, mrtp.VP9:
 		dec, err := codec.NewVPXDecoder(c)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create VPX decoder: %w", err)
 		}
-		d.vpxdec = dec
+		d.d = dec
 	default:
 		return nil, fmt.Errorf("unsupported codec: %v", c)
 	}
@@ -79,17 +83,7 @@ func (d *Decoder) Write(packet mrtp.Packet[mrtp.EncodedFrame]) error {
 
 	frame := packet.Value()
 
-	var (
-		decoded *codec.DecodedFrame
-		err     error
-	)
-	if d.x264dec != nil {
-		decoded, err = d.x264dec.Decode(frame.Data)
-	} else if d.vpxdec != nil {
-		decoded, err = d.vpxdec.Decode(frame.Data)
-	} else {
-		return errors.New("no decoder available")
-	}
+	decoded, err := d.d.Decode(frame.Data)
 	if err != nil {
 		return fmt.Errorf("failed to decode frame: %w", err)
 	}
@@ -152,12 +146,7 @@ func (d *Decoder) EndOfStream() error {
 
 // Close implements mrtp.Element.
 func (d *Decoder) Close() error {
-	if d.x264dec != nil {
-		d.x264dec.Close()
-	}
-	if d.vpxdec != nil {
-		d.vpxdec.Close()
-	}
+	d.d.Close()
 	return nil
 }
 

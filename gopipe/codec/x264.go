@@ -8,6 +8,7 @@ import (
 	"image"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 )
 
@@ -48,7 +49,7 @@ func NewX264encoder(c Config) (*X264encoder, error) {
 	return &e, nil
 }
 
-func (e *X264encoder) Encode(image *image.YCbCr) (*Frame, error) {
+func (e *X264encoder) Encode(image *image.YCbCr, _ int64, _ time.Duration) (*Frame, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
