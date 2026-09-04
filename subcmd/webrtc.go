@@ -20,6 +20,7 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/http"
 	"github.com/mengelbart/mrtp/media"
+	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/webrtc"
 )
 
@@ -120,15 +121,17 @@ Usage:
 		return err
 	}
 
-	pipeline, err := w.media.NewPipeline()
+	factory, err := w.media.NewFactory()
 	if err != nil {
 		return err
 	}
+	runner := pipeline.NewRunner()
 	defer func() {
-		if closeErr := pipeline.Close(); closeErr != nil {
+		if closeErr := runner.Close(); closeErr != nil {
 			slog.Error("failed to close media pipeline", "error", closeErr)
 		}
 	}()
+	runner.Add(factory.Shared())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -165,14 +168,17 @@ Usage:
 			// sends.
 			receiverConfig.Codec = receiver.Codec()
 			receiverConfig.PayloadType = int(receiver.PayloadType())
-			receiverConfig.Media = receiver
-			receiverConfig.Control = media.ControlFlow{
-				Send: transport.RTCPSender(),
-				Recv: receiver.RTCPReceiver(),
+			stream, streamErr := factory.NewReceiver(receiverConfig)
+			if streamErr != nil {
+				panic(streamErr)
 			}
-			if pipelineErr := pipeline.AddReceiver(receiverConfig); pipelineErr != nil {
-				panic(pipelineErr)
+			if wireErr := errors.Join(
+				stream.ConnectRTP(receiver),
+				stream.ConnectRTCP(transport.RTCPSender(), receiver.RTCPReceiver()),
+			); wireErr != nil {
+				panic(wireErr)
 			}
+			runner.Add(stream.Graph)
 		}),
 	}
 
@@ -317,11 +323,6 @@ Usage:
 		if err != nil {
 			return err
 		}
-		senderConfig.Media = track
-		senderConfig.Control = media.ControlFlow{
-			Send: transport.RTCPSender(),
-			Recv: track.RTCPReceiver(),
-		}
 
 		// TODO(ME): Cannot enable SCReAM here because WebRTC rewrites the SSRCs
 		// of outgoing packets. Thus, the sender cannot use the feedback,
@@ -333,14 +334,21 @@ Usage:
 		// the packet to the correct SSRC (because it cannot read the media SSRC
 		// from a raw RTCP packet. The ScreamTx sender on the other hand,
 		// expects the type set to 0.
-		var mediaSender media.Sender
-		mediaSender, err = pipeline.AddSender(senderConfig)
+		var stream *media.SendStream
+		stream, err = factory.NewSender(senderConfig)
 		if err != nil {
 			return err
 		}
+		if err = errors.Join(
+			stream.ConnectRTP(track),
+			stream.ConnectRTCP(transport.RTCPSender(), track.RTCPReceiver()),
+		); err != nil {
+			return err
+		}
+		runner.Add(stream.Graph)
 
 		// set callback of transport, so CCs can set the target rate of the encoder
-		transport.SetTargetRate = mediaSender.SetTargetBitrate
+		transport.SetTargetRate = stream.Sender.SetTargetBitrate
 	} else {
 		if err = transport.AddRemoteVideoTrack(); err != nil {
 			return err
@@ -356,7 +364,7 @@ Usage:
 	// the queue, which is likely to be the key frame. We then have to wait for
 	// the next keyframe.
 	time.Sleep(75 * time.Millisecond)
-	return pipeline.Run(ctx)
+	return runner.Run(ctx)
 }
 
 func withCORS(next nethttp.Handler) func(w nethttp.ResponseWriter, r *nethttp.Request) {

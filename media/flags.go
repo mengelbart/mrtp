@@ -16,8 +16,8 @@ const DefaultPayloadType = 96
 // pipelines. Commands embed it, register the flags they need, and then ask it
 // for a pipeline and for stream configurations.
 //
-// Implementation specific flags are registered by the Factory instead, see
-// Factory.ConfigureFlags.
+// Implementation specific flags are registered by the implementation instead,
+// see Implementation.ConfigureFlags.
 type Flags struct {
 	PipelineName string
 	Codec        string
@@ -42,14 +42,14 @@ func (f *Flags) configureCommon(fs *flag.FlagSet) error {
 		fmt.Sprintf("Media pipeline implementation to use (%v)", strings.Join(Names(), ", ")))
 	fs.StringVar(&f.Codec, "codec", mrtp.H264.String(), "Codec to encode and decode with (H264, VP8, VP9, FAKE)")
 	for _, name := range Names() {
-		if err := registerFactoryFlags(fs, name, factories[name]); err != nil {
+		if err := registerImplementationFlags(fs, name, implementations[name]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// registerFactoryFlags registers the flags of one implementation, rejecting
+// registerImplementationFlags registers the flags of one implementation, rejecting
 // any flag that is not prefixed with the implementation's name.
 //
 // The prefix is enforced rather than documented because the flags of every
@@ -57,11 +57,11 @@ func (f *Flags) configureCommon(fs *flag.FlagSet) error {
 // one: without it, two implementations would fight over the same flag name,
 // and an implementation's flags would be indistinguishable from the options
 // that apply to all of them.
-func registerFactoryFlags(fs *flag.FlagSet, name string, factory Factory) error {
+func registerImplementationFlags(fs *flag.FlagSet, name string, impl Implementation) error {
 	// Collect the flags separately first, so that a misbehaving
 	// implementation cannot leave half of its flags on the real flag set.
 	scratch := flag.NewFlagSet(name, flag.ContinueOnError)
-	factory.ConfigureFlags(scratch)
+	impl.ConfigureFlags(scratch)
 
 	// Validate every flag before registering any of them, so that a rejected
 	// implementation contributes nothing at all. flag.FlagSet.VisitAll walks
@@ -117,13 +117,14 @@ func (f *Flags) ConfigureReceiver(fs *flag.FlagSet) error {
 	return nil
 }
 
-// NewPipeline creates the pipeline selected by -media-pipeline.
-func (f *Flags) NewPipeline() (Pipeline, error) {
-	factory, err := Lookup(f.PipelineName)
+// NewFactory creates the stream factory of the pipeline selected by
+// -media-pipeline.
+func (f *Flags) NewFactory() (Factory, error) {
+	impl, err := Lookup(f.PipelineName)
 	if err != nil {
 		return nil, err
 	}
-	return factory.NewPipeline()
+	return impl.NewFactory()
 }
 
 // SenderConfig builds the configuration of an outgoing stream from the parsed

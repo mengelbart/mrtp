@@ -3,14 +3,11 @@
 package gopipe
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"math"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/mengelbart/mrtp"
@@ -19,7 +16,7 @@ import (
 )
 
 func init() {
-	media.Register("go", &factory{})
+	media.Register("go", &implementation{})
 }
 
 const (
@@ -34,14 +31,14 @@ const (
 	sinkFPSDen = 1
 )
 
-type factory struct {
+type implementation struct {
 	mtu                 uint
 	depacketizerTimeout time.Duration
 	fakeRunTime         time.Duration
 }
 
-// ConfigureFlags implements media.Factory.
-func (f *factory) ConfigureFlags(fs *flag.FlagSet) {
+// ConfigureFlags implements media.Implementation.
+func (f *implementation) ConfigureFlags(fs *flag.FlagSet) {
 	fs.UintVar(&f.mtu, "go-mtu", 1420,
 		"Maximum size in bytes of the RTP packets the packetizer produces")
 	fs.DurationVar(&f.depacketizerTimeout, "go-depacketizer-timeout", 150*time.Millisecond,
@@ -50,78 +47,56 @@ func (f *factory) ConfigureFlags(fs *flag.FlagSet) {
 		fmt.Sprintf("How long the source of the %v codec keeps generating media", mrtp.Fake))
 }
 
-// NewPipeline implements media.Factory.
-func (f *factory) NewPipeline() (media.Pipeline, error) {
+// NewFactory implements media.Implementation.
+func (f *implementation) NewFactory() (media.Factory, error) {
 	if f.mtu > math.MaxUint16 {
 		return nil, fmt.Errorf("invalid -go-mtu value %v", f.mtu)
 	}
-	return &mediaPipeline{factory: f, done: make(chan error, 1)}, nil
+	return &factory{impl: f}, nil
 }
 
-// mediaPipeline runs gopipe graphs as a media.Pipeline. Every stream is one
-// graph driven by its own goroutine, because gopipe has nothing that shares
-// state between streams.
-type mediaPipeline struct {
-	factory *factory
-
-	mu sync.Mutex
-	// ctx is nil until Run is called. Streams added before that wait in
-	// pending, streams added afterwards start immediately.
-	ctx     context.Context
-	pending []*stream
-	closers []io.Closer
-
-	// done carries the first terminal event, see stream.terminal.
-	done chan error
+// factory builds gopipe graphs. Every stream is one graph of its own, because
+// gopipe has nothing that shares state between streams.
+type factory struct {
+	impl *implementation
 }
 
-// stream is one running graph.
-type stream struct {
-	// run drives the graph until the media ends, ctx is cancelled, or an error
-	// occurs.
-	run func(context.Context) error
-
-	// terminal marks a stream whose completion ends the pipeline: a sender is
-	// done when its media ends, while a receiver only ends when it is
-	// cancelled.
-	terminal bool
+// Shared implements media.Factory. gopipe has no state outside a stream, so
+// its shared graph is empty.
+func (f *factory) Shared() *pipeline.Graph {
+	return pipeline.NewGraph()
 }
 
-// AddSender implements media.Pipeline.
-func (p *mediaPipeline) AddSender(config media.SenderConfig) (media.Sender, error) {
-	if config.Media == nil {
-		return nil, fmt.Errorf("stream %q has no media sink to send to", config.Name)
-	}
+// NewSender implements media.Factory.
+func (f *factory) NewSender(config media.SenderConfig) (*media.SendStream, error) {
 	format, err := media.RTPFormat(config.Codec, config.PayloadType)
 	if err != nil {
 		return nil, err
 	}
 	packetizer := NewRTPPacketizer(
-		uint16(p.factory.mtu),
+		uint16(f.impl.mtu),
 		format.PayloadType,
 		format.SSRC, // TODO: Set SSRC to a random value, or allow the user to set it.
 		format.ClockRate,
 		format.Codec,
 	)
 
-	source, sender, err := p.newSource(config)
+	g := pipeline.NewGraph()
+	source, sender, err := f.newSource(g, config)
 	if err != nil {
 		return nil, err
 	}
 
-	g := pipeline.NewGraph()
-	if err := errors.Join(
-		source.connect(g, packetizer),
-		p.sendTail(g, packetizer, config, source.frameDuration),
-	); err != nil {
+	if err := source.connect(g, packetizer); err != nil {
+		return nil, err
+	}
+	rtp, err := sendTail(g, packetizer, source.frameDuration)
+	if err != nil {
 		return nil, err
 	}
 	g.Terminal(source.driver)
 
-	p.addCloser(closerFunc(g.Close))
-	p.addControlCloser(config.Control)
-	p.addStream(&stream{terminal: true, run: g.Run})
-	return sender, nil
+	return &media.SendStream{Graph: g, RTP: rtp, Sender: sender}, nil
 }
 
 // sendSource is the head of a send graph: the element that produces the coded
@@ -136,7 +111,7 @@ type sendSource struct {
 
 // newSource builds the head of a send graph, and the handle rate control
 // steers it with.
-func (p *mediaPipeline) newSource(config media.SenderConfig) (*sendSource, media.Sender, error) {
+func (f *factory) newSource(g *pipeline.Graph, config media.SenderConfig) (*sendSource, media.Sender, error) {
 	if config.Codec == mrtp.Fake {
 		// The fake codec generates its frames from the target bitrate instead
 		// of encoding media, so it is a source of coded frames on its own.
@@ -148,7 +123,7 @@ func (p *mediaPipeline) newSource(config media.SenderConfig) (*sendSource, media
 		if bounds.Max == 0 {
 			return nil, nil, fmt.Errorf("the %v codec needs rate bounds, its frame sizes are its target bitrate", mrtp.Fake)
 		}
-		source := NewFakeSource(p.factory.fakeRunTime, uint64(bounds.Min), uint64(bounds.Max), uint64(bounds.Initial))
+		source := NewFakeSource(f.impl.fakeRunTime, uint64(bounds.Min), uint64(bounds.Max), uint64(bounds.Initial))
 		return &sendSource{
 			driver:        source,
 			frameDuration: source.FrameDuration(),
@@ -169,7 +144,7 @@ func (p *mediaPipeline) newSource(config media.SenderConfig) (*sendSource, media
 	if err != nil {
 		return nil, nil, errors.Join(err, file.Close())
 	}
-	p.addCloser(file)
+	g.Add(file)
 
 	encoder := NewEncoder(config.Codec)
 	format := source.Format().(mrtp.RawVideo)
@@ -182,49 +157,37 @@ func (p *mediaPipeline) newSource(config media.SenderConfig) (*sendSource, media
 	}, encoder, nil
 }
 
-// sendTail wires the packetizer to the transport, spacing the packets of a
-// frame out over the frame's duration on the way.
-func (p *mediaPipeline) sendTail(g *pipeline.Graph, packetizer *RTPPacketizer, config media.SenderConfig, frameDuration time.Duration) error {
+// sendTail spaces the packets of a frame out over the frame's duration, and
+// returns the port the transport is wired to.
+func sendTail(g *pipeline.Graph, packetizer *RTPPacketizer, frameDuration time.Duration) (mrtp.Source[mrtp.RTPPacket], error) {
 	queue := pipeline.NewQueue(sendQueueDepth, pipeline.PaceFrames(
 		(*mrtp.RTPPacket).Marker, frameDuration,
 	))
 	pump := pipeline.NewPump[mrtp.RTPPacket]()
 
-	return errors.Join(
+	return pump, errors.Join(
 		g.Connect(packetizer, queue),
 		g.Attach(queue, pump),
-		g.Connect(pump, config.Media),
 	)
 }
 
-// AddReceiver implements media.Pipeline.
-func (p *mediaPipeline) AddReceiver(config media.ReceiverConfig) error {
-	if config.Media == nil {
-		return fmt.Errorf("stream %q has no media source to receive from", config.Name)
-	}
-
+// NewReceiver implements media.Factory.
+func (f *factory) NewReceiver(config media.ReceiverConfig) (*media.ReceiveStream, error) {
 	// The depacketizer waits for a missing packet, so how long it is worth
 	// waiting depends on the round trip time. A transport that does not know
 	// its RTT leaves it at the fixed -go-depacketizer-timeout.
-	depacketizer := NewRTPDepacketizer(p.factory.depacketizerTimeout, config.RTT)
+	depacketizer := NewRTPDepacketizer(f.impl.depacketizerTimeout, config.RTT)
 
 	g := pipeline.NewGraph()
-	if err := g.Connect(config.Media, depacketizer); err != nil {
-		return err
+	if err := receiveTail(g, depacketizer, config); err != nil {
+		return nil, err
 	}
-	if err := p.receiveTail(g, depacketizer, config); err != nil {
-		return err
-	}
-
-	p.addCloser(closerFunc(g.Close))
-	p.addControlCloser(config.Control)
-	p.addStream(&stream{run: g.Run})
-	return nil
+	return &media.ReceiveStream{Graph: g, RTP: depacketizer}, nil
 }
 
 // receiveTail wires the depacketizer to what the media is written to: a
 // decoder and a Y4M file, or a sink that drops it.
-func (p *mediaPipeline) receiveTail(g *pipeline.Graph, depacketizer *RTPDepacketizer, config media.ReceiverConfig) error {
+func receiveTail(g *pipeline.Graph, depacketizer *RTPDepacketizer, config media.ReceiverConfig) error {
 	if config.Codec == mrtp.Fake {
 		// Fake frames carry no media, so there is nothing to decode, render or
 		// write. Both the render and the discard location drop them.
@@ -254,95 +217,3 @@ func (p *mediaPipeline) receiveTail(g *pipeline.Graph, depacketizer *RTPDepacket
 	}
 	return errors.Join(g.Connect(depacketizer, decoder), g.Connect(decoder, sink))
 }
-
-// Run implements media.Pipeline.
-func (p *mediaPipeline) Run(ctx context.Context) error {
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	p.mu.Lock()
-	if p.ctx != nil {
-		p.mu.Unlock()
-		return errors.New("pipeline is already running")
-	}
-	p.ctx = runCtx
-	pending := p.pending
-	p.pending = nil
-	p.mu.Unlock()
-
-	for _, s := range pending {
-		p.launch(runCtx, s)
-	}
-
-	select {
-	case err := <-p.done:
-		return err
-	case <-runCtx.Done():
-		return nil
-	}
-}
-
-// Close implements media.Pipeline.
-func (p *mediaPipeline) Close() error {
-	p.mu.Lock()
-	closers := p.closers
-	p.closers = nil
-	p.mu.Unlock()
-
-	var err error
-	for _, c := range closers {
-		err = errors.Join(err, c.Close())
-	}
-	return err
-}
-
-// addStream starts a stream, or queues it until Run starts.
-func (p *mediaPipeline) addStream(s *stream) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.ctx == nil {
-		p.pending = append(p.pending, s)
-		return
-	}
-	p.launch(p.ctx, s)
-}
-
-// launch drives one stream, reporting the first terminal event to Run.
-func (p *mediaPipeline) launch(ctx context.Context, s *stream) {
-	go func() {
-		err := s.run(ctx)
-		if errors.Is(err, context.Canceled) {
-			// The pipeline is shutting down, which is not a failure.
-			err = nil
-		}
-		if err == nil && !s.terminal {
-			return
-		}
-		select {
-		case p.done <- err:
-		default:
-			// Run is already returning with an earlier event.
-		}
-	}()
-}
-
-// addControlCloser takes ownership of a stream's RTCP endpoints. gopipe
-// neither generates RTCP nor reads it, but it still has to release them.
-func (p *mediaPipeline) addControlCloser(flow media.ControlFlow) {
-	if flow.Send != nil {
-		p.addCloser(flow.Send)
-	}
-	if flow.Recv != nil {
-		p.addCloser(flow.Recv)
-	}
-}
-
-func (p *mediaPipeline) addCloser(c io.Closer) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.closers = append(p.closers, c)
-}
-
-type closerFunc func() error
-
-func (f closerFunc) Close() error { return f() }

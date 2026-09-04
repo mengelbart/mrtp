@@ -1,6 +1,7 @@
 package subcmd
 
 import (
+	"errors"
 	"net"
 	"strconv"
 	"time"
@@ -18,6 +19,11 @@ const (
 	// when it is also given -gst-udp.
 	transportGstUDP = "gst-udp"
 )
+
+// errGstUDPWithoutPipeline is what asking for -transport gst-udp without also
+// giving the pipeline -gst-udp looks like from the command: the pipeline
+// exposes an RTP port, so nobody moves the packets.
+var errGstUDPWithoutPipeline = errors.New("-transport " + transportGstUDP + " needs a media pipeline that moves the packets itself, such as -media-pipeline gst -gst-udp")
 
 // DefaultTransport is the transport used for plain RTP when the user does not
 // choose one.
