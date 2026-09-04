@@ -1,11 +1,11 @@
 package media
 
 import (
-	"context"
 	"flag"
 	"testing"
 
 	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +19,7 @@ func (f *testFactory) ConfigureFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&f.flagVal, f.flagName, false, "test flag")
 }
 
-func (f *testFactory) NewPipeline() (Pipeline, error) { return &testPipeline{}, nil }
+func (f *testFactory) NewFactory() (Factory, error) { return &testStreamFactory{}, nil }
 
 // multiFlagFactory registers several flags, to check what happens to the good
 // ones when a later one is rejected.
@@ -33,23 +33,22 @@ func (f *multiFlagFactory) ConfigureFlags(fs *flag.FlagSet) {
 	}
 }
 
-func (f *multiFlagFactory) NewPipeline() (Pipeline, error) { return &testPipeline{}, nil }
+func (f *multiFlagFactory) NewFactory() (Factory, error) { return &testStreamFactory{}, nil }
 
-type testPipeline struct{}
+type testStreamFactory struct{}
 
-func (p *testPipeline) AddSender(SenderConfig) (Sender, error) { return nil, nil }
-func (p *testPipeline) AddReceiver(ReceiverConfig) error       { return nil }
-func (p *testPipeline) Run(context.Context) error              { return nil }
-func (p *testPipeline) Close() error                           { return nil }
+func (f *testStreamFactory) Shared() *pipeline.Graph                            { return pipeline.NewGraph() }
+func (f *testStreamFactory) NewSender(SenderConfig) (*SendStream, error)        { return nil, nil }
+func (f *testStreamFactory) NewReceiver(ReceiverConfig) (*ReceiveStream, error) { return nil, nil }
 
 func TestRegistry(t *testing.T) {
 	Register("test-registry", &testFactory{flagName: "test-registry-flag"})
 
-	factory, err := Lookup("test-registry")
+	impl, err := Lookup("test-registry")
 	require.NoError(t, err)
-	pipeline, err := factory.NewPipeline()
+	factory, err := impl.NewFactory()
 	require.NoError(t, err)
-	assert.NotNil(t, pipeline)
+	assert.NotNil(t, factory)
 
 	assert.Contains(t, Names(), "test-registry")
 
@@ -148,17 +147,17 @@ func TestReceiverConfigSinkSelectedByLocation(t *testing.T) {
 func TestFactoryFlagsMustBePrefixed(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 
-	err := registerFactoryFlags(fs, "prefixed", &testFactory{flagName: "prefixed-thing"})
+	err := registerImplementationFlags(fs, "prefixed", &testFactory{flagName: "prefixed-thing"})
 	require.NoError(t, err)
 	assert.NotNil(t, fs.Lookup("prefixed-thing"))
 
-	err = registerFactoryFlags(fs, "sloppy", &testFactory{flagName: "thing"})
+	err = registerImplementationFlags(fs, "sloppy", &testFactory{flagName: "thing"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "prefix")
 	assert.Nil(t, fs.Lookup("thing"), "a rejected flag must not be registered")
 
 	// The name alone is not enough, the separator is part of the prefix.
-	err = registerFactoryFlags(fs, "sloppy", &testFactory{flagName: "sloppything"})
+	err = registerImplementationFlags(fs, "sloppy", &testFactory{flagName: "sloppything"})
 	assert.Error(t, err)
 }
 
@@ -166,7 +165,7 @@ func TestFactoryFlagsRejectDuplicates(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	fs.Bool("dup-thing", false, "already taken")
 
-	err := registerFactoryFlags(fs, "dup", &testFactory{flagName: "dup-thing"})
+	err := registerImplementationFlags(fs, "dup", &testFactory{flagName: "dup-thing"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already registered")
 }
@@ -174,7 +173,7 @@ func TestFactoryFlagsRejectDuplicates(t *testing.T) {
 func TestFactoryFlagsKeepDefaultsAndBoolShorthand(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	factory := &testFactory{flagName: "kept-thing"}
-	require.NoError(t, registerFactoryFlags(fs, "kept", factory))
+	require.NoError(t, registerImplementationFlags(fs, "kept", factory))
 
 	registered := fs.Lookup("kept-thing")
 	require.NotNil(t, registered)
@@ -191,7 +190,7 @@ func TestFactoryFlagsAreAllOrNothing(t *testing.T) {
 	// "aaa-ok" sorts before the offending flag, so an implementation that
 	// validated while registering would already have added it.
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	err := registerFactoryFlags(fs, "aaa", &multiFlagFactory{flagNames: []string{"aaa-ok", "zzz-no-prefix"}})
+	err := registerImplementationFlags(fs, "aaa", &multiFlagFactory{flagNames: []string{"aaa-ok", "zzz-no-prefix"}})
 	require.Error(t, err)
 	assert.Nil(t, fs.Lookup("aaa-ok"), "flags of a rejected implementation must not be registered")
 	assert.Nil(t, fs.Lookup("zzz-no-prefix"))
@@ -199,7 +198,7 @@ func TestFactoryFlagsAreAllOrNothing(t *testing.T) {
 	// Same for a collision that is only discovered on a later flag.
 	fs = flag.NewFlagSet("test", flag.ContinueOnError)
 	fs.Bool("aaa-taken", false, "already taken")
-	err = registerFactoryFlags(fs, "aaa", &multiFlagFactory{flagNames: []string{"aaa-fine", "aaa-taken"}})
+	err = registerImplementationFlags(fs, "aaa", &multiFlagFactory{flagNames: []string{"aaa-fine", "aaa-taken"}})
 	require.Error(t, err)
 	assert.Nil(t, fs.Lookup("aaa-fine"), "flags of a rejected implementation must not be registered")
 }

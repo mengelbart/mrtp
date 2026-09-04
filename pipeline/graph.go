@@ -105,10 +105,20 @@ func (g *Graph) Terminal(d mrtp.Driver) {
 	g.terminal[d] = true
 }
 
+// HasTerminal reports whether the graph has a terminal driver, so that its
+// completion is the end of the run rather than of the graph alone.
+func (g *Graph) HasTerminal() bool {
+	return len(g.terminal) > 0
+}
+
 // Run binds and negotiates every edge, then gives each driver a goroutine and
 // blocks. The first error cancels the rest, and so does the completion of a
-// terminal driver.
+// terminal driver. A graph with no elements has nothing to run and returns
+// immediately.
 func (g *Graph) Run(ctx context.Context) error {
+	if len(g.elements) == 0 {
+		return nil
+	}
 	if err := g.bind(); err != nil {
 		return err
 	}

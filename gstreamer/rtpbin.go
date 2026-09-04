@@ -38,7 +38,7 @@ type RTPBin struct {
 	rtpbin   *gst.Element
 
 	// mu guards transports, streams and rtcpFunnels, which are written by
-	// AddSender/AddReceiver and read from the rtpbin's own pad-added callback,
+	// NewSender/NewReceiver and read from the rtpbin's own pad-added callback,
 	// both of which can run concurrently.
 	mu          sync.Mutex
 	transports  map[int]*gst.Element
