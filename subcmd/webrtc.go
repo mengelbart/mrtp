@@ -163,18 +163,11 @@ Usage:
 			// What arrives is what the peers negotiated, which is not
 			// necessarily what -codec names: that flag picks what this peer
 			// sends.
-			receiverConfig.Codec, configErr = mrtp.NewCodecFromMimeType(receiver.Codec().MimeType)
-			if configErr != nil {
-				panic(configErr)
-			}
+			receiverConfig.Codec = receiver.Codec()
 			receiverConfig.PayloadType = int(receiver.PayloadType())
-			source, configErr := rtpSource(receiver, receiverConfig)
-			if configErr != nil {
-				panic(configErr)
-			}
-			receiverConfig.Media = source
+			receiverConfig.Media = receiver
 			receiverConfig.Control = media.ControlFlow{
-				Send: rtcpSink(transport),
+				Send: transport.RTCPSender(),
 				Recv: receiver.RTCPReceiver(),
 			}
 			if pipelineErr := pipeline.AddReceiver(receiverConfig); pipelineErr != nil {
@@ -324,9 +317,9 @@ Usage:
 		if err != nil {
 			return err
 		}
-		senderConfig.Media = rtpSink(track)
+		senderConfig.Media = track
 		senderConfig.Control = media.ControlFlow{
-			Send: rtcpSink(transport),
+			Send: transport.RTCPSender(),
 			Recv: track.RTCPReceiver(),
 		}
 

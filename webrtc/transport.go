@@ -26,6 +26,15 @@ import (
 const (
 	// TODO(ME): Make the interval configurable?
 	feedbackInterval = 20 * time.Millisecond
+
+	// packetBufferSize is the size of the buffer one RTP or RTCP packet is
+	// read into. It matches Pion's receive MTU exactly: everything is
+	// demultiplexed out of a read into a buffer of that size, and decryption
+	// only shrinks a packet, so nothing larger can arrive. A buffer smaller
+	// than the packet is reported as io.ErrShortBuffer rather than truncating,
+	// so raising the MTU with SettingEngine.SetReceiveMTU means raising this
+	// with it.
+	packetBufferSize = 1500
 )
 
 type Signaler interface {
@@ -358,12 +367,15 @@ func (t *Transport) onICECandidate(i *webrtc.ICECandidate) {
 
 func (t *Transport) onTrack(tr *webrtc.TrackRemote, r *webrtc.RTPReceiver) {
 	t.logger.Info("got new track")
-	if t.onRemoteTrack != nil {
-		t.onRemoteTrack(&RTPReceiver{
-			track:    tr,
-			receiver: r,
-		})
+	if t.onRemoteTrack == nil {
+		return
 	}
+	receiver, err := newRTPReceiver(tr, r)
+	if err != nil {
+		t.logger.Error("ignoring remote track", "mime-type", tr.Codec().MimeType, "error", err)
+		return
+	}
+	t.onRemoteTrack(receiver)
 }
 
 func (t *Transport) HandleSessionDescription(description *webrtc.SessionDescription) error {
@@ -448,16 +460,9 @@ func (t *Transport) addLocalTrack(codec string, id string) (*RTPSender, error) {
 	}, nil
 }
 
-// Write sends an RTCP packet to the peer
-func (t *Transport) Write(pkt []byte) (int, error) {
-	pkts, err := rtcp.Unmarshal(pkt)
-	if err != nil {
-		return 0, err
-	}
-	if err := t.pc.WriteRTCP(pkts); err != nil {
-		return 0, err
-	}
-	return len(pkt), nil
+// RTCPSender returns a sender for the RTCP a pipeline generates.
+func (t *Transport) RTCPSender() *RTCPSender {
+	return &RTCPSender{transport: t}
 }
 
 func (t *Transport) Close() error {
