@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
@@ -262,25 +263,25 @@ func (r *Receive) setupPlainRTP(pipeline media.Pipeline, config media.ReceiverCo
 		return fmt.Errorf("unknown transport %q, available: %v", r.transport, transportNames)
 	}
 
-	rtpSrc, err := udp.Listen(address(r.localAddr, uint16(r.udpPort)), r.traceRTP,
+	format, err := media.RTPFormat(config.Codec, config.PayloadType)
+	if err != nil {
+		return err
+	}
+	rtpSrc, err := udp.Listen(address(r.localAddr, uint16(r.udpPort)), r.traceRTP, format, mrtp.RTPBytes,
 		udp.ReceiveBufferSize(r.udpRecvBufferSize))
 	if err != nil {
 		return err
 	}
-	rtcpSendFlow, err := udp.Dial(address(r.remoteAddr, uint16(r.rtcpSendPort)), false)
+	rtcpSendFlow, err := udp.Dial(address(r.remoteAddr, uint16(r.rtcpSendPort)), false, mrtp.RTCPBytes)
 	if err != nil {
 		return err
 	}
-	rtcpRecvFlow, err := udp.Listen(address(r.localAddr, uint16(r.rtcpRecvPort)), false)
+	rtcpRecvFlow, err := udp.ListenPuller(address(r.localAddr, uint16(r.rtcpRecvPort)), false, mrtp.RTCP{}, mrtp.RTCPBytes)
 	if err != nil {
 		return err
 	}
 
-	source, err := rtpSource(rtpSrc, config)
-	if err != nil {
-		return err
-	}
-	config.Media = source
-	config.Control = media.ControlFlow{Send: rtcpSink(rtcpSendFlow), Recv: rtcpPuller(rtcpRecvFlow)}
+	config.Media = rtpSrc
+	config.Control = media.ControlFlow{Send: rtcpSendFlow, Recv: rtcpRecvFlow}
 	return pipeline.AddReceiver(config)
 }

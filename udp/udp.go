@@ -1,23 +1,32 @@
 // Package udp implements plain RTP over UDP as a transport.
 //
-// A Sink and a Source are ordinary io.WriteCloser / io.ReadCloser with no
-// further contract: they open their socket when they are created and close it
-// when they are closed. A media pipeline that moves UDP itself is asked for a
-// transport of its own instead, and this package is then not involved at all.
+// Its flows are pipeline elements, one datagram per packet in both directions.
+// The payload type is a parameter, so the same socket carries RTP or RTCP: the
+// bytes function passed to a constructor says where that payload keeps its
+// buffer.
 package udp
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"math"
 	"net"
 	"sync"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/internal/logging"
+	"github.com/mengelbart/mrtp/pipeline"
 )
+
+// datagramBufferSize is the size of the buffer one datagram is read into. It
+// is the largest a datagram can be, so that a read cannot truncate a packet.
+const datagramBufferSize = math.MaxUint16
 
 // conn is the half of a UDP transport that does not depend on the direction.
 // It deliberately has no Read or Write: a dialled socket cannot receive on a
 // well known port and a listening socket cannot Write without a destination,
-// so Sink and Source expose one direction each.
+// so the send and receive elements expose one direction each.
 type conn struct {
 	socket *net.UDPConn
 	logger *logging.RTPLogger
@@ -41,7 +50,8 @@ func (c *conn) logRTP(packet []byte) {
 	}
 }
 
-// Close closes the socket. It is safe to call more than once.
+// Close implements mrtp.Element. It closes the socket, and is safe to call
+// more than once.
 func (c *conn) Close() error {
 	c.closeOnce.Do(func() {
 		c.closeErr = c.socket.Close()
@@ -49,15 +59,16 @@ func (c *conn) Close() error {
 	return c.closeErr
 }
 
-// Sink sends RTP packets to a remote UDP endpoint.
-type Sink struct {
+// Sink sends packets to a remote UDP endpoint, one datagram per packet.
+type Sink[T any] struct {
 	conn
+	bytes func(*T) *[]byte
 }
 
 // Dial connects to the UDP endpoint at address, in host:port form. Nothing is
-// bound locally.
-func Dial(address string, traceRTP bool) (*Sink, error) {
-	s := &Sink{}
+// bound locally. bytes is where a payload keeps its buffer.
+func Dial[T any](address string, traceRTP bool, bytes func(*T) *[]byte) (*Sink[T], error) {
+	s := &Sink[T]{bytes: bytes}
 	addr, err := s.resolve(address, traceRTP, "udp sink")
 	if err != nil {
 		return nil, err
@@ -68,58 +79,185 @@ func Dial(address string, traceRTP bool) (*Sink, error) {
 	return s, nil
 }
 
-func (s *Sink) Write(packet []byte) (int, error) {
-	s.logRTP(packet)
-	return s.socket.Write(packet)
+// Negotiate implements mrtp.Sink. A socket takes any format, because it sends
+// bytes and configures nothing.
+func (s *Sink[T]) Negotiate(mrtp.Format) error {
+	return nil
 }
 
-// SourceOption configures a Source.
-type SourceOption func(*Source)
+// Write implements mrtp.Sink, sending one datagram.
+func (s *Sink[T]) Write(p mrtp.Packet[T]) error {
+	defer p.Release()
+	packet := *s.bytes(p.Value())
+	s.logRTP(packet)
+	_, err := s.socket.Write(packet)
+	return err
+}
+
+// EndOfStream implements mrtp.Sink. A socket outlives the stream that ended,
+// and is closed rather than ended.
+func (s *Sink[T]) EndOfStream() error {
+	return nil
+}
+
+// sourceOptions are the settings a receiving socket takes.
+type sourceOptions struct {
+	recvBufferSize int
+}
+
+// SourceOption configures a receiving socket.
+type SourceOption func(*sourceOptions)
 
 // ReceiveBufferSize sets the size of the socket's receive buffer in bytes. A
 // size of zero leaves the operating system's default in place.
 func ReceiveBufferSize(size int) SourceOption {
-	return func(s *Source) {
-		s.recvBufferSize = size
+	return func(o *sourceOptions) {
+		o.recvBufferSize = size
 	}
 }
 
-// Source receives RTP packets on a local UDP endpoint.
-type Source struct {
+// recvSocket is what the two receiving elements share: the bound socket, the
+// pool their packets come from, and the one read that fills a packet.
+type recvSocket[T any] struct {
 	conn
-	recvBufferSize int
+	format mrtp.Format
+	bytes  func(*T) *[]byte
+	pool   *pipeline.Pool[T]
 }
 
-// Listen binds the UDP endpoint at address, in host:port form.
-func Listen(address string, traceRTP bool, opts ...SourceOption) (*Source, error) {
-	s := &Source{}
+// listen binds the socket and builds the pool that feeds it.
+func (s *recvSocket[T]) listen(address string, traceRTP bool, f mrtp.Format, bytes func(*T) *[]byte, opts []SourceOption) error {
+	var settings sourceOptions
 	for _, opt := range opts {
-		opt(s)
+		opt(&settings)
 	}
+
+	s.format = f
+	s.bytes = bytes
+	s.pool = pipeline.NewPool(
+		func() *T {
+			var value T
+			*bytes(&value) = make([]byte, datagramBufferSize)
+			return &value
+		},
+		func(value *T) {
+			buffer := bytes(value)
+			*buffer = (*buffer)[:cap(*buffer)]
+		},
+	)
 
 	addr, err := s.resolve(address, traceRTP, "udp source")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if s.socket, err = net.ListenUDP("udp", addr); err != nil {
+		return err
+	}
+	if settings.recvBufferSize > 0 {
+		if err = s.socket.SetReadBuffer(settings.recvBufferSize); err != nil {
+			_ = s.socket.Close()
+			return fmt.Errorf("failed to set receive buffer size: %w", err)
+		}
+	}
+	return nil
+}
+
+// Format is what this socket's packets carry.
+func (s *recvSocket[T]) Format() mrtp.Format {
+	return s.format
+}
+
+// read takes the next datagram as one owned packet.
+func (s *recvSocket[T]) read() (mrtp.Packet[T], error) {
+	packet := s.pool.Get()
+	buffer := s.bytes(packet.Value())
+	n, _, err := s.socket.ReadFrom(*buffer)
+	if err != nil {
+		packet.Release()
 		return nil, err
 	}
-	if s.recvBufferSize > 0 {
-		if err = s.socket.SetReadBuffer(s.recvBufferSize); err != nil {
-			_ = s.socket.Close()
-			return nil, fmt.Errorf("failed to set receive buffer size: %w", err)
-		}
+	*buffer = (*buffer)[:n]
+	s.logRTP(*buffer)
+	return packet, nil
+}
+
+// Source receives packets on a local UDP endpoint and pushes them downstream.
+type Source[T any] struct {
+	recvSocket[T]
+	down mrtp.Sink[T]
+}
+
+// Listen binds the UDP endpoint at address, in host:port form, and pushes what
+// arrives as packets of format f. bytes is where a payload keeps its buffer.
+func Listen[T any](address string, traceRTP bool, f mrtp.Format, bytes func(*T) *[]byte, opts ...SourceOption) (*Source[T], error) {
+	s := &Source[T]{}
+	if err := s.listen(address, traceRTP, f, bytes, opts); err != nil {
+		return nil, err
 	}
 	return s, nil
 }
 
-// Read returns the payload of the next datagram. A datagram larger than buffer
-// is truncated, like every other UDP reader in the tree.
-func (s *Source) Read(buffer []byte) (int, error) {
-	n, _, err := s.socket.ReadFrom(buffer)
-	if err != nil {
-		return n, err
+// Connect implements mrtp.Source.
+func (s *Source[T]) Connect(down mrtp.Sink[T]) error {
+	if s.down != nil {
+		return errors.New("udp: source is already connected")
 	}
-	s.logRTP(buffer[:n])
-	return n, nil
+	s.down = down
+	return nil
 }
+
+// Run implements mrtp.Driver. It reads until the socket fails or is closed, or
+// until ctx is cancelled.
+func (s *Source[T]) Run(ctx context.Context) error {
+	if s.down == nil {
+		return errors.New("udp: source runs with its output wired")
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		packet, err := s.read()
+		if err != nil {
+			return err
+		}
+		if err := s.down.Write(packet); err != nil {
+			return err
+		}
+	}
+}
+
+// Puller receives packets on a local UDP endpoint, one per Pull.
+type Puller[T any] struct {
+	recvSocket[T]
+}
+
+// ListenPuller binds the UDP endpoint at address, in host:port form, and hands
+// out what arrives as packets of format f, one per Pull. bytes is where a
+// payload keeps its buffer.
+func ListenPuller[T any](address string, traceRTP bool, f mrtp.Format, bytes func(*T) *[]byte, opts ...SourceOption) (*Puller[T], error) {
+	s := &Puller[T]{}
+	if err := s.listen(address, traceRTP, f, bytes, opts); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// Pull implements mrtp.Puller. It ignores ctx once the read has started, so
+// Close only unblocks it because closing the socket fails the read.
+func (s *Puller[T]) Pull(ctx context.Context) (mrtp.Packet[T], error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	return s.read()
+}
+
+var (
+	_ mrtp.Sink[mrtp.RTPPacket]    = (*Sink[mrtp.RTPPacket])(nil)
+	_ mrtp.Source[mrtp.RTPPacket]  = (*Source[mrtp.RTPPacket])(nil)
+	_ mrtp.Driver                  = (*Source[mrtp.RTPPacket])(nil)
+	_ mrtp.Puller[mrtp.RTCPPacket] = (*Puller[mrtp.RTCPPacket])(nil)
+)
