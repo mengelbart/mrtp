@@ -6,9 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,7 +14,7 @@ import (
 
 	"github.com/go-gst/go-glib/glib"
 	"github.com/go-gst/go-gst/gst"
-	"github.com/go-gst/go-gst/gst/app"
+	"github.com/mengelbart/mrtp"
 )
 
 type rtpSourceBin interface {
@@ -39,18 +37,13 @@ type RTPBin struct {
 	mainloop *glib.MainLoop
 	rtpbin   *gst.Element
 
-	// mu guards transports, streams, rtcpFunnels and readers, which are
-	// written by AddSender/AddReceiver and read from the rtpbin's own
-	// pad-added callback, both of which can run concurrently.
+	// mu guards transports, streams and rtcpFunnels, which are written by
+	// AddSender/AddReceiver and read from the rtpbin's own pad-added callback,
+	// both of which can run concurrently.
 	mu          sync.Mutex
 	transports  map[int]*gst.Element
 	streams     map[int]rtpSinkBin
 	rtcpFunnels map[int]*gst.Element
-	// readers are the transport sources feeding the appsrc elements. The
-	// pipeline owns their lifetime and closes them on teardown.
-	readers []io.ReadCloser
-	// stopped is set by stop and makes addReader reject new readers.
-	stopped bool
 
 	screamTx             *gst.Element
 	SetTargetRateEncoder func(ratebps uint) error
@@ -124,16 +117,6 @@ func (r *RTPBin) Run() error {
 // call before Run, and more than once.
 func (r *RTPBin) stop() error {
 	r.cancel()
-	r.mu.Lock()
-	r.stopped = true
-	readers := r.readers
-	r.readers = nil
-	r.mu.Unlock()
-	for _, rc := range readers {
-		if err := rc.Close(); err != nil {
-			slog.Error("failed to close transport reader", "error", err)
-		}
-	}
 	err := r.pipeline.BlockSetState(gst.StateNull)
 	r.mainloop.Quit()
 	return err
@@ -207,13 +190,16 @@ func (r *RTPBin) setupRTPPipeline() error {
 	return nil
 }
 
-// AddRTPTransportSink sends the RTP of stream id to wc.
-func (r *RTPBin) AddRTPTransportSink(id int, wc io.WriteCloser) error {
-	e, err := getAppSinkWithWriteCloser(wc)
+// rtpOutput is the RTP of stream id leaving the bin, as packets of format f.
+func (r *RTPBin) rtpOutput(id int, f mrtp.RTP) (mrtp.Source[mrtp.RTPPacket], error) {
+	source, err := newAppSinkSource(f, mrtp.RTPBytes)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return r.addRTPTransportSinkElement(id, e)
+	if err = r.addRTPTransportSinkElement(id, source.element); err != nil {
+		return nil, err
+	}
+	return source, nil
 }
 
 func (r *RTPBin) addRTPTransportSinkElement(id int, sink *gst.Element) error {
@@ -330,12 +316,16 @@ func (r *RTPBin) addRTPSourceStream(id int, src rtpSourceBin) error {
 	return nil
 }
 
-func (r *RTPBin) SendRTCPForStream(id int, wc io.WriteCloser) error {
-	e, err := getAppSinkWithWriteCloser(wc)
+// rtcpOutput is the RTCP of stream id leaving the bin.
+func (r *RTPBin) rtcpOutput(id int) (mrtp.Source[mrtp.RTCPPacket], error) {
+	source, err := newAppSinkSource(mrtp.RTCP{}, mrtp.RTCPBytes)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return r.sendRTCPForStreamElement(id, e)
+	if err = r.sendRTCPForStreamElement(id, source.element); err != nil {
+		return nil, err
+	}
+	return source, nil
 }
 
 func (r *RTPBin) sendRTCPForStreamElement(id int, sink *gst.Element) error {
@@ -388,30 +378,41 @@ func (r *RTPBin) addRTPSinkStream(id int, sink rtpSinkBin) error {
 	return nil
 }
 
-func (r *RTPBin) ReceiveRTPStreamFrom(id int, rc io.ReadCloser, screamCCFB bool) error {
-	if err := r.addReader(rc); err != nil {
-		return err
+// rtpInput takes the RTP of stream id into the bin, in the format the stream
+// was built for and no other.
+func (r *RTPBin) rtpInput(id int, screamCCFB bool) (mrtp.Sink[mrtp.RTPPacket], error) {
+	r.mu.Lock()
+	stream, ok := r.streams[id]
+	r.mu.Unlock()
+	if !ok {
+		return nil, errors.New("unknown stream, did you forget to call addRTPSinkStream first?")
 	}
-	e, err := getAppSrcWithReadCloser(rc)
+	sink, err := newAppSrcSink(rtpFormatCheck(stream), mrtp.RTPBytes)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return r.receiveRTPStreamFromElement(id, e, screamCCFB)
+	if err = r.receiveRTPStreamFromElement(id, sink.element, screamCCFB); err != nil {
+		return nil, err
+	}
+	return sink, nil
 }
 
-// addReader takes ownership of rc, which is closed on teardown. It returns an
-// error if the pipeline is already stopping, in which case rc is closed.
-func (r *RTPBin) addReader(rc io.ReadCloser) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.stopped {
-		if err := rc.Close(); err != nil {
-			slog.Error("failed to close transport reader", "error", err)
+// rtpFormatCheck accepts the RTP format the stream's caps were built from, and
+// nothing else: the bin cannot reconfigure a stream that is already wired.
+func rtpFormatCheck(stream rtpSinkBin) func(mrtp.Format) error {
+	return func(f mrtp.Format) error {
+		format, ok := f.(mrtp.RTP)
+		if !ok {
+			return fmt.Errorf("expected an RTP format, got %v", f)
 		}
-		return errors.New("pipeline is stopped")
+		if int(format.PayloadType) != stream.PayloadType() ||
+			int(format.ClockRate) != stream.ClockRate() ||
+			format.Codec.String() != stream.EncodingName() {
+			return fmt.Errorf("format %v does not match the stream's caps %v/%v pt=%v",
+				format, stream.EncodingName(), stream.ClockRate(), stream.PayloadType())
+		}
+		return nil
 	}
-	r.readers = append(r.readers, rc)
-	return nil
 }
 
 func (r *RTPBin) receiveRTPStreamFromElement(id int, src *gst.Element, screamCCFB bool) error {
@@ -512,15 +513,17 @@ func (r *RTPBin) receiveRTPStreamFromElement(id int, src *gst.Element, screamCCF
 	return nil
 }
 
-func (r *RTPBin) ReceiveRTCPFrom(rc io.ReadCloser) error {
-	if err := r.addReader(rc); err != nil {
-		return err
-	}
-	e, err := getAppSrcWithReadCloser(rc)
+// rtcpInput takes RTCP into the bin. It pulls, so the bin's demand decides when
+// a packet is read.
+func (r *RTPBin) rtcpInput() (mrtp.Consumer[mrtp.RTCPPacket], error) {
+	consumer, err := newAppSrcConsumer(r.ctx, mrtp.RTCPBytes)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return r.receiveRTCPFromElement(e)
+	if err = r.receiveRTCPFromElement(consumer.element); err != nil {
+		return nil, err
+	}
+	return consumer, nil
 }
 
 func (r *RTPBin) receiveRTCPFromElement(src *gst.Element) error {
@@ -557,73 +560,4 @@ func (r *RTPBin) getTargetBitRate() (uint, error) {
 	}
 
 	return rate, nil
-}
-
-func getAppSinkWithWriteCloser(wc io.WriteCloser) (*gst.Element, error) {
-	e, err := gst.NewElementWithProperties(
-		"appsink",
-		map[string]any{
-			"async": false,
-			"sync":  false,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	appsink := app.SinkFromElement(e)
-	appsink.SetCallbacks(&app.SinkCallbacks{
-		EOSFunc: func(appSink *app.Sink) {
-			_ = wc.Close()
-		},
-		NewSampleFunc: func(appSink *app.Sink) gst.FlowReturn {
-			sample := appSink.PullSample()
-			if sample == nil {
-				return gst.FlowEOS
-			}
-			buffer := sample.GetBuffer()
-			if buffer == nil {
-				return gst.FlowEOS
-			}
-			pkt := buffer.Map(gst.MapRead).AsUint8Slice()
-			defer buffer.Unmap()
-
-			if _, err := wc.Write(pkt); err != nil {
-				return gst.FlowError
-			}
-			return gst.FlowOK
-		},
-	})
-	return e, nil
-}
-
-func getAppSrcWithReadCloser(rc io.ReadCloser) (*gst.Element, error) {
-	e, err := gst.NewElementWithProperties(
-		"appsrc",
-		map[string]any{
-			"format": 3,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	src := app.SrcFromElement(e)
-	src.SetStreamType(app.AppStreamTypeStream)
-	// One packet per read, into a buffer big enough for any datagram, so the
-	// length appsrc asks for cannot truncate a packet.
-	buffer := make([]byte, math.MaxUint16)
-	src.SetCallbacks(&app.SourceCallbacks{
-		NeedDataFunc: func(src *app.Source, _ uint) {
-			n, err := rc.Read(buffer)
-			if err != nil {
-				_ = rc.Close()
-				src.EndStream()
-				return
-			}
-			gstBuffer := gst.NewBufferWithSize(int64(n))
-			gstBuffer.Map(gst.MapWrite).WriteData(buffer[:n])
-			gstBuffer.Unmap()
-			src.PushBuffer(gstBuffer)
-		},
-	})
-	return e, nil
 }
