@@ -4,7 +4,6 @@ package simulation
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -18,6 +17,7 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/internal/quictransport"
+	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/netsim"
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/assert"
@@ -150,13 +150,22 @@ func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Tran
 	sender, err := dcTransport.NewDataChannelSender(ctx, uint64(dataChannelFlowID), 0, true)
 	assert.NoError(t, err)
 
-	opts := []data.DataBinOption{
+	opts := []data.Option{
 		data.UseRateLimiter(750_000, 10000),
 		data.UseChunkSource(),
 	}
 
-	source, err := data.NewDataBin(sender, opts...)
+	source, err := data.NewSource(opts...)
 	assert.NoError(t, err)
+
+	graph := pipeline.NewGraph()
+	assert.NoError(t, graph.Connect(source, sender))
+
+	runner := pipeline.NewRunner()
+	defer func() {
+		assert.NoError(t, runner.Close())
+	}()
+	runner.Add(graph)
 
 	// rate is controlled by cc
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {
@@ -167,7 +176,7 @@ func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Tran
 		return nil
 	}
 
-	return source.Run(ctx)
+	return runner.Run(ctx)
 }
 
 func runDcReceiver(t *testing.T, ctx context.Context, wg *sync.WaitGroup, quicConn *quictransport.Transport) error {
@@ -184,12 +193,20 @@ func runDcReceiver(t *testing.T, ctx context.Context, wg *sync.WaitGroup, quicCo
 		assert.NoError(t, err)
 		assert.NotNil(t, receiver)
 
-		sink, err := data.NewSink(receiver)
+		sink, err := data.NewSink()
 		assert.NoError(t, err)
 		assert.NotNil(t, sink)
 
-		err = sink.Run()
-		assert.Equal(t, err, io.EOF)
+		graph := pipeline.NewGraph()
+		assert.NoError(t, graph.Connect(receiver, sink))
+
+		runner := pipeline.NewRunner()
+		defer func() {
+			assert.NoError(t, runner.Close())
+		}()
+		runner.Add(graph)
+
+		assert.NoError(t, runner.Run(ctx))
 	})
 
 	// set handlers for datagrams and streams

@@ -11,6 +11,7 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/internal/quictransport"
+	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/quic-go/quic-go"
 )
 
@@ -73,8 +74,15 @@ Flags:
 	// start handler
 	quicConn.StartHandlers()
 
+	runner := pipeline.NewRunner()
+	defer func() {
+		if closeErr := runner.Close(); closeErr != nil {
+			slog.Error("failed to close pipelines", "error", closeErr)
+		}
+	}()
+
 	go func() {
-		if dataErr := r.startDataChannelReceiver(ctx, dcTransport); dataErr != nil {
+		if dataErr := r.addDataChannelReceiver(ctx, dcTransport, runner); dataErr != nil {
 			slog.Error("failed to start data channel receiver", "error", dataErr)
 		}
 	}()
@@ -91,20 +99,26 @@ Flags:
 		}
 	}
 
-	<-ctx.Done()
-	return ctx.Err()
+	return runner.Run(ctx)
 }
 
-func (r *ReceiveData) startDataChannelReceiver(ctx context.Context, dcTransport *datachannels.Transport) error {
+// addDataChannelReceiver waits for the peer to open the data channel and adds
+// the pipeline it feeds to the runner.
+func (r *ReceiveData) addDataChannelReceiver(ctx context.Context, dcTransport *datachannels.Transport, runner *pipeline.Runner) error {
 	receiver, err := dcTransport.AddDataChannelReceiver(ctx, uint64(r.dataChannelFlowID))
 	if err != nil {
 		return err
 	}
 
-	sink, err := data.NewSink(receiver)
+	sink, err := data.NewSink()
 	if err != nil {
 		return err
 	}
 
-	return sink.Run()
+	graph := pipeline.NewGraph()
+	if err = graph.Connect(receiver, sink); err != nil {
+		return err
+	}
+	runner.Add(graph)
+	return nil
 }

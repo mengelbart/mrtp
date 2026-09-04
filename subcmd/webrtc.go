@@ -278,32 +278,32 @@ Usage:
 		if err != nil {
 			return err
 		}
-		var dataSource *data.DataBin
-		dataSource, err = createDataSource(dcSender, w.dcSourceFile, w.dcStartDelay, false, w.dcChunks)
+		var dataSource *data.Source
+		dataSource, err = createDataSource(w.dcSourceFile, w.dcStartDelay, false, w.dcChunks)
 		if err != nil {
 			return err
 		}
-		go func() {
-			if sourceErr := dataSource.Run(ctx); sourceErr != nil {
-				fmt.Printf("failed to run data source: %v\n", sourceErr)
-			}
-		}()
+		dataGraph := pipeline.NewGraph()
+		if err = dataGraph.Connect(dataSource, dcSender); err != nil {
+			return err
+		}
+		runner.Add(dataGraph)
 	} else if w.datachannel {
 		var dcReceiver *webrtc.DCreceiver
 		dcReceiver, err = transport.NewDataChannelReceiver(setupCtx)
 		if err != nil {
 			return err
 		}
-		var dataSink *data.DataSink
-		dataSink, err = data.NewSink(dcReceiver)
+		var dataSink *data.Sink
+		dataSink, err = data.NewSink()
 		if err != nil {
 			return err
 		}
-		go func() {
-			if sinkErr := dataSink.Run(); sinkErr != nil {
-				fmt.Printf("failed to run data sink: %v\n", sinkErr)
-			}
-		}()
+		dataGraph := pipeline.NewGraph()
+		if err = dataGraph.Connect(dcReceiver, dataSink); err != nil {
+			return err
+		}
+		runner.Add(dataGraph)
 	}
 
 	if w.sendVideoTrack {

@@ -218,16 +218,16 @@ func (r *Receive) setupRoQ(ctx context.Context, factory media.Factory, runner *p
 			return cleanup, err
 		}
 
-		dataSink, err := data.NewSink(dcReceiver)
+		dataSink, err := data.NewSink()
 		if err != nil {
 			return cleanup, err
 		}
 
-		go func() {
-			if sinkErr := dataSink.Run(); sinkErr != nil {
-				slog.Error("failed to run data sink", "error", sinkErr)
-			}
-		}()
+		dataGraph := pipeline.NewGraph()
+		if err = dataGraph.Connect(dcReceiver, dataSink); err != nil {
+			return cleanup, err
+		}
+		runner.Add(dataGraph)
 	}
 
 	format, err := media.RTPFormat(config.Codec, config.PayloadType)

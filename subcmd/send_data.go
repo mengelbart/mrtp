@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/internal/quictransport"
+	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/quic-go/quic-go"
 )
 
@@ -116,16 +116,23 @@ Flags:
 		return err
 	}
 
-	source, err := createDataSource(sender, *sourceFile, 0, true, false)
+	source, err := createDataSource(*sourceFile, 0, true, false)
 	if err != nil {
 		return err
 	}
 
-	go func() {
-		if sourceErr := source.Run(ctx); sourceErr != nil {
-			panic(sourceErr)
+	runner := pipeline.NewRunner()
+	defer func() {
+		if closeErr := runner.Close(); closeErr != nil {
+			slog.Error("failed to close pipelines", "error", closeErr)
 		}
 	}()
+
+	graph := pipeline.NewGraph()
+	if err = graph.Connect(source, sender); err != nil {
+		return err
+	}
+	runner.Add(graph)
 
 	quicConn.SetSourceTargetRate = func(ratebps uint) error {
 		// log "combined" target rate even if we do not split it. Makes plotting easier
@@ -135,12 +142,11 @@ Flags:
 		return nil
 	}
 
-	<-ctx.Done()
-	return ctx.Err()
+	return runner.Run(ctx)
 }
 
-func createDataSource(sender io.WriteCloser, sourceFile string, startDelaySeconds uint, rateLimited bool, chunkSource bool) (*data.DataBin, error) {
-	sourceOptions := []data.DataBinOption{}
+func createDataSource(sourceFile string, startDelaySeconds uint, rateLimited bool, chunkSource bool) (*data.Source, error) {
+	sourceOptions := []data.Option{}
 
 	if rateLimited {
 		sourceOptions = append(sourceOptions, data.UseRateLimiter(750_000, 10000)) // burst not relevant, as data source sends small chunks anyways
@@ -162,5 +168,5 @@ func createDataSource(sender io.WriteCloser, sourceFile string, startDelaySecond
 		sourceOptions = append(sourceOptions, data.UseChunkSource())
 	}
 
-	return data.NewDataBin(sender, sourceOptions...)
+	return data.NewSource(sourceOptions...)
 }
