@@ -50,7 +50,7 @@ type Send struct {
 	transport         string
 
 	media      media.Flags
-	dataSource *data.DataBin
+	dataSource *data.Source
 }
 
 func (s *Send) Help() string {
@@ -231,23 +231,22 @@ Flags:
 		quicConn.StartHandlers()
 
 		// open dc connection
-		// var dataSource *data.DataBin
 		if s.datachannel {
 			dcSender, dcErr := dcTransport.NewDataChannelSender(ctx, uint64(s.dataChannelFlowID), 0, true)
 			if dcErr != nil {
 				return dcErr
 			}
 
-			s.dataSource, err = createDataSource(dcSender, s.dcSourceFile, s.dcStartDelay, false, s.dcChunks)
+			s.dataSource, err = createDataSource(s.dcSourceFile, s.dcStartDelay, false, s.dcChunks)
 			if err != nil {
 				return err
 			}
 
-			go func() {
-				if datasourceErr := s.dataSource.Run(ctx); datasourceErr != nil {
-					slog.Error("failed to run data source", "error", datasourceErr)
-				}
-			}()
+			dataGraph := pipeline.NewGraph()
+			if err = dataGraph.Connect(s.dataSource, dcSender); err != nil {
+				return err
+			}
+			runner.Add(dataGraph)
 		}
 
 		rtpFlow, err := roq.NewSendFlow(roqTransport, uint64(s.rtpFlowID), roq.SendMode(s.roqMapping), s.traceRTP, mrtp.RTPBytes)

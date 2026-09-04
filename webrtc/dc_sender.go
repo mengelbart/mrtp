@@ -2,8 +2,9 @@ package webrtc
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -12,9 +13,9 @@ const (
 	maxBufferedAmount          = 1024 * 1024 // 1mb
 )
 
+// DCsender sends data chunks on a data channel.
 type DCsender struct {
 	dc       *webrtc.DataChannel
-	dataChan chan []byte // to buffer data until BufferedAmountLow is called by pion
 	sendMore chan struct{}
 }
 
@@ -22,7 +23,6 @@ type DCsender struct {
 func newDCsender(ctx context.Context, dc *webrtc.DataChannel) (*DCsender, error) {
 	s := &DCsender{
 		dc:       dc,
-		dataChan: make(chan []byte),
 		sendMore: make(chan struct{}, 1),
 	}
 
@@ -38,9 +38,6 @@ func newDCsender(ctx context.Context, dc *webrtc.DataChannel) (*DCsender, error)
 
 	dc.OnOpen(func() {
 		close(connected)
-		if err := s.sendLoop(); err != nil {
-			slog.Error("Error in send loop", "error", err)
-		}
 	})
 
 	select {
@@ -51,26 +48,37 @@ func newDCsender(ctx context.Context, dc *webrtc.DataChannel) (*DCsender, error)
 	}
 }
 
-func (s *DCsender) sendLoop() error {
-	for buf := range s.dataChan {
-		if err := s.dc.Send(buf); err != nil {
-			return err
-		}
-		if s.dc.BufferedAmount() > maxBufferedAmount {
-			<-s.sendMore
-		}
+// Negotiate implements mrtp.Sink.
+func (s *DCsender) Negotiate(f mrtp.Format) error {
+	if _, ok := f.(mrtp.Data); !ok {
+		return fmt.Errorf("data channel sender cannot take format %v", f)
 	}
 	return nil
 }
 
-// Write blocks if datachannel is full.
-// Necessary because dc.Send does not block and creates huge buffers
-func (s *DCsender) Write(data []byte) (int, error) {
-	s.dataChan <- data
-	return len(data), nil
+// Write implements mrtp.Sink. It blocks while the data channel is full,
+// because dc.Send does not block and builds huge buffers instead.
+func (s *DCsender) Write(p mrtp.Packet[mrtp.DataChunk]) error {
+	defer p.Release()
+
+	if err := s.dc.Send(p.Value().Data); err != nil {
+		return err
+	}
+	if s.dc.BufferedAmount() > maxBufferedAmount {
+		<-s.sendMore
+	}
+	return nil
+}
+
+// EndOfStream implements mrtp.Sink. The channel stays open, because closing a
+// WebRTC data channel does not guarantee that what was sent is delivered.
+func (s *DCsender) EndOfStream() error {
+	return nil
 }
 
 func (s *DCsender) Close() error {
 	// webrtc datachannel close does not garantee all data is sent
 	return nil
 }
+
+var _ mrtp.Sink[mrtp.DataChunk] = (*DCsender)(nil)
