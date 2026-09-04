@@ -17,17 +17,9 @@ type pionRTCPReceiver interface {
 	Read([]byte) (int, interceptor.Attributes, error)
 }
 
-const (
-	// rtcpQueueDepth is how many pulled RTCP packets are buffered for a
-	// consumer before the oldest is dropped.
-	rtcpQueueDepth = 8
-
-	// rtcpBufferSize is the size of the buffer one RTCP packet is read into.
-	// Pion delivers no packet larger than its receive MTU, which is 1460, and
-	// reports a buffer smaller than the packet as io.ErrShortBuffer rather
-	// than truncating.
-	rtcpBufferSize = 1500
-)
+// rtcpQueueDepth is how many pulled RTCP packets are buffered for a consumer
+// before the oldest is dropped.
+const rtcpQueueDepth = 8
 
 // RTCPReceiver pumps RTCP off a pion interceptor chain into a buffer a
 // pipeline can pull from. The pump runs whether or not anything pulls, because
@@ -52,7 +44,7 @@ func newRTCPReceiver(receiver pionRTCPReceiver, onCCFB func(rtpfb.Report) error)
 		onCCFB:   onCCFB,
 		pool: pipeline.NewPool(
 			func() *mrtp.RTCPPacket {
-				return &mrtp.RTCPPacket{Data: make([]byte, rtcpBufferSize)}
+				return &mrtp.RTCPPacket{Data: make([]byte, packetBufferSize)}
 			},
 			func(p *mrtp.RTCPPacket) {
 				p.Data = p.Data[:cap(p.Data)]
