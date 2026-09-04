@@ -5,7 +5,6 @@ package simulation
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/netip"
 	"path/filepath"
@@ -138,17 +137,15 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		// all datagrams belong to RoQ for now
 		roqTransport.HandleDatagram(dgram)
 	}
-	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(rtpFlowID) || flowID == uint64(rtcpRecvFlowID) || flowID == uint64(rtcpSendFlowID) {
+	quictransport.RouteUniStreams(quicConn,
+		[]uint64{uint64(rtpFlowID), uint64(rtcpRecvFlowID), uint64(rtcpSendFlowID)},
+		func(flowID uint64, rs *quic.ReceiveStream) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQUICGoReceiveStream(rs))
-			return
-		}
-
-		panic(fmt.Sprint("unknown stream flowID ", flowID))
-	}
+		},
+		nil)
 	quicConn.StartHandlers()
 
-	rtpSink, err := roqTransport.NewSendFlow(uint64(rtpFlowID), roq.SendModeSingleStream, true)
+	rtpSink, err := roq.NewSendFlow(roqTransport, uint64(rtpFlowID), roq.SendModeSingleStream, true, mrtp.RTPBytes)
 	if err != nil {
 		return err
 	}
@@ -178,14 +175,13 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		fakeSource.FrameDuration(),
 	))
 	pump := pipeline.NewPump[mrtp.RTPPacket]()
-	appSink := pipeline.SinkFromWriter(nopWriteCloser{rtpSink}, mrtp.RTPBytes)
 
 	g := pipeline.NewGraph()
 	if err := errors.Join(
 		g.Connect(fakeSource, packetizer),
 		g.Connect(packetizer, queue),
 		g.Attach(queue, pump),
-		g.Connect(pump, appSink),
+		g.Connect(pump, rtpSink),
 	); err != nil {
 		return err
 	}
@@ -206,34 +202,30 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
 		roqTransport.HandleDatagram(dgram)
 	}
-	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(rtpFlowID) || flowID == uint64(rtcpRecvFlowID) || flowID == uint64(rtcpSendFlowID) {
+	quictransport.RouteUniStreams(quicConn,
+		[]uint64{uint64(rtpFlowID), uint64(rtcpRecvFlowID), uint64(rtcpSendFlowID)},
+		func(flowID uint64, rs *quic.ReceiveStream) {
 			roqTransport.HandleUniStreamWithFlowID(flowID, roqProtocol.NewQUICGoReceiveStream(rs))
-			return
-		}
-
-		panic(fmt.Sprint("unknown stream flowID ", flowID))
-	}
+		},
+		nil)
 
 	// start handler
 	quicConn.StartHandlers()
 
-	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(rtpFlowID), true)
+	rtpSrc, err := roq.NewReceiveFlow(roqTransport, uint64(rtpFlowID), true, mrtp.RTP{
+		Codec:       mrtp.Fake,
+		PayloadType: 96,
+		ClockRate:   90_000,
+	}, mrtp.RTPBytes)
 	if err != nil {
 		return err
 	}
 	defer rtpSrc.Close()
 
 	depacketizer := gopipe.NewRTPDepacketizer(150*time.Millisecond, quicRTT{quicConn})
-	source := pipeline.SourceFromReader(nopReadCloser{rtpSrc}, mrtp.RTP{
-		Codec:       mrtp.Fake,
-		PayloadType: 96,
-		ClockRate:   90_000,
-	}, 150000, mrtp.RTPBytes)
-
 	g := pipeline.NewGraph()
 	if err := errors.Join(
-		g.Connect(source, depacketizer),
+		g.Connect(rtpSrc, depacketizer),
 		g.Connect(depacketizer, gopipe.NewDiscardSink[mrtp.EncodedFrame]()),
 	); err != nil {
 		return err
