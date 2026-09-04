@@ -57,11 +57,7 @@ Flags:
 	}
 
 	mux := httprouter.New()
-	api := http.NewApi()
-	api.RegisterRoutes(mux)
-
-	_, err := web.NewHandler(web.Mux(mux))
-	if err != nil {
+	if err := web.Register(mux); err != nil {
 		return err
 	}
 
