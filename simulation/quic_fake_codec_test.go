@@ -178,7 +178,7 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		fakeSource.FrameDuration(),
 	))
 	pump := pipeline.NewPump[mrtp.RTPPacket]()
-	appSink := pipeline.SinkFromWriter(nopWriteCloser{rtpSink}, rtpBytes)
+	appSink := pipeline.SinkFromWriter(nopWriteCloser{rtpSink}, mrtp.RTPBytes)
 
 	g := pipeline.NewGraph()
 	if err := errors.Join(
@@ -229,7 +229,7 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 		Codec:       mrtp.Fake,
 		PayloadType: 96,
 		ClockRate:   90_000,
-	}, 150000, rtpBytes)
+	}, 150000, mrtp.RTPBytes)
 
 	g := pipeline.NewGraph()
 	if err := errors.Join(

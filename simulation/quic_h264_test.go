@@ -197,7 +197,7 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 		format.FrameRate.Duration(),
 	))
 	pump := pipeline.NewPump[mrtp.RTPPacket]()
-	appSink := pipeline.SinkFromWriter(nopWriteCloser{rtpSink}, rtpBytes)
+	appSink := pipeline.SinkFromWriter(nopWriteCloser{rtpSink}, mrtp.RTPBytes)
 
 	g := pipeline.NewGraph()
 	if err := errors.Join(
@@ -261,7 +261,7 @@ func runH264Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.
 		Codec:       recvCodec,
 		PayloadType: 96,
 		ClockRate:   90_000,
-	}, 150000, rtpBytes)
+	}, 150000, mrtp.RTPBytes)
 
 	g := pipeline.NewGraph()
 	if err := errors.Join(

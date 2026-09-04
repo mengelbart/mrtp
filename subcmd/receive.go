@@ -232,11 +232,11 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 	if err != nil {
 		return cleanup, err
 	}
-	rtcpSink, err := roqTransport.NewSendFlow(uint64(r.rtcpSendFlowID), roq.SendMode(r.roqMapping), false)
+	rtcpSendFlow, err := roqTransport.NewSendFlow(uint64(r.rtcpSendFlowID), roq.SendMode(r.roqMapping), false)
 	if err != nil {
 		return cleanup, err
 	}
-	rtcpSrc, err := roqTransport.NewReceiveFlow(uint64(r.rtcpRecvFlowID), false)
+	rtcpRecvFlow, err := roqTransport.NewReceiveFlow(uint64(r.rtcpRecvFlowID), false)
 	if err != nil {
 		return cleanup, err
 	}
@@ -247,7 +247,7 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 	}
 	config.Media = source
 	config.RTT = quicRTT{quicConn}
-	config.Control = media.ControlFlow{Send: rtcpSink, Recv: rtcpSrc}
+	config.Control = media.ControlFlow{Send: rtcpSink(rtcpSendFlow), Recv: rtcpPuller(rtcpRecvFlow)}
 	return cleanup, pipeline.AddReceiver(config)
 }
 
@@ -267,11 +267,11 @@ func (r *Receive) setupPlainRTP(pipeline media.Pipeline, config media.ReceiverCo
 	if err != nil {
 		return err
 	}
-	rtcpSink, err := udp.Dial(address(r.remoteAddr, uint16(r.rtcpSendPort)), false)
+	rtcpSendFlow, err := udp.Dial(address(r.remoteAddr, uint16(r.rtcpSendPort)), false)
 	if err != nil {
 		return err
 	}
-	rtcpSrc, err := udp.Listen(address(r.localAddr, uint16(r.rtcpRecvPort)), false)
+	rtcpRecvFlow, err := udp.Listen(address(r.localAddr, uint16(r.rtcpRecvPort)), false)
 	if err != nil {
 		return err
 	}
@@ -281,6 +281,6 @@ func (r *Receive) setupPlainRTP(pipeline media.Pipeline, config media.ReceiverCo
 		return err
 	}
 	config.Media = source
-	config.Control = media.ControlFlow{Send: rtcpSink, Recv: rtcpSrc}
+	config.Control = media.ControlFlow{Send: rtcpSink(rtcpSendFlow), Recv: rtcpPuller(rtcpRecvFlow)}
 	return pipeline.AddReceiver(config)
 }

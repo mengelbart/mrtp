@@ -23,9 +23,6 @@ func init() {
 }
 
 const (
-	// rtcpBufferSize is the size of the buffer one RTCP packet is read into.
-	rtcpBufferSize = math.MaxUint16
-
 	// sendQueueDepth is how many RTP packets may wait to be sent before the
 	// queue starts dropping whole frames.
 	sendQueueDepth = 1000
@@ -122,7 +119,7 @@ func (p *mediaPipeline) AddSender(config media.SenderConfig) (media.Sender, erro
 	g.Terminal(source.driver)
 
 	p.addCloser(closerFunc(g.Close))
-	p.drainRTCP(config.Control)
+	p.addControlCloser(config.Control)
 	p.addStream(&stream{terminal: true, run: g.Run})
 	return sender, nil
 }
@@ -220,7 +217,7 @@ func (p *mediaPipeline) AddReceiver(config media.ReceiverConfig) error {
 	}
 
 	p.addCloser(closerFunc(g.Close))
-	p.drainRTCP(config.Control)
+	p.addControlCloser(config.Control)
 	p.addStream(&stream{run: g.Run})
 	return nil
 }
@@ -256,34 +253,6 @@ func (p *mediaPipeline) receiveTail(g *pipeline.Graph, depacketizer *RTPDepacket
 		}
 	}
 	return errors.Join(g.Connect(depacketizer, decoder), g.Connect(decoder, sink))
-}
-
-// drainRTCP reads the RTCP the peer sends and drops it. gopipe neither
-// generates RTCP nor has a use for the reports, but reading them is what lets
-// the transport's interceptors see the feedback the congestion controller runs
-// on.
-//
-// It is not part of the stream's graph: an RTCP read failing must not take the
-// media down with it.
-func (p *mediaPipeline) drainRTCP(flow media.ControlFlow) {
-	if flow.Recv == nil {
-		return
-	}
-	p.addStream(&stream{
-		run: func(ctx context.Context) error {
-			buf := make([]byte, rtcpBufferSize)
-			for {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				default:
-				}
-				if _, err := flow.Recv.Read(buf); err != nil {
-					return err
-				}
-			}
-		},
-	})
 }
 
 // Run implements media.Pipeline.
@@ -355,6 +324,17 @@ func (p *mediaPipeline) launch(ctx context.Context, s *stream) {
 			// Run is already returning with an earlier event.
 		}
 	}()
+}
+
+// addControlCloser takes ownership of a stream's RTCP endpoints. gopipe
+// neither generates RTCP nor reads it, but it still has to release them.
+func (p *mediaPipeline) addControlCloser(flow media.ControlFlow) {
+	if flow.Send != nil {
+		p.addCloser(flow.Send)
+	}
+	if flow.Recv != nil {
+		p.addCloser(flow.Recv)
+	}
 }
 
 func (p *mediaPipeline) addCloser(c io.Closer) {

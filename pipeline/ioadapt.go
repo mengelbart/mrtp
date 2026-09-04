@@ -121,6 +121,113 @@ var (
 	_ mrtp.Driver                 = (*readerSource[mrtp.DataChunk])(nil)
 )
 
+// PullerFromReader makes an io.ReadCloser a pull source, one packet per Pull,
+// carrying format f. Each packet is read into a buffer of size bytes, and bytes
+// is where a payload keeps that buffer.
+func PullerFromReader[T any](r io.ReadCloser, f mrtp.Format, size int, bytes func(*T) *[]byte) mrtp.Puller[T] {
+	return &readerPuller[T]{
+		r:      r,
+		format: f,
+		bytes:  bytes,
+		pool: NewPool(
+			func() *T {
+				var value T
+				*bytes(&value) = make([]byte, size)
+				return &value
+			},
+			func(value *T) {
+				buffer := bytes(value)
+				*buffer = (*buffer)[:cap(*buffer)]
+			},
+		),
+	}
+}
+
+type readerPuller[T any] struct {
+	r      io.ReadCloser
+	format mrtp.Format
+	bytes  func(*T) *[]byte
+	pool   *Pool[T]
+}
+
+func (s *readerPuller[T]) Format() mrtp.Format {
+	return s.format
+}
+
+// Pull implements mrtp.Puller. It ignores ctx once the underlying Read has
+// started, so Close only unblocks it if the reader unblocks.
+func (s *readerPuller[T]) Pull(ctx context.Context) (mrtp.Packet[T], error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	packet := s.pool.Get()
+	buffer := s.bytes(packet.Value())
+	n, err := s.r.Read(*buffer)
+	if err != nil {
+		packet.Release()
+		return nil, err
+	}
+	*buffer = (*buffer)[:n]
+	return packet, nil
+}
+
+func (s *readerPuller[T]) Close() error {
+	return s.r.Close()
+}
+
+// ReaderFromPuller makes an [mrtp.Puller] the source of an io.ReadCloser, one
+// packet per Read, and bytes is where a payload keeps its buffer. A puller that
+// [PullerFromReader] built is unwrapped instead of wrapped again.
+//
+// It is the inverse of PullerFromReader.
+func ReaderFromPuller[T any](p mrtp.Puller[T], bytes func(*T) *[]byte) io.ReadCloser {
+	if s, ok := p.(*readerPuller[T]); ok {
+		return s.r
+	}
+	return &pullerReader[T]{p: p, bytes: bytes}
+}
+
+type pullerReader[T any] struct {
+	p     mrtp.Puller[T]
+	bytes func(*T) *[]byte
+	// pending is a packet a too small buffer could not take, held for the
+	// next Read rather than dropped.
+	pending mrtp.Packet[T]
+}
+
+func (r *pullerReader[T]) Read(buf []byte) (int, error) {
+	packet := r.pending
+	r.pending = nil
+	if packet == nil {
+		var err error
+		if packet, err = r.p.Pull(context.Background()); err != nil {
+			return 0, err
+		}
+	}
+	data := *r.bytes(packet.Value())
+	if len(buf) < len(data) {
+		r.pending = packet
+		return 0, io.ErrShortBuffer
+	}
+	defer packet.Release()
+	return copy(buf, data), nil
+}
+
+func (r *pullerReader[T]) Close() error {
+	if r.pending != nil {
+		r.pending.Release()
+		r.pending = nil
+	}
+	return r.p.Close()
+}
+
+var (
+	_ mrtp.Puller[mrtp.DataChunk] = (*readerPuller[mrtp.DataChunk])(nil)
+	_ io.ReadCloser               = (*pullerReader[mrtp.DataChunk])(nil)
+)
+
 // WriterFromSink makes an [mrtp.Sink] the end of an io.WriteCloser, one packet
 // per Write, and bytes is where a payload keeps its buffer. It negotiates
 // format f once, at construction.
