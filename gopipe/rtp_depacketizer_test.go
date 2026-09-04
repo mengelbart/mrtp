@@ -76,7 +76,7 @@ func packetizeFrames(t *testing.T, c mrtp.Codec, frames [][]byte) [][][]byte {
 	t.Helper()
 
 	packets := make([][][]byte, 0, len(frames))
-	sink := newCollector(rtpBytes)
+	sink := newCollector(mrtp.RTPBytes)
 
 	packetizer := NewRTPPacketizer(1420, 96, 0, 90_000, c)
 	require.NoError(t, packetizer.Negotiate(mrtp.EncodedVideo{Codec: c}))

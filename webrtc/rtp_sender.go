@@ -20,8 +20,5 @@ func (s *RTPSender) Close() error {
 }
 
 func (s *RTPSender) RTCPReceiver() *RTCPReceiver {
-	return &RTCPReceiver{
-		receiver: s.sender,
-		onCCFB:   s.onCCFB,
-	}
+	return newRTCPReceiver(s.sender, s.onCCFB)
 }

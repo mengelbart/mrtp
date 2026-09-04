@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/netsim"
@@ -63,11 +62,6 @@ func configureLogging(t *testing.T) *os.File {
 func createFakeConfig(t *testing.T, testName string) error {
 	config := `{"name": "simulation_` + testName + `","applications": [{"name": "receiver","namespace": "ns1"},{"name": "sender","namespace": "ns4"}],"duration": 100,"time": "2000-01-01T01:00:00.01+01:00"}` + "\n"
 	return os.WriteFile(filepath.Join(t.ArtifactDir(), "config.json"), []byte(config), 0o644)
-}
-
-// rtpBytes says where an RTP packet keeps its buffer, for the io adapters.
-func rtpBytes(p *mrtp.RTPPacket) *[]byte {
-	return &p.Data
 }
 
 // quicRTT reports a QUIC connection's round trip time as an mrtp.RTTSource, so

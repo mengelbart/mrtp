@@ -11,14 +11,15 @@ import (
 	"github.com/mengelbart/mrtp/pipeline"
 )
 
-// rtpReadBufferSize is the size of the buffer one received RTP packet is read
-// into.
-const rtpReadBufferSize = math.MaxUint16
+// datagramBufferSize is the size of the buffer one received packet is read
+// into. It is the largest datagram a transport can deliver, so that a read
+// cannot truncate a packet.
+const datagramBufferSize = math.MaxUint16
 
 // rtpSink wraps a transport's outgoing RTP endpoint as the element a media
 // pipeline writes into. The pipeline closes it, which closes w.
 func rtpSink(w io.WriteCloser) mrtp.Sink[mrtp.RTPPacket] {
-	return pipeline.SinkFromWriter(w, rtpBytes)
+	return pipeline.SinkFromWriter(w, mrtp.RTPBytes)
 }
 
 // rtpSource wraps a transport's incoming RTP endpoint as the element a media
@@ -28,12 +29,19 @@ func rtpSource(r io.ReadCloser, config media.ReceiverConfig) (mrtp.Source[mrtp.R
 	if err != nil {
 		return nil, err
 	}
-	return pipeline.SourceFromReader(r, format, rtpReadBufferSize, rtpBytes), nil
+	return pipeline.SourceFromReader(r, format, datagramBufferSize, mrtp.RTPBytes), nil
 }
 
-// rtpBytes says where an RTP packet keeps its buffer, for the io adapters.
-func rtpBytes(p *mrtp.RTPPacket) *[]byte {
-	return &p.Data
+// rtcpSink wraps a transport's outgoing RTCP endpoint as the element a media
+// pipeline writes into. Closing it closes w.
+func rtcpSink(w io.WriteCloser) mrtp.Sink[mrtp.RTCPPacket] {
+	return pipeline.SinkFromWriter(w, mrtp.RTCPBytes)
+}
+
+// rtcpPuller wraps a transport's incoming RTCP endpoint as the element a media
+// pipeline pulls from. Closing it closes r.
+func rtcpPuller(r io.ReadCloser) mrtp.Puller[mrtp.RTCPPacket] {
+	return pipeline.PullerFromReader(r, mrtp.RTCP{}, datagramBufferSize, mrtp.RTCPBytes)
 }
 
 // quicRTT reports a QUIC connection's round trip time as an mrtp.RTTSource, so

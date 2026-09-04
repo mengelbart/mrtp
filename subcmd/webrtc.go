@@ -174,7 +174,7 @@ Usage:
 			}
 			receiverConfig.Media = source
 			receiverConfig.Control = media.ControlFlow{
-				Send: transport,
+				Send: rtcpSink(transport),
 				Recv: receiver.RTCPReceiver(),
 			}
 			if pipelineErr := pipeline.AddReceiver(receiverConfig); pipelineErr != nil {
@@ -326,7 +326,7 @@ Usage:
 		}
 		senderConfig.Media = rtpSink(track)
 		senderConfig.Control = media.ControlFlow{
-			Send: transport,
+			Send: rtcpSink(transport),
 			Recv: track.RTCPReceiver(),
 		}
 

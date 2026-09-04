@@ -257,7 +257,7 @@ func (p *mediaPipeline) addRTPSink(id int, config media.SenderConfig) error {
 	if err != nil {
 		return err
 	}
-	writer, err := pipeline.WriterFromSink(config.Media, format, rtpBytes)
+	writer, err := pipeline.WriterFromSink(config.Media, format, mrtp.RTPBytes)
 	if err != nil {
 		return err
 	}
@@ -276,7 +276,7 @@ func (p *mediaPipeline) addRTPSource(id int, source mrtp.Source[mrtp.RTPPacket])
 	if source == nil {
 		return errNoRTPEndpoint
 	}
-	reader := pipeline.ReaderFromSource(rtpBytes)
+	reader := pipeline.ReaderFromSource(mrtp.RTPBytes)
 	g := pipeline.NewGraph()
 	if err := g.Connect(source, reader); err != nil {
 		return err
@@ -315,11 +315,6 @@ func (p *mediaPipeline) launch(ctx context.Context, g *pipeline.Graph) {
 	}()
 }
 
-// rtpBytes says where an RTP packet keeps its buffer, for the io adapters.
-func rtpBytes(p *mrtp.RTPPacket) *[]byte {
-	return &p.Data
-}
-
 // addRTCP attaches the RTCP flow of one stream. sending tells the two
 // directions apart, which only matters for the ports the pipeline's own UDP
 // elements use, see factory.rtcpPorts.
@@ -328,12 +323,16 @@ func (p *mediaPipeline) addRTCP(id int, flow media.ControlFlow, sending bool) er
 		return p.addUDPRTCP(id, sending)
 	}
 	if flow.Send != nil {
-		if err := p.bin.SendRTCPForStream(id, flow.Send); err != nil {
+		w, err := pipeline.WriterFromSink(flow.Send, mrtp.RTCP{}, mrtp.RTCPBytes)
+		if err != nil {
+			return err
+		}
+		if err := p.bin.SendRTCPForStream(id, w); err != nil {
 			return err
 		}
 	}
 	if flow.Recv != nil {
-		return p.bin.ReceiveRTCPFrom(flow.Recv)
+		return p.bin.ReceiveRTCPFrom(pipeline.ReaderFromPuller(flow.Recv, mrtp.RTCPBytes))
 	}
 	return nil
 }

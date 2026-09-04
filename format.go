@@ -73,3 +73,11 @@ type Data struct{}
 func (Data) String() string {
 	return "data"
 }
+
+// RTCP is the format of an edge carrying [RTCPPacket]. It has no parameters,
+// because pipelines generate and parse RTCP internally.
+type RTCP struct{}
+
+func (RTCP) String() string {
+	return "RTCP"
+}

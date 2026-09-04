@@ -76,8 +76,6 @@ func (c *collector[T]) Close() error { return nil }
 
 func encodedBytes(f *mrtp.EncodedFrame) *[]byte { return &f.Data }
 
-func rtpBytes(p *mrtp.RTPPacket) *[]byte { return &p.Data }
-
 // encodedFrames returns the synthetic stream encoded with c.
 func encodedFrames(t *testing.T, c mrtp.Codec) [][]byte {
 	t.Helper()

@@ -39,6 +39,11 @@ type RTPPacket struct {
 	Data []byte
 }
 
+// RTPBytes says where an RTP packet keeps its buffer, for the io adapters.
+func RTPBytes(p *RTPPacket) *[]byte {
+	return &p.Data
+}
+
 // Marker reports the RTP marker bit, which ends an access unit.
 func (p *RTPPacket) Marker() bool {
 	return len(p.Data) > 1 && p.Data[1]&0x80 != 0
@@ -47,4 +52,14 @@ func (p *RTPPacket) Marker() bool {
 // DataChunk is non-media payload, such as a data channel's.
 type DataChunk struct {
 	Data []byte
+}
+
+// RTCPPacket is one marshalled RTCP packet.
+type RTCPPacket struct {
+	Data []byte
+}
+
+// RTCPBytes says where an RTCP packet keeps its buffer, for the io adapters.
+func RTCPBytes(p *RTCPPacket) *[]byte {
+	return &p.Data
 }

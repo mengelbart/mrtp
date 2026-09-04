@@ -38,7 +38,5 @@ func (r *RTPReceiver) PayloadType() uint8 {
 }
 
 func (r *RTPReceiver) RTCPReceiver() *RTCPReceiver {
-	return &RTCPReceiver{
-		receiver: r.receiver,
-	}
+	return newRTCPReceiver(r.receiver, nil)
 }

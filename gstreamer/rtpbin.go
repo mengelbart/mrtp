@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -607,9 +608,11 @@ func getAppSrcWithReadCloser(rc io.ReadCloser) (*gst.Element, error) {
 	}
 	src := app.SrcFromElement(e)
 	src.SetStreamType(app.AppStreamTypeStream)
+	// One packet per read, into a buffer big enough for any datagram, so the
+	// length appsrc asks for cannot truncate a packet.
+	buffer := make([]byte, math.MaxUint16)
 	src.SetCallbacks(&app.SourceCallbacks{
-		NeedDataFunc: func(src *app.Source, length uint) {
-			buffer := make([]byte, length)
+		NeedDataFunc: func(src *app.Source, _ uint) {
 			n, err := rc.Read(buffer)
 			if err != nil {
 				_ = rc.Close()
