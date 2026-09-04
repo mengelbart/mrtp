@@ -38,12 +38,6 @@ func rtcpSink(w io.WriteCloser) mrtp.Sink[mrtp.RTCPPacket] {
 	return pipeline.SinkFromWriter(w, mrtp.RTCPBytes)
 }
 
-// rtcpPuller wraps a transport's incoming RTCP endpoint as the element a media
-// pipeline pulls from. Closing it closes r.
-func rtcpPuller(r io.ReadCloser) mrtp.Puller[mrtp.RTCPPacket] {
-	return pipeline.PullerFromReader(r, mrtp.RTCP{}, datagramBufferSize, mrtp.RTCPBytes)
-}
-
 // quicRTT reports a QUIC connection's round trip time as an mrtp.RTTSource, so
 // a pipeline can scale how long it waits for a missing packet.
 type quicRTT struct{ *quictransport.Transport }

@@ -3,6 +3,7 @@ package roq
 import (
 	"context"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/roq"
 	"github.com/quic-go/quic-go"
 )
@@ -36,20 +37,37 @@ func (t *Transport) HandleUniStreamWithFlowID(flowID uint64, rs roq.ReceiveStrea
 	t.session.HandleUniStreamWithFlowID(flowID, rs)
 }
 
-func (t *Transport) NewSendFlow(id uint64, sendMode SendMode, logRTPpackets bool) (*Sender, error) {
+// NewSendFlow opens the send flow with the given ID as a sink.
+func NewSendFlow[T any](t *Transport, id uint64, sendMode SendMode, logRTPpackets bool, bytes func(*T) *[]byte) (*Sender[T], error) {
 	flow, err := t.session.NewSendFlow(id)
 	if err != nil {
 		return nil, err
 	}
-	return newSender(t.ctx, flow, sendMode, logRTPpackets)
+	return newSender(t.ctx, flow, sendMode, logRTPpackets, bytes)
 }
 
-func (t *Transport) NewReceiveFlow(id uint64, logRTPpackets bool) (*Receiver, error) {
+// NewReceiveFlow opens the receive flow with the given ID as a pushing source
+// of packets of format f.
+func NewReceiveFlow[T any](t *Transport, id uint64, logRTPpackets bool, f mrtp.Format, bytes func(*T) *[]byte) (*Receiver[T], error) {
 	flow, err := t.session.NewReceiveFlow(id)
 	if err != nil {
 		return nil, err
 	}
-	return newReceiver(flow, logRTPpackets), nil
+	r := &Receiver[T]{}
+	r.init(flow, logRTPpackets, f, bytes)
+	return r, nil
+}
+
+// NewReceivePuller opens the receive flow with the given ID as a puller of
+// packets of format f.
+func NewReceivePuller[T any](t *Transport, id uint64, logRTPpackets bool, f mrtp.Format, bytes func(*T) *[]byte) (*Puller[T], error) {
+	flow, err := t.session.NewReceiveFlow(id)
+	if err != nil {
+		return nil, err
+	}
+	r := &Puller[T]{}
+	r.init(flow, logRTPpackets, f, bytes)
+	return r, nil
 }
 
 func (t *Transport) Close() error {

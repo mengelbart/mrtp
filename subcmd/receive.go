@@ -189,22 +189,20 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 	quicConn.HandleDatagram = func(flowID uint64, dgram []byte) {
 		roqTransport.HandleDatagram(dgram)
 	}
-	quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
-		if flowID == uint64(r.rtpFlowID) || flowID == uint64(r.rtcpRecvFlowID) || flowID == uint64(r.rtcpSendFlowID) {
-			roqTransport.HandleUniStreamWithFlowID(flowID, roq.NewQuicGoReceiveStream(rs))
-			return
-		}
-
-		if r.datachannel {
+	var dcStreams quictransport.StreamHandler
+	if r.datachannel {
+		dcStreams = func(flowID uint64, rs *quic.ReceiveStream) {
 			if readErr := dcTransport.ReadStream(ctx, datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
 				slog.Error("failed to read stream", "error", readErr)
 			}
-			return
 		}
-
-		slog.Error("unknown stream flow ID, closing stream", "flow-id", flowID)
-		rs.CancelRead(0)
 	}
+	quictransport.RouteUniStreams(quicConn,
+		[]uint64{uint64(r.rtpFlowID), uint64(r.rtcpRecvFlowID), uint64(r.rtcpSendFlowID)},
+		func(flowID uint64, rs *quic.ReceiveStream) {
+			roqTransport.HandleUniStreamWithFlowID(flowID, roq.NewQuicGoReceiveStream(rs))
+		},
+		dcStreams)
 
 	// start handler
 	quicConn.StartHandlers()
@@ -229,26 +227,26 @@ func (r *Receive) setupRoQ(ctx context.Context, pipeline media.Pipeline, config 
 		}()
 	}
 
-	rtpSrc, err := roqTransport.NewReceiveFlow(uint64(r.rtpFlowID), r.traceRTP)
+	format, err := media.RTPFormat(config.Codec, config.PayloadType)
 	if err != nil {
 		return cleanup, err
 	}
-	rtcpSendFlow, err := roqTransport.NewSendFlow(uint64(r.rtcpSendFlowID), roq.SendMode(r.roqMapping), false)
+	rtpSrc, err := roq.NewReceiveFlow(roqTransport, uint64(r.rtpFlowID), r.traceRTP, format, mrtp.RTPBytes)
 	if err != nil {
 		return cleanup, err
 	}
-	rtcpRecvFlow, err := roqTransport.NewReceiveFlow(uint64(r.rtcpRecvFlowID), false)
+	rtcpSendFlow, err := roq.NewSendFlow(roqTransport, uint64(r.rtcpSendFlowID), roq.SendMode(r.roqMapping), false, mrtp.RTCPBytes)
+	if err != nil {
+		return cleanup, err
+	}
+	rtcpRecvFlow, err := roq.NewReceivePuller(roqTransport, uint64(r.rtcpRecvFlowID), false, mrtp.RTCP{}, mrtp.RTCPBytes)
 	if err != nil {
 		return cleanup, err
 	}
 
-	source, err := rtpSource(rtpSrc, config)
-	if err != nil {
-		return cleanup, err
-	}
-	config.Media = source
+	config.Media = rtpSrc
 	config.RTT = quicRTT{quicConn}
-	config.Control = media.ControlFlow{Send: rtcpSink(rtcpSendFlow), Recv: rtcpPuller(rtcpRecvFlow)}
+	config.Control = media.ControlFlow{Send: rtcpSendFlow, Recv: rtcpRecvFlow}
 	return cleanup, pipeline.AddReceiver(config)
 }
 

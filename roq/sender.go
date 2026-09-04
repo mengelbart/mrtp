@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/internal/logging"
 	"github.com/mengelbart/roq"
 )
@@ -16,15 +17,19 @@ const (
 	SendModeSingleStream
 )
 
-type Sender struct {
+// Sender sends packets on a RoQ send flow. One packet is one datagram, one
+// stream, or one length prefixed frame on a shared stream, depending on the
+// mapping.
+type Sender[T any] struct {
 	mode   SendMode
 	flow   *roq.SendFlow
 	stream *roq.RTPSendStream
 	logger *logging.RTPLogger
+	bytes  func(*T) *[]byte
 	ctx    context.Context
 }
 
-func newSender(ctx context.Context, flow *roq.SendFlow, mode SendMode, logRTPpackets bool) (*Sender, error) {
+func newSender[T any](ctx context.Context, flow *roq.SendFlow, mode SendMode, logRTPpackets bool, bytes func(*T) *[]byte) (*Sender[T], error) {
 	var err error
 	var stream *roq.RTPSendStream
 	if mode == SendModeSingleStream {
@@ -33,10 +38,11 @@ func newSender(ctx context.Context, flow *roq.SendFlow, mode SendMode, logRTPpac
 			return nil, err
 		}
 	}
-	sender := &Sender{
+	sender := &Sender[T]{
 		mode:   mode,
 		flow:   flow,
 		stream: stream,
+		bytes:  bytes,
 		ctx:    ctx,
 	}
 	if logRTPpackets {
@@ -46,28 +52,48 @@ func newSender(ctx context.Context, flow *roq.SendFlow, mode SendMode, logRTPpac
 	return sender, nil
 }
 
-func (s *Sender) Write(data []byte) (int, error) {
-	// log rtp packet
+// Negotiate implements mrtp.Sink. A flow takes any format, because it sends
+// bytes and configures nothing.
+func (s *Sender[T]) Negotiate(mrtp.Format) error {
+	return nil
+}
+
+// Write implements mrtp.Sink, sending one packet.
+func (s *Sender[T]) Write(p mrtp.Packet[T]) error {
+	defer p.Release()
+	data := *s.bytes(p.Value())
+
 	if s.logger != nil {
 		s.logger.LogRTPPacketBuf(data, nil)
 	}
 
 	switch s.mode {
 	case SendModeDatagram:
-		return len(data), s.flow.WriteRTPBytes(data)
+		return s.flow.WriteRTPBytes(data)
 	case SendModeStreamPerPacket:
 		stream, err := s.flow.NewSendStream(s.ctx, 1, false)
 		if err != nil {
-			return 0, err
+			return err
 		}
 		defer func() { _ = stream.Close() }()
-		return stream.WriteRTPBytes(data)
+		_, err = stream.WriteRTPBytes(data)
+		return err
 	case SendModeSingleStream:
-		return s.stream.WriteRTPBytes(data)
+		_, err := s.stream.WriteRTPBytes(data)
+		return err
 	}
-	return 0, errors.New("invalid send mode")
+	return errors.New("roq: invalid send mode")
 }
 
-func (s *Sender) Close() error {
+// EndOfStream implements mrtp.Sink. A flow outlives the stream that ended, and
+// is closed rather than ended.
+func (s *Sender[T]) EndOfStream() error {
+	return nil
+}
+
+// Close implements mrtp.Element.
+func (s *Sender[T]) Close() error {
 	return s.flow.Close()
 }
+
+var _ mrtp.Sink[mrtp.RTPPacket] = (*Sender[mrtp.RTPPacket])(nil)

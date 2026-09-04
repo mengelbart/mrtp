@@ -211,21 +211,20 @@ Flags:
 			// all datagrams belong to RoQ for now
 			roqTransport.HandleDatagram(dgram)
 		}
-		quicConn.HandleUniStream = func(flowID uint64, rs *quic.ReceiveStream) {
-			if flowID == uint64(s.rtpFlowID) || flowID == uint64(s.rtcpRecvFlowID) || flowID == uint64(s.rtcpSendFlowID) {
-				roqTransport.HandleUniStreamWithFlowID(flowID, roq.NewQuicGoReceiveStream(rs))
-				return
-			}
-			if s.datachannel && dcTransport != nil {
+		var dcStreams quictransport.StreamHandler
+		if s.datachannel && dcTransport != nil {
+			dcStreams = func(flowID uint64, rs *quic.ReceiveStream) {
 				if readErr := dcTransport.ReadStream(ctx, datachannels.NewQuicGoReceiveStream(rs), flowID); readErr != nil {
 					slog.Error("failed to read stream", "error", readErr)
 				}
-				return
 			}
-
-			slog.Error("unknown stream flow ID, closing stream", "flow-id", flowID)
-			rs.CancelRead(0)
 		}
+		quictransport.RouteUniStreams(quicConn,
+			[]uint64{uint64(s.rtpFlowID), uint64(s.rtcpRecvFlowID), uint64(s.rtcpSendFlowID)},
+			func(flowID uint64, rs *quic.ReceiveStream) {
+				roqTransport.HandleUniStreamWithFlowID(flowID, roq.NewQuicGoReceiveStream(rs))
+			},
+			dcStreams)
 		quicConn.StartHandlers()
 
 		// open dc connection
@@ -248,21 +247,21 @@ Flags:
 			}()
 		}
 
-		rtpFlow, err := roqTransport.NewSendFlow(uint64(s.rtpFlowID), roq.SendMode(s.roqMapping), s.traceRTP)
+		rtpFlow, err := roq.NewSendFlow(roqTransport, uint64(s.rtpFlowID), roq.SendMode(s.roqMapping), s.traceRTP, mrtp.RTPBytes)
 		if err != nil {
 			return err
 		}
-		rtcpSendFlow, err := roqTransport.NewSendFlow(uint64(s.rtcpSendFlowID), roq.SendMode(s.roqMapping), false)
+		rtcpSendFlow, err := roq.NewSendFlow(roqTransport, uint64(s.rtcpSendFlowID), roq.SendMode(s.roqMapping), false, mrtp.RTCPBytes)
 		if err != nil {
 			return err
 		}
-		rtcpRecvFlow, err := roqTransport.NewReceiveFlow(uint64(s.rtcpRecvFlowID), false)
+		rtcpRecvFlow, err := roq.NewReceivePuller(roqTransport, uint64(s.rtcpRecvFlowID), false, mrtp.RTCP{}, mrtp.RTCPBytes)
 		if err != nil {
 			return err
 		}
 
-		senderConfig.Media = rtpSink(rtpFlow)
-		senderConfig.Control = media.ControlFlow{Send: rtcpSink(rtcpSendFlow), Recv: rtcpPuller(rtcpRecvFlow)}
+		senderConfig.Media = rtpFlow
+		senderConfig.Control = media.ControlFlow{Send: rtcpSendFlow, Recv: rtcpRecvFlow}
 		mediaSender, err := pipeline.AddSender(senderConfig)
 		if err != nil {
 			return err
