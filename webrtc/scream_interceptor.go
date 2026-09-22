@@ -4,7 +4,6 @@ package webrtc
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -177,6 +176,7 @@ func (s *ScreamInterceptor) getTargetBitrate(ssrc uint32) float64 {
 
 func (s *ScreamInterceptor) loop() {
 	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
 	var lastStats time.Time
 	for {
 		select {
@@ -229,8 +229,7 @@ func (s *ScreamInterceptor) loop() {
 		case <-s.closed:
 			return
 		}
-		now := time.Now()
-		next := s.transmit(now)
+		next := s.transmit()
 		until := max(time.Until(next), time.Millisecond)
 		timer.Reset(until)
 	}
@@ -258,8 +257,9 @@ func (s *ScreamInterceptor) receiveFeedback(pkt *rxPacket) {
 	}
 }
 
-func (s *ScreamInterceptor) transmit(now time.Time) time.Time {
+func (s *ScreamInterceptor) transmit() time.Time {
 	for {
+		now := time.Now()
 		s.txMu.Lock()
 		tx, ssrc := s.tx.IsOkToTransmit(now)
 		s.txMu.Unlock()
@@ -278,13 +278,13 @@ func (s *ScreamInterceptor) transmit(now time.Time) time.Time {
 		if !ok {
 			return now.Add(time.Second)
 		}
-		n, err := pkt.writer.Write(&pkt.pkt.Header, pkt.pkt.Payload, pkt.attr)
-		if err != nil {
+		if _, err := pkt.writer.Write(&pkt.pkt.Header, pkt.pkt.Payload, pkt.attr); err != nil {
 			s.logger.Error("failed to write RTP packet", "err", err)
 			return now.Add(time.Second)
 		}
+		now = time.Now()
 		s.txMu.Lock()
-		nextTx := s.tx.AddTransmitted(now, ssrc, n, pkt.SequenceNumber(), pkt.pkt.Marker)
+		nextTx := s.tx.AddTransmitted(now, ssrc, pkt.Size(), pkt.SequenceNumber(), pkt.pkt.Marker)
 		s.txMu.Unlock()
 		if nextTx > 0 {
 			return now.Add(time.Duration(nextTx * float64(time.Second)))
@@ -314,10 +314,7 @@ func (s *ScreamInterceptor) BindLocalStream(info *interceptor.StreamInfo, writer
 			attributes = maps.Clone(attributes)
 		}
 		payloadCopy := make([]byte, len(payload))
-		n := copy(payloadCopy, payload)
-		if n != len(payload) {
-			return n, errors.New("failed to copy payload")
-		}
+		copy(payloadCopy, payload)
 		pkt := &rtp.Packet{Header: header.Clone(), Payload: payloadCopy}
 		now := time.Now()
 		select {
@@ -344,10 +341,7 @@ func (s *ScreamInterceptor) BindRTCPReader(reader interceptor.RTCPReader) interc
 			attr = make(interceptor.Attributes)
 		}
 		rtcpCopy := make([]byte, n)
-		m := copy(rtcpCopy, b)
-		if n != m {
-			return n, attr, errors.New("failed to copy RTCP packet")
-		}
+		copy(rtcpCopy, b)
 		select {
 		case s.rtcpRxQueue <- &rxPacket{
 			raw:  rtcpCopy,
