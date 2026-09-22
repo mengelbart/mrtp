@@ -4,6 +4,7 @@ package subcmd
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -206,6 +207,9 @@ Usage:
 		webrtcOptions = append(webrtcOptions, webrtc.EnableCCFBReceiver())
 	}
 	if w.pacing {
+		if w.bwe == "scream" {
+			return errors.New("-pacing cannot be combined with -bwe scream")
+		}
 		webrtcOptions = append(webrtcOptions, webrtc.EnablePacing())
 	}
 	if w.bwe != "" {
