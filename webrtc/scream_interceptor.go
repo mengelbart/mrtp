@@ -56,6 +56,13 @@ func (t *txPacket) Timestamp() time.Time {
 	return t.ts
 }
 
+// screamStream tracks a stream registered with SCReAM. The registration cannot
+// be undone, so entries persist after unbind with bound set to false.
+type screamStream struct {
+	queue *scream.Queue[*txPacket]
+	bound bool
+}
+
 type rxPacket struct {
 	raw  []byte
 	attr interceptor.Attributes
@@ -92,7 +99,7 @@ func (f *ScreamInterceptorFactory) NewInterceptor(id string) (interceptor.Interc
 		max:            f.maxRate,
 		tx:             scream.NewTx(),
 		txQueue:        make(chan *txPacket),
-		streams:        map[uint32]*scream.Queue[*txPacket]{},
+		streams:        map[uint32]*screamStream{},
 		newStreamQueue: make(chan *newStream),
 		rtcpRxQueue:    make(chan *rxPacket),
 		removeStream:   make(chan uint32),
@@ -138,7 +145,7 @@ type ScreamInterceptor struct {
 	txMu           sync.Mutex
 	tx             *scream.Tx
 	txClosed       bool
-	streams        map[uint32]*scream.Queue[*txPacket]
+	streams        map[uint32]*screamStream
 	newStreamQueue chan *newStream
 	txQueue        chan *txPacket
 	rtcpRxQueue    chan *rxPacket
@@ -163,8 +170,14 @@ func (s *ScreamInterceptor) loop() {
 	for {
 		select {
 		case ns := <-s.newStreamQueue:
-			if _, ok := s.streams[ns.ssrc]; ok {
-				s.logger.Warn("duplicate SSRC, dropping stream", "ssrc", ns.ssrc)
+			if st, ok := s.streams[ns.ssrc]; ok {
+				if st.bound {
+					s.logger.Warn("duplicate SSRC, dropping stream", "ssrc", ns.ssrc)
+					continue
+				}
+				// SCReAM has no unregister call, so reuse the registration left
+				// behind by the previous bind.
+				st.bound = true
 				continue
 			}
 			queue := scream.NewQueue[*txPacket]()
@@ -175,14 +188,14 @@ func (s *ScreamInterceptor) loop() {
 				s.logger.Error("failed to register stream", "ssrc", ns.ssrc, "error", err)
 				continue
 			}
-			s.streams[ns.ssrc] = queue
+			s.streams[ns.ssrc] = &screamStream{queue: queue, bound: true}
 		case pkt := <-s.txQueue:
 			stream, ok := s.streams[pkt.pkt.SSRC]
-			if !ok {
+			if !ok || !stream.bound {
 				s.logger.Error("got packet for unknown ssrc", "ssrc", pkt.pkt.SSRC)
 				continue
 			}
-			stream.Enqueue(pkt)
+			stream.queue.Enqueue(pkt)
 			s.txMu.Lock()
 			s.tx.NewMediaFrame(pkt.ts, pkt.pkt.SSRC, pkt.Size(), pkt.pkt.Marker)
 			s.txMu.Unlock()
@@ -193,7 +206,11 @@ func (s *ScreamInterceptor) loop() {
 			s.txMu.Unlock()
 			s.logger.Info("got scream statistics", "stats", stats)
 		case ssrc := <-s.removeStream:
-			delete(s.streams, ssrc)
+			// Keep the mapping so a re-bind can reuse the SCReAM registration.
+			if stream, ok := s.streams[ssrc]; ok {
+				stream.bound = false
+				stream.queue.Clear()
+			}
 		case <-timer.C:
 		case <-s.closed:
 			return
@@ -243,7 +260,7 @@ func (s *ScreamInterceptor) transmit(now time.Time) time.Time {
 			s.logger.Error("scream selected unknown ssrc", "ssrc", ssrc)
 			return now.Add(time.Second)
 		}
-		pkt, ok := stream.Dequeue()
+		pkt, ok := stream.queue.Dequeue()
 		if !ok {
 			return now.Add(time.Second)
 		}
