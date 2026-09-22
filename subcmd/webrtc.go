@@ -62,7 +62,6 @@ type WebRTC struct {
 	pionReadCCFB     bool
 	sendVideoTrack   bool
 	pacing           bool
-	pionSCReAM       bool
 
 	media media.Flags
 }
@@ -76,7 +75,7 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("webrtc", flag.ExitOnError)
 	fs.StringVar(&w.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&w.remoteAddr, "remote", "127.0.0.1", "Remote address")
-	fs.StringVar(&w.bwe, "bwe", "", "Set a bandwidth estimator by name, e.g. 'nada' or 'gcc'")
+	fs.StringVar(&w.bwe, "bwe", "", "Set a bandwidth estimator by name, e.g. 'nada', 'gcc' or 'scream'")
 	fs.UintVar(&w.maxTargetRate, "max-target-rate", 30_000_000, "Set the maximum target rate of the congestion controller in bits per second")
 	fs.BoolVar(&w.traceOutgoingRTP, "trace-rtp-send", false, "Log outgoing RTP packets")
 	fs.BoolVar(&w.traceIncomingRTP, "trace-rtp-recv", false, "Log incoming RTP packets")
@@ -97,7 +96,6 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 	fs.UintVar(&w.dcStartDelay, "dc-start-delay", 0, "Start delay in seconds before data channel source starts sending data.")
 	fs.BoolVar(&w.dcChunks, "dc-chunks", false, "Send chunks on datachannel")
 
-	fs.BoolVar(&w.pionSCReAM, "scream", false, "Enable pion SCReAM interceptor")
 	fs.BoolVar(&w.pacing, "pacing", false, "Enable packet pacing")
 
 	if err := w.media.ConfigureSender(fs); err != nil {
@@ -211,11 +209,7 @@ Usage:
 		webrtcOptions = append(webrtcOptions, webrtc.EnablePacing())
 	}
 	if w.bwe != "" {
-		bweFactory, exists := BWEFactories[w.bwe]
-		if !exists {
-			return fmt.Errorf("unknown BWE factory: %v", w.bwe)
-		}
-		bwe, err := bweFactory.MakeBWE(BWEConfig{
+		bweOptions, err := makeWebRTCBWE(w.bwe, BWEConfig{
 			InitTargetRate: initTargetRate,
 			MinTargetRate:  minTargetRate,
 			MaxTargetRate:  w.maxTargetRate,
@@ -223,10 +217,7 @@ Usage:
 		if err != nil {
 			return err
 		}
-		webrtcOptions = append(webrtcOptions, webrtc.SetBWE(bwe))
-	}
-	if w.pionSCReAM {
-		webrtcOptions = append(webrtcOptions, webrtc.EnableSCReAM(initTargetRate, minTargetRate, int(w.maxTargetRate)))
+		webrtcOptions = append(webrtcOptions, bweOptions...)
 	}
 
 	setupCtx, cancelSetupCtx := context.WithTimeout(context.Background(), webrtcSetupTimeout)
