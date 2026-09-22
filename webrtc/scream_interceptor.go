@@ -3,6 +3,7 @@
 package webrtc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -167,6 +168,7 @@ func (s *ScreamInterceptor) getTargetBitrate(ssrc uint32) float64 {
 
 func (s *ScreamInterceptor) loop() {
 	timer := time.NewTimer(time.Second)
+	var lastStats time.Time
 	for {
 		select {
 		case ns := <-s.newStreamQueue:
@@ -201,10 +203,13 @@ func (s *ScreamInterceptor) loop() {
 			s.txMu.Unlock()
 		case pkt := <-s.rtcpRxQueue:
 			s.receiveFeedback(pkt)
-			s.txMu.Lock()
-			stats := s.tx.GetStatistics(time.Now())
-			s.txMu.Unlock()
-			s.logger.Info("got scream statistics", "stats", stats)
+			if now := time.Now(); now.Sub(lastStats) >= time.Second && s.logger.Enabled(context.Background(), slog.LevelDebug) {
+				lastStats = now
+				s.txMu.Lock()
+				stats := s.tx.GetStatistics(now)
+				s.txMu.Unlock()
+				s.logger.Debug("got scream statistics", "stats", stats)
+			}
 		case ssrc := <-s.removeStream:
 			// Keep the mapping so a re-bind can reuse the SCReAM registration.
 			if stream, ok := s.streams[ssrc]; ok {
