@@ -167,10 +167,15 @@ func (s *ScreamInterceptor) loop() {
 				s.logger.Warn("duplicate SSRC, dropping stream", "ssrc", ns.ssrc)
 				continue
 			}
-			s.streams[ns.ssrc] = scream.NewQueue[*txPacket]()
+			queue := scream.NewQueue[*txPacket]()
 			s.txMu.Lock()
-			s.tx.RegisterNewStream(s.streams[ns.ssrc], ns.ssrc, ns.priority, ns.min, ns.start, ns.max)
+			err := s.tx.RegisterNewStream(queue, ns.ssrc, ns.priority, ns.min, ns.start, ns.max)
 			s.txMu.Unlock()
+			if err != nil {
+				s.logger.Error("failed to register stream", "ssrc", ns.ssrc, "error", err)
+				continue
+			}
+			s.streams[ns.ssrc] = queue
 		case pkt := <-s.txQueue:
 			stream, ok := s.streams[pkt.pkt.SSRC]
 			if !ok {
