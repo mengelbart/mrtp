@@ -59,8 +59,8 @@ github.com/mengelbart/quicdc v0.1.0 h1:vo+VEqtRnXuB52kcNRL/TIDGYegvrYsG4t79R8cUw
 github.com/mengelbart/quicdc v0.1.0/go.mod h1:JGWMvlVmFnvVfo72isCXBgIHTAZI9JHP0tfcPQ/Q2EI=
 github.com/mengelbart/roq v0.4.0 h1:vJwpU2diXmxEc3+0H48kdKV+SWWJcl31VDBtSSoUZXc=
 github.com/mengelbart/roq v0.4.0/go.mod h1:bMbwwUM6LEHolrPMmyjOJrcB+/mTL23Un6uFURq9ELQ=
-github.com/mengelbart/scream-go v0.5.0 h1:E6ur6bicNN9tYrEwzdhvEDKv5odRQnaD1/TKp/oGQWY=
-github.com/mengelbart/scream-go v0.5.0/go.mod h1:5r0YIAaMHmMA6dFSBfLINJPYR7ooVxJwtsigccg6jAg=
+github.com/mengelbart/scream-go v0.7.0 h1:at01eQX4kb5aVNGpXFnZSsUI9stM1JZJJVwpnVz5D3c=
+github.com/mengelbart/scream-go v0.7.0/go.mod h1:5r0YIAaMHmMA6dFSBfLINJPYR7ooVxJwtsigccg6jAg=
 github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241 h1:Ajaio921fnNza2OjPEBABQ0wf9brLJIy4MRLIkm2ubs=
 github.com/mengelbart/y4m v0.0.0-20251108142935-6ee2420f0241/go.mod h1:m69ePnJwKo/gWrDPku9gWRcnw6pRyDiQQPxWsQnO9/o=
 github.com/onsi/ginkgo v1.16.5 h1:8xi0RTUf59SOSfEtZMvwTvXYMzG4gV23XVHOZiXNtnE=
