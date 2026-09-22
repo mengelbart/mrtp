@@ -137,6 +137,7 @@ type ScreamInterceptor struct {
 	// via ScreamInterceptorFactory.GetTargetRate.
 	txMu           sync.Mutex
 	tx             *scream.Tx
+	txClosed       bool
 	streams        map[uint32]*scream.Queue[*txPacket]
 	newStreamQueue chan *newStream
 	txQueue        chan *txPacket
@@ -151,6 +152,9 @@ type ScreamInterceptor struct {
 func (s *ScreamInterceptor) getTargetBitrate(ssrc uint32) float64 {
 	s.txMu.Lock()
 	defer s.txMu.Unlock()
+	if s.txClosed {
+		return 0
+	}
 	return s.tx.GetTargetBitrate(time.Now(), ssrc)
 }
 
@@ -323,6 +327,10 @@ func (s *ScreamInterceptor) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.closed)
 		s.wg.Wait()
+		s.txMu.Lock()
+		s.tx.Close()
+		s.txClosed = true
+		s.txMu.Unlock()
 		if s.onClose != nil {
 			s.onClose(s.id)
 		}
