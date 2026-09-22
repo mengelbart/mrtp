@@ -19,6 +19,15 @@ import (
 
 func EnableSCReAM(initRate, minRate, maxRate int) Option {
 	return func(t *Transport) error {
+		if minRate <= 0 {
+			return fmt.Errorf("invalid SCReAM min rate: %v, must be positive", minRate)
+		}
+		if maxRate < minRate {
+			return fmt.Errorf("invalid SCReAM max rate: %v, must be at least the min rate %v", maxRate, minRate)
+		}
+		if initRate < minRate || initRate > maxRate {
+			return fmt.Errorf("invalid SCReAM init rate: %v, must be within [%v, %v]", initRate, minRate, maxRate)
+		}
 		t.scream = NewScreamInterceptorFactory(initRate, minRate, maxRate)
 		t.interceptorRegistry.Add(t.scream)
 		return nil
