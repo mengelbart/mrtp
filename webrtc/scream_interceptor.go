@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 
@@ -271,7 +272,7 @@ func (s *ScreamInterceptor) BindLocalStream(info *interceptor.StreamInfo, writer
 	s.logger.Debug("binding interceptor", "info", fmt.Sprintf("%v", info))
 	ns := &newStream{
 		ssrc:     info.SSRC,
-		priority: 0,
+		priority: 1.0,
 		min:      float64(s.min),
 		max:      float64(s.max),
 		start:    float64(s.init),
@@ -284,6 +285,8 @@ func (s *ScreamInterceptor) BindLocalStream(info *interceptor.StreamInfo, writer
 	return interceptor.RTPWriterFunc(func(header *rtp.Header, payload []byte, attributes interceptor.Attributes) (int, error) {
 		if attributes == nil {
 			attributes = make(interceptor.Attributes)
+		} else {
+			attributes = maps.Clone(attributes)
 		}
 		payloadCopy := make([]byte, len(payload))
 		n := copy(payloadCopy, payload)
@@ -323,7 +326,7 @@ func (s *ScreamInterceptor) BindRTCPReader(reader interceptor.RTCPReader) interc
 		select {
 		case s.rtcpRxQueue <- &rxPacket{
 			raw:  rtcpCopy,
-			attr: attr,
+			attr: maps.Clone(attr),
 		}:
 		case <-s.closed:
 		}
