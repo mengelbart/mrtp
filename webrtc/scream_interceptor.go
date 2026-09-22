@@ -272,6 +272,7 @@ func (s *ScreamInterceptor) transmit(now time.Time) time.Time {
 		n, err := pkt.writer.Write(&pkt.pkt.Header, pkt.pkt.Payload, pkt.attr)
 		if err != nil {
 			s.logger.Error("failed to write RTP packet", "err", err)
+			return now.Add(time.Second)
 		}
 		s.txMu.Lock()
 		nextTx := s.tx.AddTransmitted(now, ssrc, n, pkt.SequenceNumber(), pkt.pkt.Marker)
