@@ -264,7 +264,7 @@ func (s *ScreamInterceptor) BindLocalStream(info *interceptor.StreamInfo, writer
 	select {
 	case s.newStreamQueue <- ns:
 	case <-s.closed:
-		return nil
+		return writer
 	}
 	return interceptor.RTPWriterFunc(func(header *rtp.Header, payload []byte, attributes interceptor.Attributes) (int, error) {
 		if attributes == nil {
