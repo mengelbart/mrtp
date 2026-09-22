@@ -518,6 +518,8 @@ func (t *Transport) onCCFB(report rtpfb.Report) error {
 // than media arrives and doesn't itself become a source of latency.
 const pacingFactor = 1.5
 
+// applyTargetRate ignores non-positive rates. SCReAM uses -1 to request a key
+// frame, which is not forwarded to the encoder here.
 func (t *Transport) applyTargetRate(tr float64) error {
 	if tr <= 0 {
 		return nil
