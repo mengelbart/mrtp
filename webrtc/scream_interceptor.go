@@ -219,52 +219,36 @@ func (s *ScreamInterceptor) receiveFeedback(pkt *rxPacket) {
 }
 
 func (s *ScreamInterceptor) transmit(now time.Time) time.Time {
-	var next time.Time
-	for ssrc, stream := range s.streams {
-		for {
-			s.txMu.Lock()
-			tx := s.tx.IsOkToTransmit(now, ssrc)
-			s.txMu.Unlock()
-			if tx == -1 {
-				break
-			}
-			if tx == 0 {
-				pkt, ok := stream.Dequeue()
-				if !ok {
-					break
-				}
-				n, err := pkt.writer.Write(&pkt.pkt.Header, pkt.pkt.Payload, pkt.attr)
-				if err != nil {
-					s.logger.Error("failed to write RTP packet", "err", err)
-				}
-				// TODO: This check fails, why?
-				// if n != pkt.pkt.MarshalSize() {
-				// 	s.logger.Warn("wrote incorrect size of RTP packet", "expected", pkt.pkt.MarshalSize(), "got", n)
-				// }
-				s.txMu.Lock()
-				nextTx := s.tx.AddTransmitted(now, ssrc, n, pkt.SequenceNumber(), pkt.pkt.Marker)
-				s.txMu.Unlock()
-				if nextTx > 0 {
-					wakeAt := now.Add(time.Duration(nextTx * float64(time.Second)))
-					if next.IsZero() || wakeAt.Before(next) {
-						next = wakeAt
-					}
-					break
-				}
-			}
-			if tx > 0 {
-				n := now.Add(time.Duration(tx * float64(time.Second)))
-				if next.IsZero() || n.Before(next) {
-					next = n
-				}
-				break
-			}
+	for {
+		s.txMu.Lock()
+		tx, ssrc := s.tx.IsOkToTransmit(now)
+		s.txMu.Unlock()
+		if tx < 0 {
+			return now.Add(time.Second)
+		}
+		if tx > 0 {
+			return now.Add(time.Duration(tx * float64(time.Second)))
+		}
+		stream, ok := s.streams[ssrc]
+		if !ok {
+			s.logger.Error("scream selected unknown ssrc", "ssrc", ssrc)
+			return now.Add(time.Second)
+		}
+		pkt, ok := stream.Dequeue()
+		if !ok {
+			return now.Add(time.Second)
+		}
+		n, err := pkt.writer.Write(&pkt.pkt.Header, pkt.pkt.Payload, pkt.attr)
+		if err != nil {
+			s.logger.Error("failed to write RTP packet", "err", err)
+		}
+		s.txMu.Lock()
+		nextTx := s.tx.AddTransmitted(now, ssrc, n, pkt.SequenceNumber(), pkt.pkt.Marker)
+		s.txMu.Unlock()
+		if nextTx > 0 {
+			return now.Add(time.Duration(nextTx * float64(time.Second)))
 		}
 	}
-	if next.IsZero() {
-		next = now.Add(time.Second)
-	}
-	return next
 }
 
 // BindLocalStream implements interceptor.Interceptor.
