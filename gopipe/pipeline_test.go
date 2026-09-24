@@ -3,16 +3,77 @@
 package gopipe
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"os"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/internal/testvideo"
+	"github.com/mengelbart/mrtp/mediafile"
 	"github.com/mengelbart/mrtp/packetization"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const (
+	testWidth  = 640
+	testHeight = 480
+	testFrames = 30
+	testFPSNum = 30
+	testFPSDen = 1
+)
+
+const (
+	testFrameDuration   = time.Second * testFPSDen / testFPSNum
+	depacketizerTimeout = 10 * time.Millisecond
+)
+
+func TestMain(m *testing.M) {
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+	os.Exit(m.Run())
+}
+
+// newTestSource returns a Y4MSource over the synthetic stream.
+func newTestSource(t *testing.T) *mediafile.Y4MSource {
+	t.Helper()
+
+	src, err := mediafile.NewY4MSource(bytes.NewReader(
+		testvideo.Y4M(testWidth, testHeight, testFrames, testFPSNum, testFPSDen),
+	))
+	require.NoError(t, err)
+	return src
+}
+
+// collector is a Sink that keeps a copy of every payload it is handed.
+type collector[T any] struct {
+	bytes func(*T) *[]byte
+	items [][]byte
+	eos   bool
+}
+
+func newCollector[T any](bytes func(*T) *[]byte) *collector[T] {
+	return &collector[T]{bytes: bytes}
+}
+
+func (c *collector[T]) Negotiate(mrtp.Format) error { return nil }
+
+func (c *collector[T]) Write(p mrtp.Packet[T]) error {
+	defer p.Release()
+	c.items = append(c.items, bytes.Clone(*c.bytes(p.Value())))
+	return nil
+}
+
+func (c *collector[T]) EndOfStream() error {
+	c.eos = true
+	return nil
+}
+
+func (c *collector[T]) Close() error { return nil }
 
 // counter counts the packets passing through a point in a graph.
 type counter[T any] struct {

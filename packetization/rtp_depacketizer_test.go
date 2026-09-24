@@ -1,18 +1,40 @@
 //go:build cgo
 
-package gopipe
+package packetization
 
 import (
+	"bytes"
+	"log/slog"
+	"os"
 	"slices"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/packetization"
+	"github.com/mengelbart/mrtp/codec"
+	"github.com/mengelbart/mrtp/codec/vpx"
+	"github.com/mengelbart/mrtp/codec/x264"
+	"github.com/mengelbart/mrtp/internal/testvideo"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+// The resolution and bitrate are chosen so encoded frames span several RTP packets, which
+// exercises reassembly and gets the depacketizer past its lateness threshold.
+const (
+	testWidth   = 640
+	testHeight  = 480
+	testFrames  = 30
+	testFPSNum  = 30
+	testFPSDen  = 1
+	testBitrate = 4_000_000
+)
+
+const (
+	testFrameDuration   = time.Second * testFPSDen / testFPSNum
+	depacketizerTimeout = 10 * time.Millisecond
 )
 
 var depacketizerCodecs = []struct {
@@ -23,6 +45,11 @@ var depacketizerCodecs = []struct {
 	{mrtp.VP8, true},
 	{mrtp.VP9, true},
 	{mrtp.H264, false},
+}
+
+func TestMain(m *testing.M) {
+	slog.SetDefault(slog.New(slog.DiscardHandler))
+	os.Exit(m.Run())
 }
 
 func TestDepacketizerRoundtrip(t *testing.T) {
@@ -72,14 +99,73 @@ func TestDepacketizerRTPDrops(t *testing.T) {
 	}
 }
 
+// collector is a Sink that keeps a copy of every payload it is handed.
+type collector[T any] struct {
+	bytes func(*T) *[]byte
+	items [][]byte
+}
+
+func (c *collector[T]) Negotiate(mrtp.Format) error { return nil }
+
+func (c *collector[T]) Write(p mrtp.Packet[T]) error {
+	defer p.Release()
+	c.items = append(c.items, bytes.Clone(*c.bytes(p.Value())))
+	return nil
+}
+
+func (c *collector[T]) EndOfStream() error { return nil }
+
+func (c *collector[T]) Close() error { return nil }
+
+// encodedFrames returns the synthetic stream encoded with c.
+func encodedFrames(t *testing.T, c mrtp.Codec) [][]byte {
+	t.Helper()
+
+	config := codec.Config{
+		Codec:      c,
+		Width:      testWidth,
+		Height:     testHeight,
+		FrameRate:  mrtp.FrameRate{Num: testFPSNum, Den: testFPSDen},
+		TargetRate: testBitrate,
+	}
+	var (
+		enc codec.Encoder
+		err error
+	)
+	switch c {
+	case mrtp.VP8, mrtp.VP9:
+		enc, err = vpx.NewEncoder(config)
+	case mrtp.H264:
+		enc, err = x264.NewEncoder(config)
+	default:
+		t.Fatalf("unsupported codec: %v", c)
+	}
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, enc.Close())
+	}()
+
+	frames := make([][]byte, 0, testFrames)
+	for i := range testFrames {
+		frame, err := enc.Encode(
+			testvideo.Image(testWidth, testHeight, i),
+			int64(i)*testFrameDuration.Microseconds(),
+			testFrameDuration,
+		)
+		require.NoError(t, err)
+		frames = append(frames, bytes.Clone(frame.Payload))
+	}
+	return frames
+}
+
 // packetizeFrames returns the RTP packets of each frame.
 func packetizeFrames(t *testing.T, c mrtp.Codec, frames [][]byte) [][][]byte {
 	t.Helper()
 
 	packets := make([][][]byte, 0, len(frames))
-	sink := newCollector(mrtp.RTPBytes)
+	sink := &collector[mrtp.RTPPacket]{bytes: mrtp.RTPBytes}
 
-	packetizer := packetization.NewRTPPacketizer(1420, 96, 0, 90_000, c)
+	packetizer := NewRTPPacketizer(1420, 96, 0, 90_000, c)
 	require.NoError(t, packetizer.Negotiate(mrtp.EncodedVideo{Codec: c}))
 	require.NoError(t, packetizer.Connect(sink))
 
@@ -109,8 +195,10 @@ func packetizeFrames(t *testing.T, c mrtp.Codec, frames [][]byte) [][][]byte {
 func runDepacketizer(t *testing.T, c mrtp.Codec, framePackets [][][]byte) [][]byte {
 	t.Helper()
 
-	received := newCollector(encodedBytes)
-	depacketizer := packetization.NewRTPDepacketizer(depacketizerTimeout, nil)
+	received := &collector[mrtp.EncodedFrame]{
+		bytes: func(f *mrtp.EncodedFrame) *[]byte { return &f.Data },
+	}
+	depacketizer := NewRTPDepacketizer(depacketizerTimeout, nil)
 	require.NoError(t, depacketizer.Negotiate(mrtp.RTP{
 		Codec:       c,
 		PayloadType: 96,
