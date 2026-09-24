@@ -13,6 +13,7 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/fake"
 	"github.com/mengelbart/mrtp/media"
+	"github.com/mengelbart/mrtp/mediafile"
 	"github.com/mengelbart/mrtp/packetization"
 	"github.com/mengelbart/mrtp/pipeline"
 )
@@ -148,7 +149,7 @@ func (f *factory) newSource(g *pipeline.Graph, config media.SenderConfig) (*send
 	if err != nil {
 		return nil, nil, err
 	}
-	source, err := NewY4MSource(file)
+	source, err := mediafile.NewY4MSource(file)
 	if err != nil {
 		return nil, nil, errors.Join(err, file.Close())
 	}
@@ -218,7 +219,7 @@ func receiveTail(g *pipeline.Graph, depacketizer *packetization.RTPDepacketizer,
 	case media.SinkDiscard:
 		sink = pipeline.NewDiscard[mrtp.RawFrame]()
 	default:
-		sink, err = NewY4MSink(config.SinkLocation, sinkFPSNum, sinkFPSDen)
+		sink, err = mediafile.NewY4MSink(config.SinkLocation, sinkFPSNum, sinkFPSDen)
 		if err != nil {
 			return err
 		}

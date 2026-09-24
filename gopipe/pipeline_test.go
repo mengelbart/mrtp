@@ -91,7 +91,6 @@ func TestPipelineEndToEnd(t *testing.T) {
 
 		// every packet the graph handed on was released exactly once
 		for name, outstanding := range map[string]int{
-			"source":  src.pool.Outstanding(),
 			"encoder": encoder.pool.Outstanding(),
 			"decoder": decoder.pool.Outstanding(),
 		} {

@@ -1,4 +1,4 @@
-package gopipe
+package mediafile
 
 import (
 	"context"
@@ -37,7 +37,7 @@ func NewY4MSource(reader io.Reader) (*Y4MSource, error) {
 			Den: y4mHeader.FrameRate.Denominator,
 		},
 	}
-	ySize, cSize, err := planeSizes(format)
+	ySize, cSize, err := format.PlaneSizes()
 	if err != nil {
 		return nil, err
 	}
@@ -56,21 +56,6 @@ func NewY4MSource(reader io.Reader) (*Y4MSource, error) {
 	}, nil
 }
 
-// planeSizes is the size in bytes of the luma and of one chroma plane of a
-// frame in format f.
-func planeSizes(f mrtp.RawVideo) (luma, chroma int, err error) {
-	luma = int(f.Width * f.Height)
-	switch f.Subsampling {
-	case image.YCbCrSubsampleRatio420:
-		return luma, luma / 4, nil
-	case image.YCbCrSubsampleRatio422:
-		return luma, luma / 2, nil
-	case image.YCbCrSubsampleRatio444:
-		return luma, luma, nil
-	}
-	return 0, 0, fmt.Errorf("unsupported chroma subsampling: %v", f.Subsampling)
-}
-
 // Format implements mrtp.Source.
 func (s *Y4MSource) Format() mrtp.Format {
 	return s.format
@@ -79,7 +64,7 @@ func (s *Y4MSource) Format() mrtp.Format {
 // Connect implements mrtp.Source.
 func (s *Y4MSource) Connect(down mrtp.Sink[mrtp.RawFrame]) error {
 	if s.down != nil {
-		return errors.New("gopipe: Y4M source is already connected")
+		return errors.New("mediafile: Y4M source is already connected")
 	}
 	s.down = down
 	return nil
@@ -89,7 +74,7 @@ func (s *Y4MSource) Connect(down mrtp.Sink[mrtp.RawFrame]) error {
 // source runs at the rate a live capture would.
 func (s *Y4MSource) Run(ctx context.Context) error {
 	if s.down == nil {
-		return errors.New("gopipe: Y4M source runs with its output wired")
+		return errors.New("mediafile: Y4M source runs with its output wired")
 	}
 	frameDuration := s.format.FrameRate.Duration()
 
@@ -116,7 +101,7 @@ func (s *Y4MSource) Run(ctx context.Context) error {
 		value := packet.Value()
 		if len(frame) < len(value.Y)+len(value.Cb)+len(value.Cr) {
 			packet.Release()
-			return fmt.Errorf("gopipe: short Y4M frame: got %v bytes, want %v",
+			return fmt.Errorf("mediafile: short Y4M frame: got %v bytes, want %v",
 				len(frame), len(value.Y)+len(value.Cb)+len(value.Cr))
 		}
 		n := copy(value.Y, frame)

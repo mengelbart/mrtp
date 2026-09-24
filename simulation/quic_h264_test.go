@@ -17,6 +17,7 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/internal/quictransport"
+	"github.com/mengelbart/mrtp/mediafile"
 	"github.com/mengelbart/mrtp/packetization"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/roq"
@@ -173,7 +174,7 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 	}
 	defer file.Close()
 
-	fileSrc, err := gopipe.NewY4MSource(file)
+	fileSrc, err := mediafile.NewY4MSource(file)
 	if err != nil {
 		return err
 	}
@@ -249,7 +250,7 @@ func runH264Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.
 		return err
 	}
 
-	fileSink, err := gopipe.NewY4MSink(filepath.Join(t.ArtifactDir(), "out.y4m"), 60, 1)
+	fileSink, err := mediafile.NewY4MSink(filepath.Join(t.ArtifactDir(), "out.y4m"), 60, 1)
 	if err != nil {
 		return err
 	}

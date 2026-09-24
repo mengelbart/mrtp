@@ -1,4 +1,4 @@
-package gopipe
+package mediafile
 
 import (
 	"errors"

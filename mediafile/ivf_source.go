@@ -1,4 +1,4 @@
-package gopipe
+package mediafile
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media/ivfreader"
 )
 
-type IVFDataSource struct {
+type IVFSource struct {
 	reader *ivfreader.IVFReader
 	header *ivfreader.IVFFileHeader
 	closer io.Closer
@@ -36,7 +36,7 @@ func codecFromFourCC(fourCC string) (mrtp.Codec, error) {
 	return 0, fmt.Errorf("unsupported IVF FourCC: %q", fourCC)
 }
 
-func NewIVFDataSource(reader io.ReadCloser) (*IVFDataSource, error) {
+func NewIVFSource(reader io.ReadCloser) (*IVFSource, error) {
 	ivfReader, ivfHeader, err := ivfreader.NewWith(reader)
 	if err != nil {
 		return nil, err
@@ -54,7 +54,7 @@ func NewIVFDataSource(reader io.ReadCloser) (*IVFDataSource, error) {
 		Num: int(ivfHeader.TimebaseDenominator),
 		Den: int(ivfHeader.TimebaseNumerator),
 	}
-	return &IVFDataSource{
+	return &IVFSource{
 		reader:        ivfReader,
 		header:        ivfHeader,
 		closer:        reader,
@@ -73,12 +73,12 @@ func NewIVFDataSource(reader io.ReadCloser) (*IVFDataSource, error) {
 }
 
 // Format implements mrtp.Puller.
-func (s *IVFDataSource) Format() mrtp.Format {
+func (s *IVFSource) Format() mrtp.Format {
 	return s.format
 }
 
 // Pull implements mrtp.Puller.
-func (s *IVFDataSource) Pull(ctx context.Context) (mrtp.Packet[mrtp.EncodedFrame], error) {
+func (s *IVFSource) Pull(ctx context.Context) (mrtp.Packet[mrtp.EncodedFrame], error) {
 	if s.next == nil {
 		return nil, io.EOF
 	}
@@ -112,8 +112,8 @@ func (s *IVFDataSource) Pull(ctx context.Context) (mrtp.Packet[mrtp.EncodedFrame
 }
 
 // Close implements mrtp.Element.
-func (s *IVFDataSource) Close() error {
+func (s *IVFSource) Close() error {
 	return s.closer.Close()
 }
 
-var _ mrtp.Puller[mrtp.EncodedFrame] = (*IVFDataSource)(nil)
+var _ mrtp.Puller[mrtp.EncodedFrame] = (*IVFSource)(nil)

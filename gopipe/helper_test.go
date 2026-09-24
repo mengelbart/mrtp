@@ -4,6 +4,7 @@ package gopipe
 
 import (
 	"bytes"
+	"image"
 	"log/slog"
 	"os"
 	"testing"
@@ -11,7 +12,9 @@ import (
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/internal/testvideo"
+	"github.com/mengelbart/mrtp/mediafile"
 	"github.com/mengelbart/mrtp/pipeline"
+	"github.com/mengelbart/y4m"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,10 +40,10 @@ func TestMain(m *testing.M) {
 }
 
 // newTestSource returns a Y4MSource over the synthetic stream.
-func newTestSource(t *testing.T) *Y4MSource {
+func newTestSource(t *testing.T) *mediafile.Y4MSource {
 	t.Helper()
 
-	src, err := NewY4MSource(bytes.NewReader(
+	src, err := mediafile.NewY4MSource(bytes.NewReader(
 		testvideo.Y4M(testWidth, testHeight, testFrames, testFPSNum, testFPSDen),
 	))
 	require.NoError(t, err)
@@ -80,7 +83,16 @@ func encodedBytes(f *mrtp.EncodedFrame) *[]byte { return &f.Data }
 func encodedFrames(t *testing.T, c mrtp.Codec) [][]byte {
 	t.Helper()
 
-	src := newTestSource(t)
+	reader, _, err := y4m.NewReader(bytes.NewReader(
+		testvideo.Y4M(testWidth, testHeight, testFrames, testFPSNum, testFPSDen),
+	))
+	require.NoError(t, err)
+	format := mrtp.RawVideo{
+		Width:       testWidth,
+		Height:      testHeight,
+		Subsampling: image.YCbCrSubsampleRatio420,
+		FrameRate:   mrtp.FrameRate{Num: testFPSNum, Den: testFPSDen},
+	}
 	frames := newCollector(encodedBytes)
 
 	encoder := NewEncoder(c)
@@ -88,16 +100,16 @@ func encodedFrames(t *testing.T, c mrtp.Codec) [][]byte {
 		require.NoError(t, encoder.Close())
 	}()
 
-	require.NoError(t, encoder.Negotiate(src.Format()))
+	require.NoError(t, encoder.Negotiate(format))
 	require.NoError(t, encoder.Connect(frames))
 	require.NoError(t, encoder.SetTargetBitrate(testBitrate))
 
-	pool := rawFramePool(t, src.Format().(mrtp.RawVideo))
+	pool := rawFramePool(t, format)
 	var pts time.Duration
 	for {
 		packet := pool.Get()
 		value := packet.Value()
-		if !readFrame(t, src, value) {
+		if !readFrame(reader, value) {
 			packet.Release()
 			break
 		}
@@ -116,7 +128,7 @@ func encodedFrames(t *testing.T, c mrtp.Codec) [][]byte {
 func rawFramePool(t *testing.T, f mrtp.RawVideo) *pipeline.Pool[mrtp.RawFrame] {
 	t.Helper()
 
-	ySize, cSize, err := planeSizes(f)
+	ySize, cSize, err := f.PlaneSizes()
 	require.NoError(t, err)
 	return pipeline.NewPool(func() *mrtp.RawFrame {
 		buffer := make([]byte, ySize+2*cSize)
@@ -128,12 +140,10 @@ func rawFramePool(t *testing.T, f mrtp.RawVideo) *pipeline.Pool[mrtp.RawFrame] {
 	}, nil)
 }
 
-// readFrame fills frame's planes from the source, reporting whether there was
-// a frame left to read.
-func readFrame(t *testing.T, src *Y4MSource, frame *mrtp.RawFrame) bool {
-	t.Helper()
-
-	raw, _, err := src.reader.ReadNextFrame()
+// readFrame fills frame's planes from reader, reporting whether there was a
+// frame left to read.
+func readFrame(reader *y4m.Reader, frame *mrtp.RawFrame) bool {
+	raw, _, err := reader.ReadNextFrame()
 	if err != nil {
 		return false
 	}

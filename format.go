@@ -44,6 +44,21 @@ func (f RawVideo) String() string {
 		f.Width, f.Height, f.Subsampling, f.FrameRate)
 }
 
+// PlaneSizes returns the size in bytes of the luma and of one chroma plane of
+// a frame.
+func (f RawVideo) PlaneSizes() (luma, chroma int, err error) {
+	luma = int(f.Width * f.Height)
+	switch f.Subsampling {
+	case image.YCbCrSubsampleRatio420:
+		return luma, luma / 4, nil
+	case image.YCbCrSubsampleRatio422:
+		return luma, luma / 2, nil
+	case image.YCbCrSubsampleRatio444:
+		return luma, luma, nil
+	}
+	return 0, 0, fmt.Errorf("unsupported chroma subsampling: %v", f.Subsampling)
+}
+
 // EncodedVideo is the format of an edge carrying [EncodedFrame]. It carries no
 // frame rate, because the wire does not: each [EncodedFrame] times itself.
 type EncodedVideo struct {

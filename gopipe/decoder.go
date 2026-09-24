@@ -120,7 +120,7 @@ func (d *Decoder) reformat(frame *codec.DecodedFrame) error {
 	if format == d.format {
 		return nil
 	}
-	ySize, cSize, err := planeSizes(format)
+	ySize, cSize, err := format.PlaneSizes()
 	if err != nil {
 		return err
 	}
