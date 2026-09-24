@@ -138,12 +138,12 @@ Flags:
 	}
 	runner.Add(graph)
 
-	quicConn.SetSourceTargetRate = func(ratebps uint) error {
+	quicConn.ControlBitrate(mrtp.TargetBitrateSetterFunc(func(ratebps uint) error {
 		// log "combined" target rate even if we do not split it. Makes plotting easier
 		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
 		return source.SetTargetBitrate(ratebps)
-	}
+	}))
 
 	return runner.Run(ctx)
 }

@@ -19,3 +19,11 @@ type TargetBitrateSetter interface {
 	// that cannot adapt does nothing and returns nil.
 	SetTargetBitrate(uint) error
 }
+
+// TargetBitrateSetterFunc adapts a function to a TargetBitrateSetter.
+type TargetBitrateSetterFunc func(uint) error
+
+// SetTargetBitrate implements TargetBitrateSetter.
+func (f TargetBitrateSetterFunc) SetTargetBitrate(bitrate uint) error {
+	return f(bitrate)
+}

@@ -166,12 +166,12 @@ func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Tran
 	runner.Add(graph)
 
 	// rate is controlled by cc
-	quicConn.SetSourceTargetRate = func(ratebps uint) error {
+	quicConn.ControlBitrate(mrtp.TargetBitrateSetterFunc(func(ratebps uint) error {
 		// log "combined" target rate even if we do not split it. Makes plotting easier
 		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
 		return source.SetTargetBitrate(ratebps)
-	}
+	}))
 
 	return runner.Run(ctx)
 }

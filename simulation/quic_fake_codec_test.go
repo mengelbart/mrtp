@@ -167,11 +167,11 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 	defer fakeSource.Close()
 
 	// set rate callbacks
-	quicConn.SetSourceTargetRate = func(ratebps uint) error {
+	quicConn.ControlBitrate(mrtp.TargetBitrateSetterFunc(func(ratebps uint) error {
 		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
 		return fakeSource.SetTargetBitrate(ratebps)
-	}
+	}))
 
 	packetizer := rtp.NewPacketizer(1420, 96, 0, 90_000, mrtp.Fake)
 	queue := pipeline.NewQueue(1000, pipeline.PaceFrames(

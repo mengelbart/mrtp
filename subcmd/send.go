@@ -270,7 +270,7 @@ Flags:
 		}
 
 		// set rate callbacks
-		quicConn.SetSourceTargetRate = func(ratebps uint) error {
+		quicConn.ControlBitrate(mrtp.TargetBitrateSetterFunc(func(ratebps uint) error {
 			slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
 			var mediaTargetRate uint
@@ -280,7 +280,7 @@ Flags:
 				mediaTargetRate = uint(0.8 * float64(ratebps))
 			}
 			return mediaSender.SetTargetBitrate(mediaTargetRate)
-		}
+		}))
 
 	} else if err := s.setupPlainRTP(media, runner, senderConfig); err != nil {
 		return err

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -41,9 +42,11 @@ type Transport struct {
 
 	qlogLabel string
 
-	SetSourceTargetRate func(ratebps uint) error
-	HandleUniStream     func(flowID uint64, rs *quic.ReceiveStream)
-	HandleDatagram      func(flowID uint64, datagram []byte)
+	sourceLock sync.Mutex
+	source     mrtp.TargetBitrateSetter
+
+	HandleUniStream func(flowID uint64, rs *quic.ReceiveStream)
+	HandleDatagram  func(flowID uint64, datagram []byte)
 }
 
 func SetBWE(bwe mrtp.BWE) Option {
@@ -310,6 +313,13 @@ func (t *Transport) updateECNCounts(ect0, ect1, ce uint64) {
 	}
 }
 
+// ControlBitrate makes the congestion controller steer the bitrate of source.
+func (t *Transport) ControlBitrate(source mrtp.TargetBitrateSetter) {
+	t.sourceLock.Lock()
+	defer t.sourceLock.Unlock()
+	t.source = source
+}
+
 func (t *Transport) updateCongestionControl() {
 	if t.quicConn == nil {
 		// connection not established yet, do not update sending rate
@@ -320,8 +330,11 @@ func (t *Transport) updateCongestionControl() {
 		if target > 0 {
 			slog.Info("Updated target rate:", "rate", target)
 			t.lastBWEUpdate = time.Now()
-			if t.SetSourceTargetRate != nil {
-				if err := t.SetSourceTargetRate(target); err != nil {
+			t.sourceLock.Lock()
+			source := t.source
+			t.sourceLock.Unlock()
+			if source != nil {
+				if err := source.SetTargetBitrate(target); err != nil {
 					slog.Error("Error setting source target rate:", "error", err)
 				}
 			}

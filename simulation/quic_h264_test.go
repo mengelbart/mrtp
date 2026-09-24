@@ -183,11 +183,11 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 	encoder := codec.NewEncoder(sendCodec)
 
 	// set rate callbacks
-	quicConn.SetSourceTargetRate = func(ratebps uint) error {
+	quicConn.ControlBitrate(mrtp.TargetBitrateSetterFunc(func(ratebps uint) error {
 		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
 		return encoder.SetTargetBitrate(ratebps)
-	}
+	}))
 
 	packetizer := rtp.NewPacketizer(1420, 96, 0, 90_000, sendCodec)
 	format := fileSrc.Format().(mrtp.RawVideo)
