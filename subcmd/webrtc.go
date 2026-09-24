@@ -333,8 +333,8 @@ Usage:
 			return err
 		}
 
-		// set callback of transport, so CCs can set the target rate of the encoder
-		transport.SetTargetRate = mediaSender.SetTargetBitrate
+		// let the congestion controller steer the encoder
+		transport.ControlBitrate(mediaSender)
 	} else {
 		if err = transport.AddRemoteVideoTrack(); err != nil {
 			return err

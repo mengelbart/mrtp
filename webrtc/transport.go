@@ -17,7 +17,6 @@ import (
 	"github.com/pion/interceptor/pkg/rfc8888"
 	"github.com/pion/interceptor/pkg/rtpfb"
 	"github.com/pion/interceptor/pkg/twcc"
-	"github.com/pion/rtcp"
 	"github.com/pion/sdp/v2"
 	"github.com/pion/transport/v4"
 	"github.com/pion/transport/v4/packetio"
@@ -43,11 +42,6 @@ type Signaler interface {
 	SendICECandidate(*webrtc.ICECandidate) error
 }
 
-type screamFactory interface {
-	interceptor.Factory
-	GetTargetRate(id string, ssrc uint32) (float64, error)
-}
-
 type Transport struct {
 	logger *slog.Logger
 
@@ -68,12 +62,11 @@ type Transport struct {
 	onRemoteTrack func(*RTPReceiver)
 	onConnected   func()
 
-	bwe           mrtp.BWE
-	pacer         *pacing.InterceptorFactory
-	scream        screamFactory
-	SetTargetRate func(ratebps uint) error
+	rateController rateController
+	pacer          *pacing.InterceptorFactory
 
-	ect0, ect1, ecnce uint64
+	sourceLock sync.Mutex
+	source     mrtp.TargetBitrateSetter
 }
 
 type Option func(*Transport) error
@@ -146,10 +139,10 @@ func EnableCCFB() Option {
 	}
 }
 
+// SetBWE runs bwe on incoming CCFB reports.
 func SetBWE(bwe mrtp.BWE) Option {
 	return func(t *Transport) error {
-		t.bwe = bwe
-		return nil
+		return t.setRateController(&bweController{bwe: bwe})
 	}
 }
 
@@ -305,7 +298,6 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 		settingEngine:       &webrtc.SettingEngine{},
 		mediaEngine:         &webrtc.MediaEngine{},
 		interceptorRegistry: &interceptor.Registry{},
-		SetTargetRate:       nil,
 	}
 	for _, opt := range opts {
 		if err := opt(t); err != nil {
@@ -552,51 +544,21 @@ func (t *Transport) Close() error {
 
 func (t *Transport) onCCFB(report rtpfb.Report) error {
 	t.logger.Debug("received ccfb packet report", "arrival", report.Arrival, "RTT", report.RTT)
-
-	if t.bwe != nil {
-		for _, p := range report.PacketReports {
-			if p.Arrived {
-				t.bwe.OnAck(p.SequenceNumber, p.Size, p.Departure, p.Arrival, mrtp.ECN(p.ECN))
-				switch p.ECN {
-				case rtcp.ECNECT0:
-					t.ect0++
-				case rtcp.ECNECT1:
-					t.ect1++
-				case rtcp.ECNCE:
-					t.ecnce++
-				}
-			} else {
-				t.bwe.OnLoss(p.SequenceNumber, p.Size, p.Departure)
-			}
-		}
-		t.bwe.UpdateECNCounts(t.ect0, t.ect1, t.ecnce)
-		t.bwe.UpdateRTT(report.RTT)
-		tr := t.bwe.UpdateTargetRate(report.Arrival)
-		if err := t.applyTargetRate(float64(tr)); err != nil {
-			return err
-		}
+	if t.rateController == nil {
+		return nil
 	}
-
-	// TODO(ME): This is a hacky way to get the target rate for the SSRC, it
-	// will break if we ever use more than one track. Instead, we should get
-	// target rates for each SSRC and set them for each track individually. For
-	// now, we can only set a total target rate.
-	if t.scream != nil {
-		ssrc := uint32(0)
-		if len(report.PacketReports) > 0 {
-			ssrc = report.PacketReports[0].SSRC
-		}
-		if ssrc != 0 {
-			tr, err := t.scream.GetTargetRate(t.pc.ID(), ssrc)
-			if err != nil {
-				return err
-			}
-			if err := t.applyTargetRate(tr); err != nil {
-				return err
-			}
-		}
+	tr, err := t.rateController.onFeedback(report)
+	if err != nil {
+		return err
 	}
-	return nil
+	return t.applyTargetRate(tr)
+}
+
+// ControlBitrate makes the congestion controller steer the bitrate of source.
+func (t *Transport) ControlBitrate(source mrtp.TargetBitrateSetter) {
+	t.sourceLock.Lock()
+	defer t.sourceLock.Unlock()
+	t.source = source
 }
 
 // applyTargetRate sets the encoder's target rate and configures the pacer to
@@ -610,8 +572,11 @@ func (t *Transport) applyTargetRate(tr float64) error {
 	if tr <= 0 {
 		return nil
 	}
-	if t.SetTargetRate != nil {
-		if err := t.SetTargetRate(uint(tr)); err != nil {
+	t.sourceLock.Lock()
+	source := t.source
+	t.sourceLock.Unlock()
+	if source != nil {
+		if err := source.SetTargetBitrate(uint(tr)); err != nil {
 			return err
 		}
 	}

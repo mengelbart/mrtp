@@ -11,8 +11,10 @@ func EnableSCReAM(initRate, minRate, maxRate int) Option {
 		if err != nil {
 			return err
 		}
+		if err := t.setRateController(&screamController{factory: factory, transport: t}); err != nil {
+			return err
+		}
 		t.registerCCFB()
-		t.scream = factory
 		t.interceptorRegistry.Add(factory)
 		return nil
 	}

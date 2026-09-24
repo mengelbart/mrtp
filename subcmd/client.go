@@ -239,7 +239,7 @@ func (c *Client) sendWebRTC(ctx context.Context, signaler *signaling.Client, sou
 	if err = setupCtx.Err(); err != nil {
 		return fmt.Errorf("peer connection not established within %v: %w", webrtcConnectTimeout, err)
 	}
-	transport.SetTargetRate = source.SetTargetBitrate
+	transport.ControlBitrate(source)
 
 	g := pipeline.NewGraph()
 	pump := pipeline.NewPump[mrtp.RTCPPacket]()
