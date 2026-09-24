@@ -1,4 +1,4 @@
-package codec
+package vpx
 
 /*
 #cgo pkg-config: vpx
@@ -43,6 +43,7 @@ import (
 	"unsafe"
 
 	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/codec"
 )
 
 func getEncoderByName(codec mrtp.Codec) (*C.vpx_codec_iface_t, error) {
@@ -55,12 +56,7 @@ func getEncoderByName(codec mrtp.Codec) (*C.vpx_codec_iface_t, error) {
 	return nil, fmt.Errorf("unknown codec: %v", codec)
 }
 
-type Frame struct {
-	IsKeyFrame bool
-	Payload    []byte
-}
-
-type VPXEncoder struct {
+type Encoder struct {
 	encoder *C.vpx_codec_iface_t
 	ctx     *C.vpx_codec_ctx_t
 	cfg     *C.vpx_codec_enc_cfg_t
@@ -73,15 +69,7 @@ type VPXEncoder struct {
 	closed bool
 }
 
-type Config struct {
-	Codec      mrtp.Codec
-	Width      uint
-	Height     uint
-	FrameRate  mrtp.FrameRate
-	TargetRate uint64
-}
-
-func NewVPXEncoder(c Config) (*VPXEncoder, error) {
+func NewEncoder(c codec.Config) (*Encoder, error) {
 	encoder, err := getEncoderByName(c.Codec)
 	if err != nil {
 		return nil, err
@@ -136,7 +124,7 @@ func NewVPXEncoder(c Config) (*VPXEncoder, error) {
 		}
 	}
 
-	e := &VPXEncoder{
+	e := &Encoder{
 		ctx:     ctx,
 		encoder: encoder,
 		cfg:     &cfg,
@@ -148,11 +136,11 @@ func NewVPXEncoder(c Config) (*VPXEncoder, error) {
 	return e, nil
 }
 
-func (e *VPXEncoder) Encode(
+func (e *Encoder) Encode(
 	image *image.YCbCr,
 	pts int64,
 	duration time.Duration,
-) (*Frame, error) {
+) (*codec.Frame, error) {
 	if e.closed {
 		return nil, fmt.Errorf("encoder is closed")
 	}
@@ -192,7 +180,7 @@ func (e *VPXEncoder) Encode(
 		return nil, fmt.Errorf("failed to encode frame: %v", res)
 	}
 	var iter C.vpx_codec_iter_t
-	frame := &Frame{}
+	frame := &codec.Frame{}
 	e.frame = e.frame[:0]
 	for {
 		pkt := C.vpx_codec_get_cx_data(e.ctx, &iter)
@@ -210,11 +198,11 @@ func (e *VPXEncoder) Encode(
 	return frame, nil
 }
 
-func (e *VPXEncoder) SetTargetRate(targetRate uint64) {
+func (e *Encoder) SetTargetRate(targetRate uint64) {
 	e.targetBitrate.Store(targetRate)
 }
 
-func (e *VPXEncoder) Close() error {
+func (e *Encoder) Close() error {
 	if e.closed {
 		return nil
 	}
@@ -228,3 +216,5 @@ func (e *VPXEncoder) Close() error {
 	}
 	return nil
 }
+
+var _ codec.Encoder = (*Encoder)(nil)

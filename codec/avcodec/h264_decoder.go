@@ -1,19 +1,18 @@
-package codec
+package avcodec
 
 /*
 #cgo pkg-config: libavcodec libavutil
-#include "x264_decoder_bridge.h"
+#include "h264_decoder_bridge.h"
 */
 import "C"
 
 import (
-	"errors"
 	"fmt"
 	"image"
 	"unsafe"
-)
 
-var ErrFrameNotReady = errors.New("h264: frame not ready, decoder needs more input packets")
+	"github.com/mengelbart/mrtp/codec"
+)
 
 type H264Decoder struct {
 	dec    *C.H264Decoder
@@ -29,7 +28,7 @@ func NewH264Decoder() (*H264Decoder, error) {
 	return &H264Decoder{dec: dec}, nil
 }
 
-func (d *H264Decoder) Decode(encFrame []byte) (*DecodedFrame, error) {
+func (d *H264Decoder) Decode(encFrame []byte) (*codec.DecodedFrame, error) {
 	if d.closed {
 		return nil, fmt.Errorf("decoder is closed")
 	}
@@ -41,7 +40,7 @@ func (d *H264Decoder) Decode(encFrame []byte) (*DecodedFrame, error) {
 
 	rc := C.h264dec_get_frame(d.dec)
 	if rc == C.H264DEC_EAGAIN {
-		return nil, ErrFrameNotReady
+		return nil, codec.ErrFrameNotReady
 	}
 	if rc < 0 {
 		return nil, fmt.Errorf("h264dec_get_frame failed: %d", int(rc))
@@ -79,7 +78,7 @@ func (d *H264Decoder) Decode(encFrame []byte) (*DecodedFrame, error) {
 		copy(frameData[vOffset+r*(w/2):vOffset+r*(w/2)+(w/2)], vSrc[r*vStride:r*vStride+(w/2)])
 	}
 
-	return &DecodedFrame{
+	return &codec.DecodedFrame{
 		Data:              frameData,
 		Width:             w,
 		Height:            h,
@@ -87,7 +86,13 @@ func (d *H264Decoder) Decode(encFrame []byte) (*DecodedFrame, error) {
 	}, nil
 }
 
-func (d *H264Decoder) Close() {
+func (d *H264Decoder) Close() error {
+	if d.closed {
+		return nil
+	}
 	C.h264dec_free(d.dec)
 	d.closed = true
+	return nil
 }
+
+var _ codec.Decoder = (*H264Decoder)(nil)

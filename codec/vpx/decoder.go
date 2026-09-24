@@ -1,4 +1,4 @@
-package codec
+package vpx
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/codec"
 )
 
 /*
@@ -62,22 +63,22 @@ void freeDecoderCtx(vpx_codec_ctx_t* ctx) {
 */
 import "C"
 
-type VPXDecoder struct {
+type Decoder struct {
 	codecCtx *C.vpx_codec_ctx_t
 	closed   bool
 
 	iter C.vpx_codec_iter_t
 }
 
-func NewVPXDecoder(codec mrtp.Codec) (*VPXDecoder, error) {
+func NewDecoder(c mrtp.Codec) (*Decoder, error) {
 	var ccodec *C.vpx_codec_iface_t
-	switch codec {
+	switch c {
 	case mrtp.VP8:
 		ccodec = C.ifaceVP8Decoder()
 	case mrtp.VP9:
 		ccodec = C.ifaceVP9Decoder()
 	default:
-		return nil, fmt.Errorf("unsupported codec for decoder: %s", codec.String())
+		return nil, fmt.Errorf("unsupported codec for decoder: %s", c.String())
 	}
 
 	codecCtx := C.newDecoderCtx()
@@ -85,12 +86,12 @@ func NewVPXDecoder(codec mrtp.Codec) (*VPXDecoder, error) {
 		return nil, fmt.Errorf("vpx_codec_dec_init failed")
 	}
 
-	return &VPXDecoder{
+	return &Decoder{
 		codecCtx: codecCtx,
 	}, nil
 }
 
-func (d *VPXDecoder) Decode(encFrame []byte) (*DecodedFrame, error) {
+func (d *Decoder) Decode(encFrame []byte) (*codec.DecodedFrame, error) {
 	if d.closed {
 		return nil, fmt.Errorf("decoder is closed")
 	}
@@ -141,7 +142,7 @@ func (d *VPXDecoder) Decode(encFrame []byte) (*DecodedFrame, error) {
 
 	C.freeFrame(input)
 
-	return &DecodedFrame{
+	return &codec.DecodedFrame{
 		Data:              frameData,
 		Width:             w,
 		Height:            h,
@@ -149,7 +150,13 @@ func (d *VPXDecoder) Decode(encFrame []byte) (*DecodedFrame, error) {
 	}, nil
 }
 
-func (d *VPXDecoder) Close() {
+func (d *Decoder) Close() error {
+	if d.closed {
+		return nil
+	}
 	C.freeDecoderCtx(d.codecCtx)
 	d.closed = true
+	return nil
 }
+
+var _ codec.Decoder = (*Decoder)(nil)

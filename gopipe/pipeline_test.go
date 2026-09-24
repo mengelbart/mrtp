@@ -43,7 +43,7 @@ func (c *counter[T]) EndOfStream() error { return c.down.EndOfStream() }
 func (c *counter[T]) Close() error { return nil }
 
 // TestPipelineEndToEnd checks the wiring of the full send and receive chain. Per codec
-// coverage lives in the gopipe/codec tests.
+// coverage lives in the codec tests.
 func TestPipelineEndToEnd(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		src := newTestSource(t)

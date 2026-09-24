@@ -1,4 +1,4 @@
-package codec
+package x264
 
 // #cgo pkg-config: x264
 // #include "x264_bridge.h"
@@ -10,9 +10,11 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"github.com/mengelbart/mrtp/codec"
 )
 
-type X264encoder struct {
+type Encoder struct {
 	engine *C.Encoder
 	mu     sync.Mutex
 	closed bool
@@ -21,7 +23,7 @@ type X264encoder struct {
 	currentTrgetBitrate uint64        // kbps
 }
 
-func NewX264encoder(c Config) (*X264encoder, error) {
+func NewEncoder(c codec.Config) (*Encoder, error) {
 	param := C.x264_param_t{
 		i_csp:        C.X264_CSP_I420,
 		i_width:      C.int(c.Width),
@@ -42,14 +44,14 @@ func NewX264encoder(c Config) (*X264encoder, error) {
 		return nil, fmt.Errorf("failed to create x264 encoder with error code: %v", rc)
 	}
 
-	e := X264encoder{
+	e := Encoder{
 		engine:              engine,
 		currentTrgetBitrate: c.TargetRate,
 	}
 	return &e, nil
 }
 
-func (e *X264encoder) Encode(image *image.YCbCr, _ int64, _ time.Duration) (*Frame, error) {
+func (e *Encoder) Encode(image *image.YCbCr, _ int64, _ time.Duration) (*codec.Frame, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -80,7 +82,7 @@ func (e *X264encoder) Encode(image *image.YCbCr, _ int64, _ time.Duration) (*Fra
 
 	encoded := C.GoBytes(unsafe.Pointer(s.data), s.data_len)
 
-	frame := &Frame{
+	frame := &codec.Frame{
 		Payload:    encoded,
 		IsKeyFrame: false, // TODO
 	}
@@ -88,11 +90,11 @@ func (e *X264encoder) Encode(image *image.YCbCr, _ int64, _ time.Duration) (*Fra
 	return frame, nil
 }
 
-func (e *X264encoder) SetTargetRate(bitrate uint64) {
+func (e *Encoder) SetTargetRate(bitrate uint64) {
 	e.targetBitrate.Store(bitrate)
 }
 
-func (e *X264encoder) Close() error {
+func (e *Encoder) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -105,3 +107,5 @@ func (e *X264encoder) Close() error {
 	e.closed = true
 	return nil
 }
+
+var _ codec.Encoder = (*Encoder)(nil)

@@ -8,20 +8,17 @@ import (
 	"log/slog"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/gopipe/codec"
+	"github.com/mengelbart/mrtp/codec"
+	"github.com/mengelbart/mrtp/codec/avcodec"
+	"github.com/mengelbart/mrtp/codec/vpx"
 	"github.com/mengelbart/mrtp/pipeline"
 )
-
-type decoder interface {
-	Decode(encFrame []byte) (*codec.DecodedFrame, error)
-	Close()
-}
 
 // Decoder decodes coded frames into raw frames. The picture size is not on the
 // wire, so the decoder negotiates its output once it has decoded a frame, and
 // again whenever the picture changes.
 type Decoder struct {
-	d decoder
+	d codec.Decoder
 
 	codec  mrtp.Codec
 	format mrtp.RawVideo
@@ -33,13 +30,13 @@ func NewDecoder(c mrtp.Codec) (*Decoder, error) {
 	d := &Decoder{codec: c}
 	switch c {
 	case mrtp.H264:
-		dec, err := codec.NewH264Decoder()
+		dec, err := avcodec.NewH264Decoder()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create H264 decoder: %w", err)
 		}
 		d.d = dec
 	case mrtp.VP8, mrtp.VP9:
-		dec, err := codec.NewVPXDecoder(c)
+		dec, err := vpx.NewDecoder(c)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create VPX decoder: %w", err)
 		}
@@ -146,8 +143,7 @@ func (d *Decoder) EndOfStream() error {
 
 // Close implements mrtp.Element.
 func (d *Decoder) Close() error {
-	d.d.Close()
-	return nil
+	return d.d.Close()
 }
 
 var (

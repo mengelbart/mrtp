@@ -8,22 +8,17 @@ import (
 	"image"
 	"log/slog"
 	"sync"
-	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/gopipe/codec"
+	"github.com/mengelbart/mrtp/codec"
+	"github.com/mengelbart/mrtp/codec/vpx"
+	"github.com/mengelbart/mrtp/codec/x264"
 	"github.com/mengelbart/mrtp/pipeline"
 )
 
-type encoder interface {
-	Encode(image *image.YCbCr, pts int64, duration time.Duration) (*codec.Frame, error)
-	SetTargetRate(bitrate uint64)
-	Close() error
-}
-
 // Encoder encodes raw frames into coded frames.
 type Encoder struct {
-	e encoder
+	e codec.Encoder
 
 	codec  mrtp.Codec
 	format mrtp.RawVideo
@@ -73,13 +68,13 @@ func (e *Encoder) Negotiate(f mrtp.Format) error {
 	}
 	switch e.codec {
 	case mrtp.VP8, mrtp.VP9:
-		enc, err := codec.NewVPXEncoder(conf)
+		enc, err := vpx.NewEncoder(conf)
 		if err != nil {
 			return err
 		}
 		e.e = enc
 	case mrtp.H264:
-		enc, err := codec.NewX264encoder(conf)
+		enc, err := x264.NewEncoder(conf)
 		if err != nil {
 			return err
 		}
