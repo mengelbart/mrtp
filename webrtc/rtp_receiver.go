@@ -19,6 +19,7 @@ type RTPReceiver struct {
 	format   mrtp.RTP
 	pool     *pipeline.Pool[mrtp.RTPPacket]
 	down     mrtp.Sink[mrtp.RTPPacket]
+	rtcp     *RTCPReceiver
 }
 
 // newRTPReceiver configures the element from what the peers negotiated for the
@@ -45,6 +46,7 @@ func newRTPReceiver(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) (*R
 				p.Data = p.Data[:cap(p.Data)]
 			},
 		),
+		rtcp: newRTCPReceiver(receiver, nil),
 	}, nil
 }
 
@@ -105,9 +107,10 @@ func (r *RTPReceiver) Close() error {
 	return r.receiver.Stop()
 }
 
-// RTCPReceiver is the RTCP the peer sends about this track.
+// RTCPReceiver is the RTCP the peer sends about this track. Every call returns
+// the same receiver.
 func (r *RTPReceiver) RTCPReceiver() *RTCPReceiver {
-	return newRTCPReceiver(r.receiver, nil)
+	return r.rtcp.want()
 }
 
 var (

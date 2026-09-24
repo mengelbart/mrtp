@@ -22,12 +22,15 @@ type pionRTCPReceiver interface {
 const rtcpQueueDepth = 8
 
 // RTCPReceiver pumps RTCP off a pion interceptor chain into a buffer a
-// pipeline can pull from. The pump runs whether or not anything pulls, because
-// reading is what lets the chain deliver the feedback the congestion
-// controller runs on. A full queue drops its oldest packet rather than block.
+// pipeline can pull from. Its track starts the pump when it is created and it
+// runs until the track stops, because reading is what lets the chain deliver
+// the feedback the congestion controller runs on. Packets are buffered only
+// once the receiver is requested, and a full queue drops its oldest packet
+// rather than block.
 type RTCPReceiver struct {
 	receiver pionRTCPReceiver
 	onCCFB   func(rtpfb.Report) error
+	wanted   atomic.Bool
 
 	pool  *pipeline.Pool[mrtp.RTCPPacket]
 	queue chan mrtp.Packet[mrtp.RTCPPacket]
@@ -72,19 +75,34 @@ func (r *RTCPReceiver) run() {
 		}
 		packet.Value().Data = packet.Value().Data[:n]
 
-		select {
-		case <-r.done:
-			packet.Release()
-			return
-		default:
-		}
-
 		if report, ok := attr.Get(rtpfb.CCFBAttributesKey).(rtpfb.Report); ok && r.onCCFB != nil {
 			if err := r.onCCFB(report); err != nil {
 				slog.Error("failed to handle congestion control feedback", "error", err)
 			}
 		}
+		if !r.wanted.Load() || r.isClosed() {
+			packet.Release()
+			continue
+		}
 		r.enqueue(packet)
+		if r.isClosed() {
+			r.drain()
+		}
+	}
+}
+
+// want marks the receiver as requested, so that the pump buffers packets.
+func (r *RTCPReceiver) want() *RTCPReceiver {
+	r.wanted.Store(true)
+	return r
+}
+
+func (r *RTCPReceiver) isClosed() bool {
+	select {
+	case <-r.done:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -145,8 +163,9 @@ func (r *RTCPReceiver) Pull(ctx context.Context) (mrtp.Packet[mrtp.RTCPPacket], 
 	}
 }
 
-// Close implements mrtp.Element. It stops the pump and releases what it
-// buffered. A read already in flight ends when the underlying receiver returns.
+// Close implements mrtp.Element. It stops buffering and releases what was
+// buffered. The pump keeps running for the congestion controller until the
+// track stops.
 func (r *RTCPReceiver) Close() error {
 	r.closeOnce.Do(func() {
 		close(r.done)

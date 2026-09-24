@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/pion/interceptor/pkg/rtpfb"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -12,7 +11,7 @@ import (
 type RTPSender struct {
 	track  *webrtc.TrackLocalStaticRTP
 	sender *webrtc.RTPSender
-	onCCFB func(rtpfb.Report) error
+	rtcp   *RTCPReceiver
 }
 
 // Negotiate implements mrtp.Sink. Only the codec is checked: Pion overwrites
@@ -53,9 +52,10 @@ func (s *RTPSender) Close() error {
 	return s.sender.Stop()
 }
 
-// RTCPReceiver is the RTCP the peer sends about this track.
+// RTCPReceiver is the RTCP the peer sends about this track. Every call returns
+// the same receiver.
 func (s *RTPSender) RTCPReceiver() *RTCPReceiver {
-	return newRTCPReceiver(s.sender, s.onCCFB)
+	return s.rtcp.want()
 }
 
 var _ mrtp.Sink[mrtp.RTPPacket] = (*RTPSender)(nil)

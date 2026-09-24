@@ -108,8 +108,6 @@ func TestWebRTCFeedback(t *testing.T) {
 	ts, _ := newTestServer(t)
 	bwe := &countingBWE{}
 	client, track := newWebRTCClient(t, webrtc.EnableCCFBReceiver(), webrtc.SetBWE(bwe))
-	rtcp := track.RTCPReceiver()
-	defer rtcp.Close()
 
 	signaler := &signaling.Client{BaseURL: ts.URL}
 	resp := openWebRTC(t, context.Background(), signaler, client)

@@ -532,7 +532,7 @@ func (t *Transport) addLocalTrack(codec string, id string) (*RTPSender, error) {
 	return &RTPSender{
 		track:  track,
 		sender: sender,
-		onCCFB: t.onCCFB,
+		rtcp:   newRTCPReceiver(sender, t.onCCFB),
 	}, nil
 }
 

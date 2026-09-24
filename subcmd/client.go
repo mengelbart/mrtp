@@ -157,7 +157,7 @@ func (c *Client) sendRTPUDP(ctx context.Context, signaler *signaling.Client, sou
 	if err != nil {
 		return err
 	}
-	return sendMedia(ctx, pipeline.NewGraph(), source, packetizer, sink)
+	return sendMedia(ctx, source, packetizer, sink)
 }
 
 func (c *Client) sendWebRTC(ctx context.Context, signaler *signaling.Client, source *fake.Source, packetizer *rtp.Packetizer) error {
@@ -212,10 +212,6 @@ func (c *Client) sendWebRTC(ctx context.Context, signaler *signaling.Client, sou
 	if err != nil {
 		return err
 	}
-	// Reading RTCP drives the interceptors and the congestion controller.
-	rtcp := track.RTCPReceiver()
-	defer rtcp.Close()
-
 	offer, err := transport.Offer(setupCtx)
 	if err != nil {
 		return err
@@ -242,13 +238,7 @@ func (c *Client) sendWebRTC(ctx context.Context, signaler *signaling.Client, sou
 	}
 	transport.ControlBitrate(source)
 
-	g := pipeline.NewGraph()
-	pump := pipeline.NewPump[mrtp.RTCPPacket]()
-	if err = errors.Join(g.Attach(rtcp, pump), g.Connect(pump, pipeline.NewDiscard[mrtp.RTCPPacket]())); err != nil {
-		_ = g.Close()
-		return err
-	}
-	return sendMedia(ctx, g, source, packetizer, track)
+	return sendMedia(ctx, source, packetizer, track)
 }
 
 // closeSession closes the session on the server even if the run context is
@@ -261,9 +251,10 @@ func closeSession(signaler *signaling.Client, id string) {
 	}
 }
 
-// sendMedia adds source, packetizer and sink to g and runs it until the source
+// sendMedia runs source, packetizer and sink as one graph until the source
 // ends.
-func sendMedia(ctx context.Context, g *pipeline.Graph, source *fake.Source, packetizer *rtp.Packetizer, sink mrtp.Sink[mrtp.RTPPacket]) error {
+func sendMedia(ctx context.Context, source *fake.Source, packetizer *rtp.Packetizer, sink mrtp.Sink[mrtp.RTPPacket]) error {
+	g := pipeline.NewGraph()
 	defer func() {
 		if closeErr := g.Close(); closeErr != nil {
 			slog.Error("failed to close pipeline", "error", closeErr)
