@@ -16,7 +16,6 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/fake"
-	"github.com/mengelbart/mrtp/media"
 	"github.com/mengelbart/mrtp/packetization"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
@@ -92,15 +91,15 @@ Flags:
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	bounds := media.RateBounds{Initial: c.bitrate, Min: c.bitrate, Max: c.bitrate}
+	bounds := mrtp.RateBounds{Initial: c.bitrate, Min: c.bitrate, Max: c.bitrate}
 	if c.bwe != "" {
-		bounds = media.RateBounds{Initial: c.bitrate, Min: minTargetRate, Max: c.maxTargetRate}
+		bounds = mrtp.RateBounds{Initial: c.bitrate, Min: minTargetRate, Max: c.maxTargetRate}
 	}
 	source, err := fake.New(c.duration, c.fps, bounds)
 	if err != nil {
 		return err
 	}
-	format, err := media.RTPFormat(mrtp.Fake, media.DefaultPayloadType)
+	format, err := mrtp.NewRTPFormat(mrtp.Fake, mrtp.DefaultPayloadType)
 	if err != nil {
 		return err
 	}

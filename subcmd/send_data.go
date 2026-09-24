@@ -13,7 +13,6 @@ import (
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/internal/quictransport"
-	"github.com/mengelbart/mrtp/media"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/quic-go/quic-go"
 )
@@ -117,7 +116,7 @@ Flags:
 		return err
 	}
 
-	source, err := createDataSource(*sourceFile, 0, media.RateBounds{
+	source, err := createDataSource(*sourceFile, 0, mrtp.RateBounds{
 		Initial: 750_000,
 		Min:     minTargetRate,
 		Max:     s.maxTargetRate,
@@ -153,13 +152,13 @@ Flags:
 type dataSource interface {
 	mrtp.Source[mrtp.DataChunk]
 	mrtp.Driver
-	media.Sender
+	mrtp.TargetBitrateSetter
 	Running() bool
 }
 
 // createDataSource returns a source that sends sourceFile, or synthetic data
 // if sourceFile is empty, paced to bounds.
-func createDataSource(sourceFile string, startDelaySeconds uint, bounds media.RateBounds, chunkSource bool) (dataSource, error) {
+func createDataSource(sourceFile string, startDelaySeconds uint, bounds mrtp.RateBounds, chunkSource bool) (dataSource, error) {
 	startDelay := time.Duration(startDelaySeconds) * time.Second
 	if sourceFile != "" {
 		return data.NewFileSource(sourceFile, bounds, startDelay)

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/media"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/synthetic"
 )
@@ -95,7 +94,7 @@ func (s *Source) Running() bool {
 	return s.gen.Active()
 }
 
-// SetTargetBitrate implements media.Sender.
+// SetTargetBitrate implements mrtp.TargetBitrateSetter.
 func (s *Source) SetTargetBitrate(bitrate uint) error {
 	slog.Info("NEW_TARGET_DATA_RATE", "rate", s.gen.SetTargetBitrate(bitrate))
 	return nil
@@ -154,5 +153,5 @@ func writeChunk(down mrtp.Sink[mrtp.DataChunk], pool *pipeline.Pool[mrtp.DataChu
 var (
 	_ mrtp.Source[mrtp.DataChunk] = (*Source)(nil)
 	_ mrtp.Driver                 = (*Source)(nil)
-	_ media.Sender                = (*Source)(nil)
+	_ mrtp.TargetBitrateSetter    = (*Source)(nil)
 )

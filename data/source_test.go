@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/media"
 	"github.com/mengelbart/mrtp/synthetic"
 )
 
@@ -129,7 +128,7 @@ func TestSourceNeedsSizePacing(t *testing.T) {
 	_, err := NewSource(synthetic.Config{
 		Pacing:    synthetic.Interval,
 		FrameRate: mrtp.FrameRate{Num: 1, Den: 1},
-		Bounds:    media.RateBounds{Max: 1},
+		Bounds:    mrtp.RateBounds{Max: 1},
 	})
 	if err == nil {
 		t.Fatal("got no error for interval pacing")
@@ -147,7 +146,7 @@ func TestFileSource(t *testing.T) {
 			t.Fatal(err)
 		}
 		// 8 * readSize bits per second is one read per second
-		src, err := NewFileSource(path, media.RateBounds{Initial: 8 * readSize, Max: 8 * readSize}, time.Second)
+		src, err := NewFileSource(path, mrtp.RateBounds{Initial: 8 * readSize, Max: 8 * readSize}, time.Second)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -178,7 +177,7 @@ func TestFileSource(t *testing.T) {
 }
 
 func TestFileSourceMissingFile(t *testing.T) {
-	if _, err := NewFileSource(filepath.Join(t.TempDir(), "missing"), media.RateBounds{}, 0); err == nil {
+	if _, err := NewFileSource(filepath.Join(t.TempDir(), "missing"), mrtp.RateBounds{}, 0); err == nil {
 		t.Fatal("got no error for a missing file")
 	}
 }

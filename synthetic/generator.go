@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/media"
 )
 
 // Pacing selects how writes are spaced and sized.
@@ -55,7 +54,7 @@ type Config struct {
 
 	// Bounds are the initial bitrate and the bounds of every target bitrate,
 	// in bits per second. Max is 0 for unlimited Size pacing.
-	Bounds media.RateBounds
+	Bounds mrtp.RateBounds
 
 	// Duration is how long the generator runs, 0 for no limit.
 	Duration time.Duration

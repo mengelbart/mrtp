@@ -141,7 +141,7 @@ func (e *Encoder) EndOfStream() error {
 	return e.down.EndOfStream()
 }
 
-// SetTargetBitrate implements media.Sender.
+// SetTargetBitrate implements mrtp.TargetBitrateSetter.
 func (e *Encoder) SetTargetBitrate(bitrate uint) error {
 	// reduce target rate
 	targetRate := uint64(0.9 * float64(bitrate))

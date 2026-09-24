@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/media"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/synthetic"
 )
@@ -33,7 +32,7 @@ type FileSource struct {
 
 // NewFileSource creates a source for the file at path. It paces to bounds, or
 // is unlimited if bounds.Max is 0, and starts after startDelay.
-func NewFileSource(path string, bounds media.RateBounds, startDelay time.Duration) (*FileSource, error) {
+func NewFileSource(path string, bounds mrtp.RateBounds, startDelay time.Duration) (*FileSource, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("data: file source: %w", err)
 	}
@@ -69,7 +68,7 @@ func (s *FileSource) Running() bool {
 	return s.running.Load()
 }
 
-// SetTargetBitrate implements media.Sender.
+// SetTargetBitrate implements mrtp.TargetBitrateSetter.
 func (s *FileSource) SetTargetBitrate(bitrate uint) error {
 	slog.Info("NEW_TARGET_DATA_RATE", "rate", s.limiter.SetTargetBitrate(bitrate))
 	return nil
@@ -133,5 +132,5 @@ func (s *FileSource) Run(ctx context.Context) error {
 var (
 	_ mrtp.Source[mrtp.DataChunk] = (*FileSource)(nil)
 	_ mrtp.Driver                 = (*FileSource)(nil)
-	_ media.Sender                = (*FileSource)(nil)
+	_ mrtp.TargetBitrateSetter    = (*FileSource)(nil)
 )

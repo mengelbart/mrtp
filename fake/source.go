@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/media"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/synthetic"
 )
@@ -34,7 +33,7 @@ type Source struct {
 
 // New returns a Source that starts at bounds.Initial bits per second and
 // keeps every target bitrate within bounds.Min and bounds.Max.
-func New(duration time.Duration, fps uint64, bounds media.RateBounds) (*Source, error) {
+func New(duration time.Duration, fps uint64, bounds mrtp.RateBounds) (*Source, error) {
 	frameRate := mrtp.FrameRate{Num: int(fps), Den: 1}
 	gen, err := synthetic.New(synthetic.Config{
 		Pacing:    synthetic.Interval,
@@ -74,7 +73,7 @@ func (s *Source) Connect(down mrtp.Sink[mrtp.EncodedFrame]) error {
 	return nil
 }
 
-// SetTargetBitrate implements media.Sender. The bitrate is clamped to the
+// SetTargetBitrate implements mrtp.TargetBitrateSetter. The bitrate is clamped to the
 // source's rate bounds.
 func (s *Source) SetTargetBitrate(bitrate uint) error {
 	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", s.gen.SetTargetBitrate(bitrate))
@@ -109,5 +108,5 @@ func (s *Source) Close() error {
 var (
 	_ mrtp.Source[mrtp.EncodedFrame] = (*Source)(nil)
 	_ mrtp.Driver                    = (*Source)(nil)
-	_ media.Sender                   = (*Source)(nil)
+	_ mrtp.TargetBitrateSetter       = (*Source)(nil)
 )

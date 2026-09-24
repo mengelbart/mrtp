@@ -4,20 +4,20 @@ import (
 	"context"
 	"math"
 
-	"github.com/mengelbart/mrtp/media"
+	"github.com/mengelbart/mrtp"
 	"golang.org/x/time/rate"
 )
 
 // Limiter paces writes to a target bitrate with a token bucket. A nil Limiter
 // is unlimited.
 type Limiter struct {
-	bounds  media.RateBounds
+	bounds  mrtp.RateBounds
 	limiter *rate.Limiter
 }
 
 // NewLimiter returns a Limiter that starts at bounds.Initial and admits writes
 // of up to burst bytes. It returns nil, an unlimited Limiter, if bounds.Max is 0.
-func NewLimiter(bounds media.RateBounds, burst int) *Limiter {
+func NewLimiter(bounds mrtp.RateBounds, burst int) *Limiter {
 	if bounds.Max == 0 {
 		return nil
 	}

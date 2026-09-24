@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/media"
 )
 
 // record is what a test keeps of a Write, with the time it was emitted.
@@ -59,7 +58,7 @@ func TestIntervalPacing(t *testing.T) {
 		g := mustNew(t, Config{
 			Pacing:    Interval,
 			FrameRate: mrtp.FrameRate{Num: 7, Den: 1},
-			Bounds:    media.RateBounds{Initial: 56_000, Min: 1, Max: 1_000_000},
+			Bounds:    mrtp.RateBounds{Initial: 56_000, Min: 1, Max: 1_000_000},
 			Duration:  time.Second,
 		})
 		records, err := collect(t, g, context.Background())
@@ -96,7 +95,7 @@ func TestIntervalCatchesUp(t *testing.T) {
 		g := mustNew(t, Config{
 			Pacing:    Interval,
 			FrameRate: mrtp.FrameRate{Num: 10, Den: 1},
-			Bounds:    media.RateBounds{Initial: 8000, Max: 8000},
+			Bounds:    mrtp.RateBounds{Initial: 8000, Max: 8000},
 			Duration:  time.Second,
 		})
 		start := time.Now()
@@ -131,7 +130,7 @@ func TestSetTargetBitrateClamps(t *testing.T) {
 	g := mustNew(t, Config{
 		Pacing:    Interval,
 		FrameRate: mrtp.FrameRate{Num: 30, Den: 1},
-		Bounds:    media.RateBounds{Initial: 5, Min: 100, Max: 200},
+		Bounds:    mrtp.RateBounds{Initial: 5, Min: 100, Max: 200},
 	})
 	if got := g.bitrate.Load(); got != 100 {
 		t.Fatalf("initial bitrate is %v, want it clamped to 100", got)
@@ -140,7 +139,7 @@ func TestSetTargetBitrateClamps(t *testing.T) {
 		t.Fatalf("bitrate is %v, want it clamped to 200", got)
 	}
 
-	s := mustNew(t, Config{Pacing: Size, Size: 10, Bounds: media.RateBounds{Min: 100, Max: 200}})
+	s := mustNew(t, Config{Pacing: Size, Size: 10, Bounds: mrtp.RateBounds{Min: 100, Max: 200}})
 	if got := s.SetTargetBitrate(50); got != 100 {
 		t.Fatalf("bitrate is %v, want it clamped to 100", got)
 	}
@@ -157,7 +156,7 @@ func TestSizePacing(t *testing.T) {
 		g := mustNew(t, Config{
 			Pacing:   Size,
 			Size:     100,
-			Bounds:   media.RateBounds{Initial: 8000, Max: 8000},
+			Bounds:   mrtp.RateBounds{Initial: 8000, Max: 8000},
 			Duration: time.Second,
 		})
 		records, err := collect(t, g, context.Background())
@@ -186,7 +185,7 @@ func TestSizePacingFollowsTargetBitrate(t *testing.T) {
 		g := mustNew(t, Config{
 			Pacing:   Size,
 			Size:     100,
-			Bounds:   media.RateBounds{Initial: 8000, Max: 16000},
+			Bounds:   mrtp.RateBounds{Initial: 8000, Max: 16000},
 			Duration: time.Second,
 		})
 		var n int
@@ -306,7 +305,7 @@ func TestStartDelay(t *testing.T) {
 		g := mustNew(t, Config{
 			Pacing:     Interval,
 			FrameRate:  mrtp.FrameRate{Num: 1, Den: 1},
-			Bounds:     media.RateBounds{Initial: 8, Max: 8},
+			Bounds:     mrtp.RateBounds{Initial: 8, Max: 8},
 			Duration:   time.Second,
 			StartDelay: 2 * time.Second,
 		})
@@ -335,12 +334,12 @@ func TestEmitErrorStopsRun(t *testing.T) {
 
 func TestInvalidConfig(t *testing.T) {
 	for name, config := range map[string]Config{
-		"no frame rate":   {Pacing: Interval, Bounds: media.RateBounds{Max: 1}},
+		"no frame rate":   {Pacing: Interval, Bounds: mrtp.RateBounds{Max: 1}},
 		"no max bitrate":  {Pacing: Interval, FrameRate: mrtp.FrameRate{Num: 1, Den: 1}},
-		"interval burst":  {Pacing: Interval, FrameRate: mrtp.FrameRate{Num: 1, Den: 1}, Bounds: media.RateBounds{Max: 1}, Burst: &Burst{Bytes: 1, Period: 1}},
+		"interval burst":  {Pacing: Interval, FrameRate: mrtp.FrameRate{Num: 1, Den: 1}, Bounds: mrtp.RateBounds{Max: 1}, Burst: &Burst{Bytes: 1, Period: 1}},
 		"no size":         {Pacing: Size},
 		"empty burst":     {Pacing: Size, Size: 1, Burst: &Burst{Period: 1}},
-		"min above max":   {Pacing: Size, Size: 1, Bounds: media.RateBounds{Min: 2, Max: 1}},
+		"min above max":   {Pacing: Size, Size: 1, Bounds: mrtp.RateBounds{Min: 2, Max: 1}},
 		"unknown pacing":  {Pacing: Pacing(42)},
 		"negative period": {Pacing: Size, Size: 1, Burst: &Burst{Bytes: 1, Period: -1}},
 	} {

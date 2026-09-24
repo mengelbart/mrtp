@@ -16,7 +16,6 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/fake"
 	"github.com/mengelbart/mrtp/internal/quictransport"
-	"github.com/mengelbart/mrtp/media"
 	"github.com/mengelbart/mrtp/packetization"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/roq"
@@ -161,7 +160,7 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		roqTransport.Close()
 	}()
 
-	fakeSource, err := fake.New(100*time.Second, 30, media.RateBounds{Initial: 750_000, Min: 250_000, Max: 8_000_000})
+	fakeSource, err := fake.New(100*time.Second, 30, mrtp.RateBounds{Initial: 750_000, Min: 250_000, Max: 8_000_000})
 	if err != nil {
 		return err
 	}

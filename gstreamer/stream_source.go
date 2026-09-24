@@ -272,8 +272,8 @@ func (s *StreamSource) SrcPad() (*gst.Pad, error) {
 	return pad, nil
 }
 
-// SetBitrate sets the target bit rate of the encoder
-func (s *StreamSource) SetBitrate(ratebps uint) error {
+// SetTargetBitrate implements mrtp.TargetBitrateSetter.
+func (s *StreamSource) SetTargetBitrate(ratebps uint) error {
 	// reduce target rate
 	slog.Info("NEW_TARGET_MEDIA_RATE", "rate", ratebps)
 

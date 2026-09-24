@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/media"
 )
 
 // frameCollector keeps the size, PTS and duration of every frame it is written.
@@ -31,7 +30,7 @@ func (c *frameCollector) Write(p mrtp.Packet[mrtp.EncodedFrame]) error {
 func TestSourceFrames(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// 7 fps for one second at 56 kbit/s is 7 frames of 1000 bytes
-		src, err := New(time.Second, 7, media.RateBounds{Initial: 56_000, Min: 1, Max: 1_000_000})
+		src, err := New(time.Second, 7, mrtp.RateBounds{Initial: 56_000, Min: 1, Max: 1_000_000})
 		if err != nil {
 			t.Fatal(err)
 		}

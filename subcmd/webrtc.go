@@ -15,10 +15,10 @@ import (
 	nethttp "net/http"
 
 	"github.com/julienschmidt/httprouter"
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/http"
-	"github.com/mengelbart/mrtp/media"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/webrtc"
 )
@@ -61,7 +61,7 @@ type WebRTC struct {
 	sendVideoTrack   bool
 	pacing           bool
 
-	media media.Flags
+	media mediaFlags
 }
 
 // Help implements cmdmain.SubCmd.
@@ -96,12 +96,8 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 
 	fs.BoolVar(&w.pacing, "pacing", false, "Enable packet pacing")
 
-	if err := w.media.ConfigureSender(fs); err != nil {
-		return err
-	}
-	if err := w.media.ConfigureReceiver(fs); err != nil {
-		return err
-	}
+	w.media.configureSender(fs)
+	w.media.configureReceiver(fs)
 	DefaultBweFlags.ConfigureFlags(fs)
 
 	fs.Usage = func() {
@@ -117,17 +113,16 @@ Usage:
 		return err
 	}
 
-	factory, err := w.media.NewFactory()
-	if err != nil {
-		return err
-	}
 	runner := pipeline.NewRunner()
 	defer func() {
 		if closeErr := runner.Close(); closeErr != nil {
 			slog.Error("failed to close media pipeline", "error", closeErr)
 		}
 	}()
-	runner.Add(factory.Shared())
+	media, err := w.media.newPipeline(runner)
+	if err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -155,26 +150,23 @@ Usage:
 		// H264.
 		webrtc.RegisterFakeCodec(),
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
-			receiverConfig, configErr := w.media.ReceiverConfig("rtp-stream-sink")
+			receiverConfig, configErr := w.media.receiverConfig("rtp-stream-sink")
 			if configErr != nil {
 				panic(configErr)
 			}
 			// What arrives is what the peers negotiated, which is not
 			// necessarily what -codec names: that flag picks what this peer
 			// sends.
-			receiverConfig.Codec = receiver.Codec()
-			receiverConfig.PayloadType = int(receiver.PayloadType())
-			stream, streamErr := factory.NewReceiver(receiverConfig)
-			if streamErr != nil {
+			receiverConfig.codec = receiver.Codec()
+			receiverConfig.payloadType = int(receiver.PayloadType())
+			g := pipeline.NewGraph()
+			if streamErr := media.addReceiver(g, receiverConfig, receiveEndpoints{
+				rtp:           receiver,
+				rtcpEndpoints: rtcpEndpoints{send: transport.RTCPSender(), recv: receiver.RTCPReceiver()},
+			}); streamErr != nil {
 				panic(streamErr)
 			}
-			if wireErr := errors.Join(
-				stream.ConnectRTP(receiver),
-				stream.ConnectRTCP(transport.RTCPSender(), receiver.RTCPReceiver()),
-			); wireErr != nil {
-				panic(wireErr)
-			}
-			runner.Add(stream.Graph)
+			runner.Add(g)
 		}),
 	}
 
@@ -275,7 +267,7 @@ Usage:
 			return err
 		}
 		var source dataSource
-		source, err = createDataSource(w.dcSourceFile, w.dcStartDelay, media.RateBounds{}, w.dcChunks)
+		source, err = createDataSource(w.dcSourceFile, w.dcStartDelay, mrtp.RateBounds{}, w.dcChunks)
 		if err != nil {
 			return err
 		}
@@ -303,19 +295,19 @@ Usage:
 	}
 
 	if w.sendVideoTrack {
-		var senderConfig media.SenderConfig
-		senderConfig, err = w.media.SenderConfig("rtp-stream-source")
+		var senderConfig senderConfig
+		senderConfig, err = w.media.senderConfig("rtp-stream-source")
 		if err != nil {
 			return err
 		}
-		senderConfig.RateBounds = media.RateBounds{
+		senderConfig.rateBounds = mrtp.RateBounds{
 			Initial: initTargetRate,
 			Min:     minTargetRate,
 			Max:     w.maxTargetRate,
 		}
 
 		var track *webrtc.RTPSender
-		track, err = transport.AddLocalTrackWithCodec(senderConfig.Codec.MimeType())
+		track, err = transport.AddLocalTrackWithCodec(senderConfig.codec.MimeType())
 		if err != nil {
 			return err
 		}
@@ -330,21 +322,19 @@ Usage:
 		// the packet to the correct SSRC (because it cannot read the media SSRC
 		// from a raw RTCP packet. The ScreamTx sender on the other hand,
 		// expects the type set to 0.
-		var stream *media.SendStream
-		stream, err = factory.NewSender(senderConfig)
+		mediaGraph := pipeline.NewGraph()
+		runner.Add(mediaGraph)
+		var mediaSender mrtp.TargetBitrateSetter
+		mediaSender, err = media.addSender(mediaGraph, senderConfig, sendEndpoints{
+			rtp:           track,
+			rtcpEndpoints: rtcpEndpoints{send: transport.RTCPSender(), recv: track.RTCPReceiver()},
+		})
 		if err != nil {
 			return err
 		}
-		if err = errors.Join(
-			stream.ConnectRTP(track),
-			stream.ConnectRTCP(transport.RTCPSender(), track.RTCPReceiver()),
-		); err != nil {
-			return err
-		}
-		runner.Add(stream.Graph)
 
 		// set callback of transport, so CCs can set the target rate of the encoder
-		transport.SetTargetRate = stream.Sender.SetTargetBitrate
+		transport.SetTargetRate = mediaSender.SetTargetBitrate
 	} else {
 		if err = transport.AddRemoteVideoTrack(); err != nil {
 			return err

@@ -3,6 +3,7 @@ package mrtp
 import (
 	"fmt"
 	"image"
+	"math"
 	"time"
 )
 
@@ -80,6 +81,22 @@ type RTP struct {
 
 func (f RTP) String() string {
 	return fmt.Sprintf("RTP %v pt=%v", f.Codec, f.PayloadType)
+}
+
+// DefaultPayloadType is the RTP payload type used when a caller does not know
+// a better one.
+const DefaultPayloadType = 96
+
+// NewRTPFormat is the format of the edge carrying one stream's packets.
+func NewRTPFormat(c Codec, payloadType int) (RTP, error) {
+	if payloadType < 0 || payloadType > math.MaxInt8 {
+		return RTP{}, fmt.Errorf("invalid payload type %v: the RTP payload type field is 7 bits, so it must be in [0, %v]", payloadType, math.MaxInt8)
+	}
+	return RTP{
+		Codec:       c,
+		PayloadType: uint8(payloadType),
+		ClockRate:   uint32(c.ClockRate()),
+	}, nil
 }
 
 // Data is the format of an edge carrying [DataChunk].

@@ -1,3 +1,5 @@
+//go:build cgo
+
 package subcmd
 
 import (
@@ -14,7 +16,6 @@ import (
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/internal/quictransport"
-	"github.com/mengelbart/mrtp/media"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/mengelbart/mrtp/udp"
@@ -48,7 +49,7 @@ type Send struct {
 	rtcpRecvFlowID    uint
 	transport         string
 
-	media      media.Flags
+	media      mediaFlags
 	dataSource dataSource
 }
 
@@ -81,9 +82,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.StringVar(&s.transport, "transport", DefaultTransport,
 		fmt.Sprintf("Transport for plain RTP, ignored when RoQ is enabled or when the media pipeline moves the packets itself (%v)", strings.Join(transportNames, ", ")))
 
-	if err := s.media.ConfigureSender(fs); err != nil {
-		return err
-	}
+	s.media.configureSender(fs)
 	DefaultBweFlags.ConfigureFlags(fs)
 
 	fs.Usage = func() {
@@ -141,27 +140,26 @@ Flags:
 		return errors.New("cannot run RoQ server and client simultaneously")
 	}
 
-	senderConfig, err := s.media.SenderConfig("rtp-stream-source")
+	senderConfig, err := s.media.senderConfig("rtp-stream-source")
 	if err != nil {
 		return err
 	}
-	senderConfig.RateBounds = media.RateBounds{
+	senderConfig.rateBounds = mrtp.RateBounds{
 		Initial: initTargetRate,
 		Min:     minTargetRate,
 		Max:     s.maxTargetRate,
 	}
 
-	factory, err := s.media.NewFactory()
-	if err != nil {
-		return err
-	}
 	runner := pipeline.NewRunner()
 	defer func() {
 		if closeErr := runner.Close(); closeErr != nil {
 			slog.Error("failed to close media pipeline", "error", closeErr)
 		}
 	}()
-	runner.Add(factory.Shared())
+	media, err := s.media.newPipeline(runner)
+	if err != nil {
+		return err
+	}
 
 	if s.roqServer || s.roqClient {
 		quicOptions := []quictransport.Option{
@@ -236,7 +234,7 @@ Flags:
 				return dcErr
 			}
 
-			s.dataSource, err = createDataSource(s.dcSourceFile, s.dcStartDelay, media.RateBounds{}, s.dcChunks)
+			s.dataSource, err = createDataSource(s.dcSourceFile, s.dcStartDelay, mrtp.RateBounds{}, s.dcChunks)
 			if err != nil {
 				return err
 			}
@@ -261,18 +259,15 @@ Flags:
 			return err
 		}
 
-		stream, err := factory.NewSender(senderConfig)
+		mediaGraph := pipeline.NewGraph()
+		runner.Add(mediaGraph)
+		mediaSender, err := media.addSender(mediaGraph, senderConfig, sendEndpoints{
+			rtp:           rtpFlow,
+			rtcpEndpoints: rtcpEndpoints{send: rtcpSendFlow, recv: rtcpRecvFlow},
+		})
 		if err != nil {
 			return err
 		}
-		if err = errors.Join(
-			stream.ConnectRTP(rtpFlow),
-			stream.ConnectRTCP(rtcpSendFlow, rtcpRecvFlow),
-		); err != nil {
-			return err
-		}
-		runner.Add(stream.Graph)
-		mediaSender := stream.Sender
 
 		// set rate callbacks
 		quicConn.SetSourceTargetRate = func(ratebps uint) error {
@@ -287,50 +282,36 @@ Flags:
 			return mediaSender.SetTargetBitrate(mediaTargetRate)
 		}
 
-	} else if err := s.setupPlainRTP(factory, runner, senderConfig); err != nil {
+	} else if err := s.setupPlainRTP(media, runner, senderConfig); err != nil {
 		return err
 	}
 
 	return runner.Run(ctx)
 }
 
-func (s *Send) setupPlainRTP(factory media.Factory, runner *pipeline.Runner, config media.SenderConfig) error {
-	stream, err := factory.NewSender(config)
-	if err != nil {
-		return err
-	}
-	// The runner takes the graph even when the wiring below fails, so that it
-	// closes what was built.
-	defer runner.Add(stream.Graph)
-
+func (s *Send) setupPlainRTP(media mediaPipeline, runner *pipeline.Runner, config senderConfig) error {
+	var endpoints sendEndpoints
 	switch s.transport {
 	case transportGstUDP:
 		// The pipeline sends the packets itself, from its own flags. Opening a
 		// socket here would only bind the same port twice.
-		if stream.RTP != nil {
-			return errGstUDPWithoutPipeline
-		}
-		return nil
 	case transportUDP:
+		var err error
+		if endpoints.rtp, err = udp.Dial(address(s.remoteAddr, uint16(s.udpPort)), s.traceRTP, mrtp.RTPBytes); err != nil {
+			return err
+		}
+		if endpoints.send, err = udp.Dial(address(s.remoteAddr, uint16(s.rtcpSendPort)), false, mrtp.RTCPBytes); err != nil {
+			return err
+		}
+		if endpoints.recv, err = udp.ListenPuller(address(s.localAddr, uint16(s.rtcpRecvPort)), false, mrtp.RTCP{}, mrtp.RTCPBytes); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unknown transport %q, available: %v", s.transport, transportNames)
 	}
 
-	rtpConn, err := udp.Dial(address(s.remoteAddr, uint16(s.udpPort)), s.traceRTP, mrtp.RTPBytes)
-	if err != nil {
-		return err
-	}
-	rtcpSendFlow, err := udp.Dial(address(s.remoteAddr, uint16(s.rtcpSendPort)), false, mrtp.RTCPBytes)
-	if err != nil {
-		return err
-	}
-	rtcpRecvFlow, err := udp.ListenPuller(address(s.localAddr, uint16(s.rtcpRecvPort)), false, mrtp.RTCP{}, mrtp.RTCPBytes)
-	if err != nil {
-		return err
-	}
-
-	return errors.Join(
-		stream.ConnectRTP(rtpConn),
-		stream.ConnectRTCP(rtcpSendFlow, rtcpRecvFlow),
-	)
+	g := pipeline.NewGraph()
+	runner.Add(g)
+	_, err := media.addSender(g, config, endpoints)
+	return err
 }
