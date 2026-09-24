@@ -16,6 +16,7 @@ import (
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/webrtc"
 	"github.com/pion/rtp"
+	pionwebrtc "github.com/pion/webrtc/v4"
 )
 
 func TestRTPUDPSession(t *testing.T) {
@@ -46,9 +47,7 @@ func TestRTPUDPSession(t *testing.T) {
 		}
 	}
 
-	srv.lock.Lock()
-	sess := srv.sessions[resp.ID].(*rtpUDPSession)
-	srv.lock.Unlock()
+	sess := session[*rtpUDPSession](t, srv, resp.ID)
 	deadline := time.Now().Add(time.Second)
 	for sess.discard.Packets() < n {
 		if time.Now().After(deadline) {
@@ -91,9 +90,7 @@ func TestWebRTCSession(t *testing.T) {
 	const n = 10
 	sendRTP(t, track, n)
 
-	srv.lock.Lock()
-	sess := srv.sessions[resp.ID].(*webrtcSession)
-	srv.lock.Unlock()
+	sess := session[*webrtcSession](t, srv, resp.ID)
 	waitFor(t, func() bool { return sess.packets() >= n })
 
 	if err := signaler.Close(ctx, resp.ID); err != nil {
@@ -137,6 +134,103 @@ func TestRejectsWebRTCWithoutOffer(t *testing.T) {
 	}
 }
 
+func TestWebRTCTrickleSession(t *testing.T) {
+	ts, srv := newTestServer(t)
+	local := signaling.NewCandidates()
+	client, track := newWebRTCClient(t, webrtc.OnICECandidate(func(c *pionwebrtc.ICECandidateInit) {
+		local.Push((*signaling.ICECandidate)(c))
+	}))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	offer, err := client.Offer(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signaler := &signaling.Client{BaseURL: ts.URL}
+	resp, err := signaler.Open(ctx, signaling.Request{
+		Protocol: signaling.ProtocolWebRTC,
+		WebRTC:   &signaling.WebRTCOffer{SDP: offer, Trickle: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = client.SetAnswer(resp.WebRTC.SDP); err != nil {
+		t.Fatal(err)
+	}
+	sent := make(chan error, 1)
+	go func() { sent <- signaler.SendCandidates(ctx, resp.ID, local) }()
+	var received atomic.Int64
+	err = signaler.ReadCandidates(ctx, resp.ID, func(c signaling.ICECandidate) error {
+		received.Add(1)
+		return client.AddICECandidate(pionwebrtc.ICECandidateInit(c))
+	})
+	if err != nil {
+		t.Fatalf("reading candidates: %v", err)
+	}
+	if received.Load() == 0 {
+		t.Fatal("server sent no candidates")
+	}
+	if err = <-sent; err != nil {
+		t.Fatalf("sending candidates: %v", err)
+	}
+	select {
+	case <-client.connected:
+	case <-ctx.Done():
+		t.Fatal("peer connection not established")
+	}
+
+	const n = 10
+	sendRTP(t, track, n)
+	sess := session[*webrtcSession](t, srv, resp.ID)
+	waitFor(t, func() bool { return sess.packets() >= n })
+}
+
+func TestCandidatesOfNonTrickleSession(t *testing.T) {
+	ts, _ := newTestServer(t)
+	ctx := context.Background()
+	signaler := &signaling.Client{BaseURL: ts.URL}
+	resp, err := signaler.Open(ctx, signaling.Request{Protocol: signaling.ProtocolRTPUDP})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = signaler.ReadCandidates(ctx, resp.ID, func(signaling.ICECandidate) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "400") {
+		t.Fatalf("reading candidates of an RTP session returned %v, want 400", err)
+	}
+}
+
+func TestPreflight(t *testing.T) {
+	ts, _ := newTestServer(t)
+	for _, path := range []string{"/sessions", "/sessions/x", "/sessions/x/candidates"} {
+		req, err := http.NewRequest(http.MethodOptions, ts.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent {
+			t.Errorf("OPTIONS %v returned %v, want 204", path, resp.Status)
+		}
+		if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+			t.Errorf("OPTIONS %v allows origin %q, want *", path, got)
+		}
+	}
+}
+
+// session returns the open session id as a T.
+func session[T signaling.Session](t *testing.T, srv *Server, id string) T {
+	t.Helper()
+	sess, ok := srv.handler.Session(id)
+	if !ok {
+		t.Fatalf("no session %v", id)
+	}
+	return sess.(T)
+}
+
 func newTestServer(t *testing.T) (*httptest.Server, *Server) {
 	t.Helper()
 	srv := New("127.0.0.1")
@@ -167,7 +261,7 @@ func newWebRTCClient(t *testing.T, opts ...webrtc.Option) (*webrtcClient, *webrt
 		webrtc.ListenIP(net.ParseIP("127.0.0.1")),
 	}, opts...)
 	var err error
-	client.Transport, err = webrtc.NewTransport(nil, true, options...)
+	client.Transport, err = webrtc.NewTransport(options...)
 	if err != nil {
 		t.Fatal(err)
 	}

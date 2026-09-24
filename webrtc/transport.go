@@ -2,7 +2,6 @@ package webrtc
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -37,11 +36,6 @@ const (
 	packetBufferSize = 1500
 )
 
-type Signaler interface {
-	SendSessionDescription(*webrtc.SessionDescription) error
-	SendICECandidate(*webrtc.ICECandidate) error
-}
-
 type Transport struct {
 	logger *slog.Logger
 
@@ -50,17 +44,13 @@ type Transport struct {
 	interceptorRegistry *interceptor.Registry
 	ecnTable            rfc8888.ECNLookupTable
 
-	pc         *webrtc.PeerConnection
-	signaler   Signaler
-	offerer    bool
-	iceServers []webrtc.ICEServer
+	pc           *webrtc.PeerConnection
+	iceServers   []webrtc.ICEServer
+	dataChannels chan *webrtc.DataChannel
 
-	pendingICECandidatesLock sync.Mutex
-	hasRemoteDescription     bool
-	pendingICECandidates     []*webrtc.ICECandidate
-
-	onRemoteTrack func(*RTPReceiver)
-	onConnected   func()
+	onRemoteTrack    func(*RTPReceiver)
+	onConnected      func()
+	onLocalCandidate func(*webrtc.ICECandidateInit)
 
 	rateController rateController
 	pacer          *pacing.InterceptorFactory
@@ -81,6 +71,16 @@ func OnTrack(handler func(*RTPReceiver)) Option {
 func OnConnected(f func()) Option {
 	return func(t *Transport) error {
 		t.onConnected = f
+		return nil
+	}
+}
+
+// OnICECandidate trickles ICE: Offer and Answer return without waiting for
+// candidates, and each local candidate is passed to handler instead, followed
+// by nil once gathering is complete.
+func OnICECandidate(handler func(*webrtc.ICECandidateInit)) Option {
+	return func(t *Transport) error {
+		t.onLocalCandidate = handler
 		return nil
 	}
 }
@@ -284,15 +284,16 @@ func RegisterFakeCodec() Option {
 	return AddExtraCodecs(mrtp.Fake.MimeType(), uint32(mrtp.Fake.ClockRate()), fakePayloadType)
 }
 
-// NewTransport creates a peer connection. With a nil signaler, negotiation is
-// driven by Offer, Answer and SetAnswer without trickle ICE.
-func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, error) {
+// dataChannelQueueDepth is how many data channels the peer opens are kept
+// until NewDataChannelReceiver takes them.
+const dataChannelQueueDepth = 4
+
+// NewTransport creates a peer connection. Negotiation is driven by Offer,
+// Answer and SetAnswer.
+func NewTransport(opts ...Option) (*Transport, error) {
 	t := &Transport{
-		logger:        slog.Default(),
-		pc:            nil,
-		signaler:      signaler,
-		offerer:       offerer,
-		onRemoteTrack: nil,
+		logger:       slog.Default(),
+		dataChannels: make(chan *webrtc.DataChannel, dataChannelQueueDepth),
 		iceServers: []webrtc.ICEServer{
 			{
 				URLs: []string{"stun:stun.l.google.com:19302"},
@@ -319,9 +320,9 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 		return nil, err
 	}
 
-	pc.OnNegotiationNeeded(t.onNegotiationNeeded)
 	pc.OnICECandidate(t.onICECandidate)
 	pc.OnTrack(t.onTrack)
+	pc.OnDataChannel(t.onDataChannel)
 	pc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
 		t.logger.Debug("connection state changed", "new_state", pcs)
 		if pcs == webrtc.PeerConnectionStateConnected && t.onConnected != nil {
@@ -332,73 +333,46 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 	return t, nil
 }
 
-func (t *Transport) NewDataChannelSender(ctx context.Context, label string) (*DCsender, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+// NewDataChannelSender creates a data channel, which the next offer
+// negotiates.
+func (t *Transport) NewDataChannelSender(label string) (*DCsender, error) {
 	dc, err := t.pc.CreateDataChannel(label, nil)
 	if err != nil {
 		return nil, err
 	}
-	return newDCsender(ctx, dc)
+	return newDCsender(dc), nil
 }
 
-// NewDataChannelReceiver blocks until the peer opens a data channel or ctx is
-// done.
+// NewDataChannelReceiver returns the next data channel the peer opened,
+// blocking until it opens one or ctx is done.
 func (t *Transport) NewDataChannelReceiver(ctx context.Context) (*DCreceiver, error) {
-	// Buffered so the callback never blocks if ctx is done first.
-	dcChan := make(chan *webrtc.DataChannel, 1)
-	t.pc.OnDataChannel(func(dataChannel *webrtc.DataChannel) {
-		select {
-		case dcChan <- dataChannel:
-		default:
-		}
-	})
-
 	select {
-	case dc := <-dcChan:
+	case dc := <-t.dataChannels:
 		return newReceiver(dc), nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 }
 
-func (t *Transport) onNegotiationNeeded() {
-	t.logger.Info("peer connection needs negotiation")
-	if t.offerer && t.signaler != nil {
-		t.logger.Info("creating offer")
-		offer, err := t.pc.CreateOffer(nil)
-		if err != nil {
-			t.logger.Error("failed to create offer", "error", err)
-			return
-		}
-		if err = t.pc.SetLocalDescription(offer); err != nil {
-			t.logger.Error("failed to set local description", "error", err)
-			return
-		}
-		if err = t.signaler.SendSessionDescription(&offer); err != nil {
-			t.logger.Error("signaler failed to send session description", "error", err)
-			return
-		}
+func (t *Transport) onDataChannel(dc *webrtc.DataChannel) {
+	select {
+	case t.dataChannels <- dc:
+	default:
+		t.logger.Warn("dropping data channel nothing receives", "label", dc.Label())
 	}
 }
 
-func (t *Transport) onICECandidate(i *webrtc.ICECandidate) {
-	t.logger.Info("got new ICE candidate", "candidate", i)
-	if i == nil || t.signaler == nil {
+func (t *Transport) onICECandidate(candidate *webrtc.ICECandidate) {
+	t.logger.Info("got new ICE candidate", "candidate", candidate)
+	if t.onLocalCandidate == nil {
 		return
 	}
-	t.pendingICECandidatesLock.Lock()
-	defer t.pendingICECandidatesLock.Unlock()
-
-	if !t.hasRemoteDescription {
-		t.pendingICECandidates = append(t.pendingICECandidates, i)
+	if candidate == nil {
+		t.onLocalCandidate(nil)
 		return
 	}
-	if err := t.signaler.SendICECandidate(i); err != nil {
-		t.logger.Error("signaler failed to send ICE candidate", "error", err)
-		return
-	}
+	init := candidate.ToJSON()
+	t.onLocalCandidate(&init)
 }
 
 func (t *Transport) onTrack(tr *webrtc.TrackRemote, r *webrtc.RTPReceiver) {
@@ -414,45 +388,8 @@ func (t *Transport) onTrack(tr *webrtc.TrackRemote, r *webrtc.RTPReceiver) {
 	t.onRemoteTrack(receiver)
 }
 
-func (t *Transport) HandleSessionDescription(description *webrtc.SessionDescription) error {
-	if t.offerer && description.Type == webrtc.SDPTypeOffer {
-		t.logger.Error("got remote offer but also acting as offerer")
-		return errors.New("can't accept your offer since I'm an offerer myself")
-	}
-	if err := t.pc.SetRemoteDescription(*description); err != nil {
-		t.logger.Error("failed to set remote description", "error", err)
-		return errors.New("failed to process session description")
-	}
-	t.pendingICECandidatesLock.Lock()
-	defer t.pendingICECandidatesLock.Unlock()
-	t.hasRemoteDescription = true
-	for _, c := range t.pendingICECandidates {
-		if err := t.signaler.SendICECandidate(c); err != nil {
-			t.logger.Error("signaler failed to send ICE candidate", "error", err)
-		}
-	}
-
-	if description.Type != webrtc.SDPTypeOffer {
-		return nil
-	}
-
-	answer, err := t.pc.CreateAnswer(nil)
-	if err != nil {
-		t.logger.Error("failed to create answer", "error", err)
-		return errors.New("failed to create answer")
-	}
-	if err = t.pc.SetLocalDescription(answer); err != nil {
-		t.logger.Error("failed to set answer as local description", "error", err)
-		return errors.New("failed to set local description")
-	}
-	if err = t.signaler.SendSessionDescription(t.pc.LocalDescription()); err != nil {
-		t.logger.Error("signaler failed to send session description", "error", err)
-		return errors.New("failed to send answer")
-	}
-	return nil
-}
-
-// Offer creates an offer and returns it once all ICE candidates are gathered.
+// Offer creates an offer. Without OnICECandidate, it returns once all ICE
+// candidates are gathered.
 func (t *Transport) Offer(ctx context.Context) (string, error) {
 	offer, err := t.pc.CreateOffer(nil)
 	if err != nil {
@@ -461,8 +398,8 @@ func (t *Transport) Offer(ctx context.Context) (string, error) {
 	return t.setLocalDescription(ctx, offer)
 }
 
-// Answer applies a complete offer and returns the answer once all ICE
-// candidates are gathered.
+// Answer applies an offer and returns the answer. Without OnICECandidate, it
+// returns once all ICE candidates are gathered.
 func (t *Transport) Answer(ctx context.Context, offer string) (string, error) {
 	if err := t.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offer}); err != nil {
 		return "", err
@@ -474,12 +411,18 @@ func (t *Transport) Answer(ctx context.Context, offer string) (string, error) {
 	return t.setLocalDescription(ctx, answer)
 }
 
-// SetAnswer applies the peer's complete answer to an offer from Offer.
+// SetAnswer applies the peer's answer to an offer from Offer.
 func (t *Transport) SetAnswer(answer string) error {
 	return t.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer})
 }
 
 func (t *Transport) setLocalDescription(ctx context.Context, description webrtc.SessionDescription) (string, error) {
+	if t.onLocalCandidate != nil {
+		if err := t.pc.SetLocalDescription(description); err != nil {
+			return "", err
+		}
+		return t.pc.LocalDescription().SDP, nil
+	}
 	gathered := webrtc.GatheringCompletePromise(t.pc)
 	if err := t.pc.SetLocalDescription(description); err != nil {
 		return "", err
@@ -492,7 +435,8 @@ func (t *Transport) setLocalDescription(ctx context.Context, description webrtc.
 	return t.pc.LocalDescription().SDP, nil
 }
 
-func (t *Transport) HandleICECandidate(candidate webrtc.ICECandidateInit) error {
+// AddICECandidate applies a candidate the peer trickled.
+func (t *Transport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
 	return t.pc.AddICECandidate(candidate)
 }
 

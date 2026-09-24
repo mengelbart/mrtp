@@ -199,7 +199,7 @@ func (c *Client) sendWebRTC(ctx context.Context, signaler *signaling.Client, sou
 		}
 		options = append(options, bweOptions...)
 	}
-	transport, err := webrtc.NewTransport(nil, true, options...)
+	transport, err := webrtc.NewTransport(options...)
 	if err != nil {
 		return err
 	}

@@ -18,7 +18,6 @@ type browserSubCmd struct {
 	localAddr      string
 	remoteAddr     string
 	sourceLocation string
-	localPort      string
 	remotePort     string
 
 	datachannel  bool
@@ -30,10 +29,9 @@ type browserSubCmd struct {
 func (b *browserSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("browser", flag.ExitOnError)
 	fs.StringVar(&b.sourceLocation, "source-location", "", "Location for filesource")
-	fs.StringVar(&b.localAddr, "local", "127.0.0.1", "Local address")
-	fs.StringVar(&b.remoteAddr, "remote", "127.0.0.1", "Remote address")
-	fs.StringVar(&b.localPort, "local-port", "8080", "Local port of HTTP signaling server to listen on")
-	fs.StringVar(&b.remotePort, "remote-port", "8080", "Remote Port of HTTP signaling server to connect to")
+	fs.StringVar(&b.localAddr, "local", "127.0.0.1", "Local address to serve the browser page on")
+	fs.StringVar(&b.remoteAddr, "remote", "127.0.0.1", "Remote address of the HTTP signaling server to connect to")
+	fs.StringVar(&b.remotePort, "remote-port", "8080", "Remote port of the HTTP signaling server to connect to")
 	fs.BoolVar(&b.datachannel, "dc", false, "Send/Receive data with data channels")
 	fs.UintVar(&b.dcStartDelay, "dc-start-delay", 0, "Start delay in seconds before data channel source starts sending data.")
 	fs.StringVar(&b.dcSourceFile, "dc-source", "", "File to be sent. If empty, random data will be sent.")
@@ -87,7 +85,7 @@ Flags:
 		opts = append(opts, browser.UseDatachannel(b.dcStartDelay, b.dcSourceFile))
 	}
 
-	ctrl, err := browser.NewController(b.sourceLocation, b.localAddr, b.localPort, b.remoteAddr, b.remotePort, opts...)
+	ctrl, err := browser.NewController(b.sourceLocation, b.localAddr, b.remoteAddr, b.remotePort, opts...)
 	if err != nil {
 		return err
 	}

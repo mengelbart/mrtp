@@ -1,8 +1,9 @@
 package webrtc
 
 import (
-	"context"
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/mengelbart/mrtp"
 	"github.com/pion/webrtc/v4"
@@ -17,18 +18,22 @@ const (
 type DCsender struct {
 	dc       *webrtc.DataChannel
 	sendMore chan struct{}
+	opened   chan struct{}
+
+	closeOnce sync.Once
+	closed    chan struct{}
 }
 
-// newDCsender blocks until the datachannel is open or ctx is done
-func newDCsender(ctx context.Context, dc *webrtc.DataChannel) (*DCsender, error) {
+func newDCsender(dc *webrtc.DataChannel) *DCsender {
 	s := &DCsender{
 		dc:       dc,
 		sendMore: make(chan struct{}, 1),
+		opened:   make(chan struct{}),
+		closed:   make(chan struct{}),
 	}
 
 	dc.SetBufferedAmountLowThreshold(bufferedAmountLowThreshold)
 
-	connected := make(chan struct{})
 	dc.OnBufferedAmountLow(func() {
 		select {
 		case s.sendMore <- struct{}{}:
@@ -37,15 +42,9 @@ func newDCsender(ctx context.Context, dc *webrtc.DataChannel) (*DCsender, error)
 	})
 
 	dc.OnOpen(func() {
-		close(connected)
+		close(s.opened)
 	})
-
-	select {
-	case <-connected:
-		return s, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+	return s
 }
 
 // Negotiate implements mrtp.Sink.
@@ -56,10 +55,17 @@ func (s *DCsender) Negotiate(f mrtp.Format) error {
 	return nil
 }
 
-// Write implements mrtp.Sink. It blocks while the data channel is full,
-// because dc.Send does not block and builds huge buffers instead.
+// Write implements mrtp.Sink. It blocks until the data channel is open, and
+// while it is full, because dc.Send does not block and builds huge buffers
+// instead.
 func (s *DCsender) Write(p mrtp.Packet[mrtp.DataChunk]) error {
 	defer p.Release()
+
+	select {
+	case <-s.opened:
+	case <-s.closed:
+		return errors.New("webrtc: data channel sender is closed")
+	}
 
 	if err := s.dc.Send(p.Value().Data); err != nil {
 		return err
@@ -76,8 +82,10 @@ func (s *DCsender) EndOfStream() error {
 	return nil
 }
 
+// Close implements mrtp.Element. It leaves the data channel open, because
+// closing it does not guarantee that what was sent is delivered.
 func (s *DCsender) Close() error {
-	// webrtc datachannel close does not garantee all data is sent
+	s.closeOnce.Do(func() { close(s.closed) })
 	return nil
 }
 

@@ -83,24 +83,26 @@ go run cmd/main.go send -roq-client -roq-mapping 1 -bwe gcc
 Add `-source-location <path/to/video>` to send a custom video instead of videotestsrc.
 
 ### WebRTC
+The answerer runs the signaling server on `-local-port`, and the offerer (`-offer`) connects to it on `-remote-port`.
+
 Start the receiver:
 ```
-go run cmd/main.go webrtc -local-port 8081 -remote-port 8080 -pion-ccfb
+go run cmd/main.go webrtc -local-port 8081 -pion-ccfb
 ```
 Start the sender:
 ```
-go run cmd/main.go webrtc -local-port 8080 -remote-port 8081 -pacing -bwe gcc -send-track - offer -pion-read-ccfb
+go run cmd/main.go webrtc -remote-port 8081 -pacing -bwe gcc -send-track -offer -pion-read-ccfb
 ```
 Add `-source-location <path/to/video>` to send a custom video instead of videotestsrc.
 
 ### Chrome
 Start the `webrtc` command as receiver:
 ```
-go run cmd/main.go webrtc -local-port 8081 -remote-port 8080 -sink-codec VP8 -pion-twcc
+go run cmd/main.go webrtc -local-port 8081 -sink-codec VP8 -pion-twcc
 ```
 Start Chrome:
 ```
-go run cmd/main.go browser -source-location <path/to/video> -local-port 8080 -remote-port 8081
+go run cmd/main.go browser -source-location <path/to/video> -remote-port 8081
 ```
 
 ## Congestion Control Combinations

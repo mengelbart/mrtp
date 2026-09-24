@@ -59,8 +59,9 @@ func (s *rtpUDPSession) run(ctx context.Context) {
 	}
 }
 
-// close stops the pipeline and releases the socket.
-func (s *rtpUDPSession) close() error {
+// Close implements signaling.Session. It stops the pipeline and releases the
+// socket.
+func (s *rtpUDPSession) Close() error {
 	s.cancel()
 	// Closing the socket unblocks the pending Read.
 	err := s.src.Close()

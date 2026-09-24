@@ -14,8 +14,6 @@ import (
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
-	mrtpwebrtc "github.com/mengelbart/mrtp/webrtc"
-	pionwebrtc "github.com/pion/webrtc/v4"
 )
 
 //go:embed client.html
@@ -27,7 +25,6 @@ type Controller struct {
 	videoPath  string
 	localAddr  string
 	remoteAddr string
-	localPort  string
 	remotePort string
 
 	datachannel  bool
@@ -44,11 +41,12 @@ func UseDatachannel(startDelay uint, sourceFile string) Option {
 	}
 }
 
-func NewController(videoPath, localAddr, localPort, remoteAddr, remotePort string, opts ...Option) (*Controller, error) {
+// NewController returns a controller whose browser serves its page on
+// localAddr and signals to the server at remoteAddr and remotePort.
+func NewController(videoPath, localAddr, remoteAddr, remotePort string, opts ...Option) (*Controller, error) {
 	c := &Controller{
 		videoPath:  videoPath,
 		localAddr:  localAddr,
-		localPort:  localPort,
 		remoteAddr: remoteAddr,
 		remotePort: remotePort,
 	}
@@ -132,49 +130,8 @@ func (c *Controller) Run() error {
 		}
 	})
 
-	// singal server
-	incomingSignaler := NewSignaler(
-		func(sessionDesc *pionwebrtc.SessionDescription) error {
-			payload, err := json.Marshal(sessionDesc)
-			if err != nil {
-				return err
-			}
-			js := fmt.Sprintf("window.applyRemoteSessionDescription(%s)", string(payload))
-			return chromedp.Run(taskCtx, chromedp.Evaluate(js, nil))
-		},
-		func(candidate pionwebrtc.ICECandidateInit) error {
-			payload, err := json.Marshal(candidate)
-			if err != nil {
-				return err
-			}
-			js := fmt.Sprintf("window.applyRemoteCandidate(%s)", string(payload))
-			return chromedp.Run(taskCtx, chromedp.Evaluate(js, nil))
-		},
-	)
-	signalingHandler := mrtpwebrtc.NewHTTPSignalingHandler(incomingSignaler)
-
-	localSignalMux := http.NewServeMux()
-	localSignalMux.HandleFunc("/candidate", signalingHandler.HandleCandidate)
-	localSignalMux.HandleFunc("/session_description", signalingHandler.HandleSessionDescription)
-
-	localSignalServer := &http.Server{
-		Addr:    net.JoinHostPort(c.localAddr, c.localPort),
-		Handler: localSignalMux,
-	}
-	defer func() {
-		if err := localSignalServer.Close(); err != nil {
-			panic(err)
-		}
-	}()
-
-	go func() {
-		if serveErr := localSignalServer.ListenAndServe(); serveErr != nil && serveErr != http.ErrServerClosed {
-			slog.Error("browser signaling server stopped", "error", serveErr)
-		}
-	}()
-
 	// start web server to serve client HTML
-	ln, err := net.Listen("tcp", fmt.Sprintf("%s:9090", c.localAddr)) // TODO: verify port is not used by signaling server
+	ln, err := net.Listen("tcp", fmt.Sprintf("%s:9090", c.localAddr))
 	if err != nil {
 		return err
 	}

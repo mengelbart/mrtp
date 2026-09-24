@@ -27,9 +27,19 @@ type RTPEndpoint struct {
 }
 
 type WebRTCOffer struct {
-	SDP string `json:"sdp"`
+	SDP     string `json:"sdp"`
+	Trickle bool   `json:"trickle,omitempty"`
 }
 
 type WebRTCAnswer struct {
 	SDP string `json:"sdp"`
+}
+
+// ICECandidate is the JSON form of an ICE candidate, as the browser's
+// RTCIceCandidate.toJSON returns it.
+type ICECandidate struct {
+	Candidate        string  `json:"candidate"`
+	SDPMid           *string `json:"sdpMid"`
+	SDPMLineIndex    *uint16 `json:"sdpMLineIndex"`
+	UsernameFragment *string `json:"usernameFragment"`
 }

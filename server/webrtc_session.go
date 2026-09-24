@@ -13,6 +13,7 @@ import (
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/webrtc"
 	"github.com/mengelbart/mrtp/webrtc/ecnnet"
+	pionwebrtc "github.com/pion/webrtc/v4"
 )
 
 const webrtcBufferSize = 10_000_000
@@ -25,17 +26,17 @@ type webrtcSession struct {
 	runner    *pipeline.Runner
 	cancel    context.CancelFunc
 	done      chan struct{}
+	// candidates is nil unless the client trickles ICE.
+	candidates *signaling.Candidates
 
 	lock     sync.Mutex
 	discards []*pipeline.Discard[mrtp.RTPPacket]
 }
 
-// errInvalidOffer marks errors caused by the client's request.
-var errInvalidOffer = errors.New("invalid webrtc offer")
-
 // newWebRTCSession answers offer with a peer connection whose candidates are
 // restricted to host. It generates CCFB, NACK and RTCP reports as far as the
-// offer negotiates them, and returns once the answer is complete.
+// offer negotiates them. Unless the offer trickles ICE, it returns once the
+// answer is complete.
 func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebRTCOffer, logger *slog.Logger) (*webrtcSession, string, error) {
 	ip := net.ParseIP(host)
 	if ip == nil {
@@ -57,7 +58,7 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 		cancel: cancel,
 		done:   make(chan struct{}),
 	}
-	sess.transport, err = webrtc.NewTransport(nil, false,
+	options := []webrtc.Option{
 		webrtc.SetNet(stdnet),
 		webrtc.SetSRTPBufferLimit(webrtcBufferSize),
 		webrtc.RegisterDefaultCodecs(),
@@ -69,7 +70,14 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 		webrtc.IncludeLoopbackCandidates(),
 		webrtc.ListenIP(ip),
 		webrtc.OnTrack(sess.onTrack),
-	)
+	}
+	if offer.Trickle {
+		sess.candidates = signaling.NewCandidates()
+		options = append(options, webrtc.OnICECandidate(func(c *pionwebrtc.ICECandidateInit) {
+			sess.candidates.Push((*signaling.ICECandidate)(c))
+		}))
+	}
+	sess.transport, err = webrtc.NewTransport(options...)
 	if err != nil {
 		cancel()
 		return nil, "", err
@@ -77,7 +85,7 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 	answer, err := sess.transport.Answer(ctx, offer.SDP)
 	if err != nil {
 		cancel()
-		return nil, "", errors.Join(fmt.Errorf("%w: %w", errInvalidOffer, err), sess.transport.Close())
+		return nil, "", errors.Join(fmt.Errorf("%w: invalid webrtc offer: %w", signaling.ErrBadRequest, err), sess.transport.Close())
 	}
 	go sess.run(runCtx)
 	return sess, answer, nil
@@ -116,8 +124,19 @@ func (s *webrtcSession) packets() uint64 {
 	return n
 }
 
-// close stops the pipelines and the peer connection.
-func (s *webrtcSession) close() error {
+// AddICECandidate implements signaling.TrickleSession.
+func (s *webrtcSession) AddICECandidate(candidate signaling.ICECandidate) error {
+	return s.transport.AddICECandidate(pionwebrtc.ICECandidateInit(candidate))
+}
+
+// LocalCandidates implements signaling.TrickleSession.
+func (s *webrtcSession) LocalCandidates() *signaling.Candidates {
+	return s.candidates
+}
+
+// Close implements signaling.Session. It stops the pipelines and the peer
+// connection.
+func (s *webrtcSession) Close() error {
 	s.cancel()
 	// Closing the peer connection unblocks pending track reads.
 	err := s.transport.Close()

@@ -63,8 +63,6 @@
       });
 
     const remoteSignalURL = "__REMOTE_SIGNAL_URL__";
-    const pendingRemoteCandidates = [];
-    let remoteDescriptionApplied = false;
 
     const pc = new RTCPeerConnection({
       iceServers: [
@@ -79,8 +77,9 @@
       console.log("__STATUS__:" + msg);
     };
 
-    async function postJSON(url, payload) {
-      setStatus(`Posting JSON to ${url}`);
+    // postJSON posts payload and returns the response, which it expects to
+    // have the status want.
+    async function postJSON(url, payload, want) {
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -88,53 +87,13 @@
         },
         body: JSON.stringify(payload),
       });
-
-      if (!response.ok) {
-        setStatus(
-          `Failed to POST ${url}: ${response.status}, response: ${response.statusText}`,
-        );
+      if (response.status !== want) {
+        const msg = await response.text();
+        setStatus(`Failed to POST ${url}: ${response.status}: ${msg}`);
         throw new Error(`POST ${url} failed with ${response.status}`);
       }
+      return response;
     }
-
-    async function postText(url, payload) {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-        },
-        body: payload,
-      });
-
-      if (!response.ok) {
-        setStatus(`Failed to POST ${url}: ${response.status}`);
-        throw new Error(`POST ${url} failed with ${response.status}`);
-      }
-      window.startFileDataSend;
-    }
-
-    window.applyRemoteSessionDescription = async (sessionDescription) => {
-      await pc.setRemoteDescription(sessionDescription);
-      remoteDescriptionApplied = true;
-      setStatus(`Applied remote ${sessionDescription.type}`);
-
-      setStatus(
-        `Remote sessionDescription ${JSON.stringify(sessionDescription)}`,
-      );
-
-      while (pendingRemoteCandidates.length > 0) {
-        await pc.addIceCandidate(pendingRemoteCandidates.shift());
-      }
-    };
-
-    window.applyRemoteCandidate = async (candidate) => {
-      if (remoteDescriptionApplied) {
-        await pc.addIceCandidate(candidate);
-        return;
-      }
-
-      pendingRemoteCandidates.push(candidate);
-    };
 
     window.startRandomDataSender = async (datafile) => {
       let dataChannel = pc.createDataChannel("MyApp Channel");
@@ -217,11 +176,24 @@
       }
     }
 
+    // Local candidates gathered before the session exists wait here.
     let candidatesBuffer = [];
-    let offerPosted = false;
+    let sessionURL = null;
 
-    function sendCandidateText(candidateText) {
-      return postText(`${remoteSignalURL}/candidate`, candidateText);
+    function sendCandidate(candidate) {
+      return postJSON(`${sessionURL}/candidates`, candidate, 204);
+    }
+
+    // readRemoteCandidates applies the server's candidates as it streams them.
+    function readRemoteCandidates() {
+      const events = new EventSource(`${sessionURL}/candidates`);
+      events.onmessage = (event) => {
+        pc.addIceCandidate(JSON.parse(event.data)).catch((err) =>
+          setStatus(`Failed to add remote candidate: ${err}`),
+        );
+      };
+      events.addEventListener("end-of-candidates", () => events.close());
+      events.onerror = () => setStatus("Remote candidate stream failed");
     }
 
     async function startMediaAndOffer() {
@@ -236,24 +208,28 @@
       await pc.setLocalDescription(offer);
 
       setStatus("Going to post offer to remote peer");
-      await postJSON(
-        `${remoteSignalURL}/session_description`,
-        pc.localDescription,
+      const response = await postJSON(
+        `${remoteSignalURL}/sessions`,
+        {
+          protocol: "webrtc",
+          webrtc: { sdp: pc.localDescription.sdp, trickle: true },
+        },
+        201,
       );
-      setStatus(
-        `Local sessionDescription ${JSON.stringify(pc.localDescription)}`,
-      );
+      const session = await response.json();
+      await pc.setRemoteDescription({ type: "answer", sdp: session.webrtc.sdp });
+      setStatus(`Opened session ${session.id}`);
 
-      // mark as posted and flush buffered
-      offerPosted = true;
-      for (const candText of candidatesBuffer) {
+      sessionURL = `${remoteSignalURL}/sessions/${encodeURIComponent(session.id)}`;
+      readRemoteCandidates();
+      for (const candidate of candidatesBuffer) {
         try {
-          await sendCandidateText(candText);
+          await sendCandidate(candidate);
         } catch (err) {
           setStatus(`Failed post buffered candidate: ${err}`);
         }
       }
-      candidatesBuffer = []; // clear buffer
+      candidatesBuffer = [];
       setStatus("Sent offer and flushed candidates");
 
       // set max bitrate of video stream
@@ -295,11 +271,11 @@
     pc.oniceconnectionstatechange = (e) => setStatus(pc.iceConnectionState);
     pc.onicecandidate = (event) => {
       if (!event.candidate) return;
-      const candText = event.candidate.toJSON().candidate;
-      if (!offerPosted) {
-        candidatesBuffer.push(candText);
+      const candidate = event.candidate.toJSON();
+      if (sessionURL === null) {
+        candidatesBuffer.push(candidate);
       } else {
-        sendCandidateText(candText).catch((err) =>
+        sendCandidate(candidate).catch((err) =>
           setStatus(`Failed post candidate: ${err}`),
         );
       }
