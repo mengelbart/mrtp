@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/packetization"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,7 +79,7 @@ func packetizeFrames(t *testing.T, c mrtp.Codec, frames [][]byte) [][][]byte {
 	packets := make([][][]byte, 0, len(frames))
 	sink := newCollector(mrtp.RTPBytes)
 
-	packetizer := NewRTPPacketizer(1420, 96, 0, 90_000, c)
+	packetizer := packetization.NewRTPPacketizer(1420, 96, 0, 90_000, c)
 	require.NoError(t, packetizer.Negotiate(mrtp.EncodedVideo{Codec: c}))
 	require.NoError(t, packetizer.Connect(sink))
 
@@ -109,7 +110,7 @@ func runDepacketizer(t *testing.T, c mrtp.Codec, framePackets [][][]byte) [][]by
 	t.Helper()
 
 	received := newCollector(encodedBytes)
-	depacketizer := NewRTPDepacketizer(depacketizerTimeout, nil)
+	depacketizer := packetization.NewRTPDepacketizer(depacketizerTimeout, nil)
 	require.NoError(t, depacketizer.Negotiate(mrtp.RTP{
 		Codec:       c,
 		PayloadType: 96,

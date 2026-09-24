@@ -4,12 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	nethttp "net/http"
 	"os"
 
-	"github.com/julienschmidt/httprouter"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/http"
-	"github.com/mengelbart/mrtp/internal/web"
+	"github.com/mengelbart/mrtp/server"
 )
 
 func init() {
@@ -17,26 +17,22 @@ func init() {
 }
 
 type Serve struct {
-	cert      string
-	key       string
-	httpAddr  string
-	httpsAddr string
+	addr      string
+	mediaHost string
 }
 
 // Help implements cmdmain.SubCmd.
 func (s *Serve) Help() string {
-	return "Run web server"
+	return "Run signaling server"
 }
 
 func (s *Serve) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	fs.StringVar(&s.cert, "cert", "localhost.pem", "TLS Certificate")
-	fs.StringVar(&s.key, "key", "localhost-key.pem", "TLS Certificate Key")
-	fs.StringVar(&s.httpAddr, "http-addr", "127.0.0.1:8080", "HTTP Server address")
-	fs.StringVar(&s.httpsAddr, "https-addr", "127.0.0.1:4443", "HTTPS Server address")
+	fs.StringVar(&s.addr, "addr", "127.0.0.1:8080", "HTTP signaling server address")
+	fs.StringVar(&s.mediaHost, "media-host", "127.0.0.1", "Host to bind and advertise media sockets on")
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Run a frontend web server
+		fmt.Fprintf(os.Stderr, `Run a signaling server that accepts media sessions from clients
 
 Usage:
 	%s serve [flags]
@@ -50,29 +46,28 @@ Flags:
 		return err
 	}
 
-	if len(fs.Args()) > 1 {
-		fmt.Printf("error: unknown extra arguments: %v\n", flag.Args()[1:])
+	if len(fs.Args()) > 0 {
+		fmt.Fprintf(os.Stderr, "error: unknown extra arguments: %v\n", fs.Args())
 		fs.Usage()
 		os.Exit(1)
 	}
 
-	mux := httprouter.New()
-	if err := web.Register(mux); err != nil {
-		return err
-	}
+	srv := server.New(s.mediaHost)
+	defer srv.Close()
 
-	server, err := http.NewServer(
-		http.H1Address(s.httpAddr),
-		http.H2Address(s.httpsAddr),
-		http.H3Address(s.httpsAddr),
+	mux := nethttp.NewServeMux()
+	srv.Register(mux)
+
+	httpServer, err := http.NewServer(
+		http.H1Address(s.addr),
+		http.ListenH2(false),
+		http.ListenH3(false),
+		http.RedirectH1ToH3(false),
 		http.Handle(mux),
-		http.CertificateFile(s.cert),
-		http.CertificateKeyFile(s.key),
 		http.RequestLogger(slog.Default()),
 	)
 	if err != nil {
 		return err
 	}
-
-	return server.ListenAndServe()
+	return httpServer.ListenAndServe()
 }

@@ -1,4 +1,4 @@
-package gopipe
+package packetization
 
 import (
 	"bytes"
@@ -119,7 +119,7 @@ func (d *RTPDepacketizer) Format() mrtp.Format {
 // Connect implements mrtp.Source.
 func (d *RTPDepacketizer) Connect(down mrtp.Sink[mrtp.EncodedFrame]) error {
 	if d.down != nil {
-		return errors.New("gopipe: RTP depacketizer is already connected")
+		return errors.New("packetization: depacketizer is already connected")
 	}
 	d.down = down
 	return nil
@@ -131,7 +131,7 @@ func (d *RTPDepacketizer) Write(packet mrtp.Packet[mrtp.RTPPacket]) error {
 	defer packet.Release()
 
 	if d.depacketizer == nil {
-		return errors.New("gopipe: RTP depacketizer wrote before it was negotiated")
+		return errors.New("packetization: depacketizer wrote before it was negotiated")
 	}
 	if d.rtt != nil {
 		d.updateTimeout(d.rtt.RTT())

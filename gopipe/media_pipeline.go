@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/fake"
 	"github.com/mengelbart/mrtp/media"
+	"github.com/mengelbart/mrtp/packetization"
 	"github.com/mengelbart/mrtp/pipeline"
 )
 
@@ -29,6 +31,9 @@ const (
 	// TODO: this could be read from the media instead.
 	sinkFPSNum = 30
 	sinkFPSDen = 1
+
+	// fakeFPS is the frame rate of the fake codec's source.
+	fakeFPS = 30
 )
 
 type implementation struct {
@@ -73,7 +78,7 @@ func (f *factory) NewSender(config media.SenderConfig) (*media.SendStream, error
 	if err != nil {
 		return nil, err
 	}
-	packetizer := NewRTPPacketizer(
+	packetizer := packetization.NewRTPPacketizer(
 		uint16(f.impl.mtu),
 		format.PayloadType,
 		format.SSRC, // TODO: Set SSRC to a random value, or allow the user to set it.
@@ -123,7 +128,10 @@ func (f *factory) newSource(g *pipeline.Graph, config media.SenderConfig) (*send
 		if bounds.Max == 0 {
 			return nil, nil, fmt.Errorf("the %v codec needs rate bounds, its frame sizes are its target bitrate", mrtp.Fake)
 		}
-		source := NewFakeSource(f.impl.fakeRunTime, uint64(bounds.Min), uint64(bounds.Max), uint64(bounds.Initial))
+		source, err := fake.New(f.impl.fakeRunTime, fakeFPS, bounds)
+		if err != nil {
+			return nil, nil, err
+		}
 		return &sendSource{
 			driver:        source,
 			frameDuration: source.FrameDuration(),
@@ -159,7 +167,7 @@ func (f *factory) newSource(g *pipeline.Graph, config media.SenderConfig) (*send
 
 // sendTail spaces the packets of a frame out over the frame's duration, and
 // returns the port the transport is wired to.
-func sendTail(g *pipeline.Graph, packetizer *RTPPacketizer, frameDuration time.Duration) (mrtp.Source[mrtp.RTPPacket], error) {
+func sendTail(g *pipeline.Graph, packetizer *packetization.RTPPacketizer, frameDuration time.Duration) (mrtp.Source[mrtp.RTPPacket], error) {
 	queue := pipeline.NewQueue(sendQueueDepth, pipeline.PaceFrames(
 		(*mrtp.RTPPacket).Marker, frameDuration,
 	))
@@ -176,7 +184,7 @@ func (f *factory) NewReceiver(config media.ReceiverConfig) (*media.ReceiveStream
 	// The depacketizer waits for a missing packet, so how long it is worth
 	// waiting depends on the round trip time. A transport that does not know
 	// its RTT leaves it at the fixed -go-depacketizer-timeout.
-	depacketizer := NewRTPDepacketizer(f.impl.depacketizerTimeout, config.RTT)
+	depacketizer := packetization.NewRTPDepacketizer(f.impl.depacketizerTimeout, config.RTT)
 
 	g := pipeline.NewGraph()
 	if err := receiveTail(g, depacketizer, config); err != nil {
@@ -187,7 +195,7 @@ func (f *factory) NewReceiver(config media.ReceiverConfig) (*media.ReceiveStream
 
 // receiveTail wires the depacketizer to what the media is written to: a
 // decoder and a Y4M file, or a sink that drops it.
-func receiveTail(g *pipeline.Graph, depacketizer *RTPDepacketizer, config media.ReceiverConfig) error {
+func receiveTail(g *pipeline.Graph, depacketizer *packetization.RTPDepacketizer, config media.ReceiverConfig) error {
 	if config.Codec == mrtp.Fake {
 		// Fake frames carry no media, so there is nothing to decode, render or
 		// write. Both the render and the discard location drop them.
@@ -195,7 +203,7 @@ func receiveTail(g *pipeline.Graph, depacketizer *RTPDepacketizer, config media.
 			return fmt.Errorf("the %v codec produces no media, it cannot be written to %q",
 				mrtp.Fake, config.SinkLocation)
 		}
-		return g.Connect(depacketizer, NewDiscardSink[mrtp.EncodedFrame]())
+		return g.Connect(depacketizer, pipeline.NewDiscard[mrtp.EncodedFrame]())
 	}
 
 	decoder, err := NewDecoder(config.Codec)
@@ -208,7 +216,7 @@ func receiveTail(g *pipeline.Graph, depacketizer *RTPDepacketizer, config media.
 	case media.SinkDisplay:
 		return errors.New("the go pipeline cannot render, pass a Y4M file to -sink-location")
 	case media.SinkDiscard:
-		sink = NewDiscardSink[mrtp.RawFrame]()
+		sink = pipeline.NewDiscard[mrtp.RawFrame]()
 	default:
 		sink, err = NewY4MSink(config.SinkLocation, sinkFPSNum, sinkFPSDen)
 		if err != nil {

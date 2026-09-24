@@ -167,6 +167,11 @@ func (s *recvSocket[T]) Format() mrtp.Format {
 	return s.format
 }
 
+// LocalAddr returns the address the socket is bound to.
+func (s *recvSocket[T]) LocalAddr() *net.UDPAddr {
+	return s.socket.LocalAddr().(*net.UDPAddr)
+}
+
 // read takes the next datagram as one owned packet.
 func (s *recvSocket[T]) read() (mrtp.Packet[T], error) {
 	packet := s.pool.Get()

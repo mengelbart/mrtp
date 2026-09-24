@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 
 	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/packetization"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,13 +49,13 @@ func TestPipelineEndToEnd(t *testing.T) {
 		src := newTestSource(t)
 		encoder := NewEncoder(mrtp.VP8)
 		frames := &counter[mrtp.EncodedFrame]{}
-		packetizer := NewRTPPacketizer(1420, 96, 0, 90_000, mrtp.VP8)
+		packetizer := packetization.NewRTPPacketizer(1420, 96, 0, 90_000, mrtp.VP8)
 		queue := pipeline.NewQueue(1000, pipeline.PaceFrames(
 			(*mrtp.RTPPacket).Marker, testFrameDuration,
 		))
 		pump := pipeline.NewPump[mrtp.RTPPacket]()
 
-		depacketizer := NewRTPDepacketizer(depacketizerTimeout, nil)
+		depacketizer := packetization.NewRTPDepacketizer(depacketizerTimeout, nil)
 		decoder, err := NewDecoder(mrtp.VP8)
 		require.NoError(t, err)
 		decoded := newCollector(func(f *mrtp.RawFrame) *[]byte { return &f.Y })
@@ -90,11 +91,9 @@ func TestPipelineEndToEnd(t *testing.T) {
 
 		// every packet the graph handed on was released exactly once
 		for name, outstanding := range map[string]int{
-			"source":       src.pool.Outstanding(),
-			"encoder":      encoder.pool.Outstanding(),
-			"packetizer":   packetizer.pool.Outstanding(),
-			"depacketizer": depacketizer.pool.Outstanding(),
-			"decoder":      decoder.pool.Outstanding(),
+			"source":  src.pool.Outstanding(),
+			"encoder": encoder.pool.Outstanding(),
+			"decoder": decoder.pool.Outstanding(),
 		} {
 			assert.Zero(t, outstanding, "%v packets from the %v were never released", outstanding, name)
 		}

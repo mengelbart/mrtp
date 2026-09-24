@@ -1,9 +1,11 @@
-package gopipe
+// Package packetization converts between encoded frames and RTP packets.
+package packetization
 
 import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/internal/logging"
@@ -88,7 +90,7 @@ func (p *RTPPacketizer) Format() mrtp.Format {
 // Connect implements mrtp.Source.
 func (p *RTPPacketizer) Connect(down mrtp.Sink[mrtp.RTPPacket]) error {
 	if p.down != nil {
-		return errors.New("gopipe: RTP packetizer is already connected")
+		return errors.New("packetization: packetizer is already connected")
 	}
 	p.down = down
 	return nil
@@ -99,10 +101,12 @@ func (p *RTPPacketizer) Write(packet mrtp.Packet[mrtp.EncodedFrame]) error {
 	defer packet.Release()
 
 	if p.packetizer == nil {
-		return errors.New("gopipe: RTP packetizer wrote before it was negotiated")
+		return errors.New("packetization: packetizer wrote before it was negotiated")
 	}
 	frame := packet.Value()
-	samples := uint32(frame.Duration.Seconds() * float64(p.ClockRate))
+	// Rounding both ends of the frame to the clock keeps timestamps from
+	// drifting when a frame is not a whole number of ticks long.
+	samples := p.ticks(frame.PTS+frame.Duration) - p.ticks(frame.PTS)
 	pts := frame.PTS.Microseconds()
 
 	for _, pkt := range p.packetizer.Packetize(frame.Data, samples) {
@@ -118,7 +122,7 @@ func (p *RTPPacketizer) Write(packet mrtp.Packet[mrtp.EncodedFrame]) error {
 			return err
 		}
 
-		slog.Info("rtp to pts mapping",
+		slog.Debug("rtp to pts mapping",
 			"rtp-timestamp", pkt.Timestamp,
 			"sequence-number", pkt.SequenceNumber,
 			"unwrapped-sequence-number", p.unwrapper.Unwrap(pkt.SequenceNumber),
@@ -130,6 +134,12 @@ func (p *RTPPacketizer) Write(packet mrtp.Packet[mrtp.EncodedFrame]) error {
 		}
 	}
 	return nil
+}
+
+// ticks converts d to RTP clock ticks.
+func (p *RTPPacketizer) ticks(d time.Duration) uint32 {
+	clock := time.Duration(p.ClockRate)
+	return uint32(d/time.Second*clock + d%time.Second*clock/time.Second)
 }
 
 // EndOfStream implements mrtp.Sink.

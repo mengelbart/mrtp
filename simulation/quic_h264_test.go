@@ -17,6 +17,7 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/gopipe"
 	"github.com/mengelbart/mrtp/internal/quictransport"
+	"github.com/mengelbart/mrtp/packetization"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/mengelbart/netsim"
@@ -187,7 +188,7 @@ func runH264Sender(ctx context.Context, quicConn *quictransport.Transport) error
 		return encoder.SetTargetBitrate(ratebps)
 	}
 
-	packetizer := gopipe.NewRTPPacketizer(1420, 96, 0, 90_000, sendCodec)
+	packetizer := packetization.NewRTPPacketizer(1420, 96, 0, 90_000, sendCodec)
 	format := fileSrc.Format().(mrtp.RawVideo)
 	queue := pipeline.NewQueue(1000, pipeline.PaceFrames(
 		(*mrtp.RTPPacket).Marker,
@@ -254,7 +255,7 @@ func runH264Receiver(t *testing.T, ctx context.Context, quicConn *quictransport.
 	}
 	defer fileSink.Close()
 
-	depacketizer := gopipe.NewRTPDepacketizer(150*time.Millisecond, quicRTT{quicConn})
+	depacketizer := packetization.NewRTPDepacketizer(150*time.Millisecond, quicRTT{quicConn})
 	g := pipeline.NewGraph()
 	if err := errors.Join(
 		g.Connect(rtpSrc, depacketizer),
