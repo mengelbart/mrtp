@@ -150,12 +150,10 @@ func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Tran
 	sender, err := dcTransport.NewDataChannelSender(ctx, uint64(dataChannelFlowID), 0, true)
 	assert.NoError(t, err)
 
-	opts := []data.Option{
-		data.UseRateLimiter(750_000, 10000),
-		data.UseChunkSource(),
-	}
+	config := data.ChunkConfig()
+	config.Bounds = mrtp.RateBounds{Initial: 750_000, Max: 8_000_000}
 
-	source, err := data.NewSource(opts...)
+	source, err := data.NewSource(config)
 	assert.NoError(t, err)
 
 	graph := pipeline.NewGraph()
@@ -172,8 +170,7 @@ func runDcSender(t *testing.T, ctx context.Context, quicConn *quictransport.Tran
 		// log "combined" target rate even if we do not split it. Makes plotting easier
 		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
-		source.SetRateLimit(ratebps)
-		return nil
+		return source.SetTargetBitrate(ratebps)
 	}
 
 	return runner.Run(ctx)
