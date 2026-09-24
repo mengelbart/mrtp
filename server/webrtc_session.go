@@ -12,6 +12,7 @@ import (
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/webrtc"
+	"github.com/mengelbart/mrtp/webrtc/ecnnet"
 )
 
 const webrtcBufferSize = 10_000_000
@@ -40,9 +41,9 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 	if ip == nil {
 		return nil, "", fmt.Errorf("media host %q is not an IP address", host)
 	}
-	stdnet, err := webrtc.NewNet(
-		webrtc.SetRecvBufferSize(webrtcBufferSize),
-		webrtc.TrackECN(true),
+	stdnet, err := ecnnet.New(
+		ecnnet.SetRecvBufferSize(webrtcBufferSize),
+		ecnnet.TrackECN(true),
 	)
 	if err != nil {
 		return nil, "", err

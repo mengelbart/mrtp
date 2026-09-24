@@ -1,4 +1,6 @@
-package webrtc
+// Package ecnnet is a pion transport.Net whose UDP sockets record the ECN
+// codepoint of every received RTP packet.
+package ecnnet
 
 import (
 	"context"
@@ -13,9 +15,11 @@ import (
 
 const defaultRecvBufferSize = 10_000_000
 
-type NetOption func(*Net) error
+// Option configures a Net.
+type Option func(*Net) error
 
-func SetRecvBufferSize(size int) NetOption {
+// SetRecvBufferSize sets the receive buffer size of UDP sockets.
+func SetRecvBufferSize(size int) Option {
 	return func(n *Net) error {
 		n.setRecvBufferSize = true
 		n.recvBufferSize = size
@@ -23,7 +27,8 @@ func SetRecvBufferSize(size int) NetOption {
 	}
 }
 
-func TrackECN(enabled bool) NetOption {
+// TrackECN records the ECN codepoint of received RTP packets for GetECN.
+func TrackECN(enabled bool) Option {
 	return func(n *Net) error {
 		n.trackECN = enabled
 		return nil
@@ -35,6 +40,7 @@ type ecnMapKey struct {
 	SequenceNumber uint16
 }
 
+// Net implements transport.Net.
 type Net struct {
 	interfaces []*transport.Interface
 
@@ -49,8 +55,8 @@ func (n *Net) CreateListenConfig(c *net.ListenConfig) transport.ListenConfig {
 	return stdListenConfig{c}
 }
 
-func NewNet(opts ...NetOption) (*Net, error) {
-	// TODO: should prob be created by caller and pass it to rfc8888 somehow
+// New creates a Net over the host network stack.
+func New(opts ...Option) (*Net, error) {
 	var encMap sync.Map
 	n := &Net{
 		interfaces:        []*transport.Interface{},
@@ -203,7 +209,9 @@ func (n *Net) setECN(ssrc uint32, sequenceNumber uint16, ecn uint8) {
 	n.ecnMap.Store(ecnMapKey{SSRC: ssrc, SequenceNumber: sequenceNumber}, ecn)
 }
 
-func (n *Net) getECN(ssrc uint32, sequenceNumber uint16) uint8 {
+// GetECN returns and forgets the ECN codepoint the packet was received with,
+// or 0 if none was recorded. It implements rfc8888.ECNLookupTable.
+func (n *Net) GetECN(ssrc uint32, sequenceNumber uint16) uint8 {
 	val, ok := n.ecnMap.LoadAndDelete(ecnMapKey{SSRC: ssrc, SequenceNumber: sequenceNumber})
 	if !ok {
 		slog.Debug("ecn not found", "ssrc", ssrc, "sequenceNumber", sequenceNumber)

@@ -1,4 +1,4 @@
-package webrtc
+package ecnnet
 
 import (
 	"fmt"
@@ -19,7 +19,7 @@ type udpConn struct {
 func newUDPConn(conn *net.UDPConn, setECN func(ssrc uint32, sequenceNumber uint16, ecn uint8)) (*udpConn, error) {
 	rawConn, err := conn.SyscallConn()
 	if err != nil {
-		return nil, fmt.Errorf("datastream: failed to get raw connection: %w", err)
+		return nil, fmt.Errorf("ecnnet: failed to get raw connection: %w", err)
 	}
 
 	if err := rawConn.Control(func(fd uintptr) {
@@ -36,7 +36,7 @@ func newUDPConn(conn *net.UDPConn, setECN func(ssrc uint32, sequenceNumber uint1
 			slog.Warn("failed to set IPV6_TCLASS", "error", err)
 		}
 	}); err != nil {
-		return nil, fmt.Errorf("datastream: failed to set socket options: %w", err)
+		return nil, fmt.Errorf("ecnnet: failed to set socket options: %w", err)
 	}
 
 	return &udpConn{

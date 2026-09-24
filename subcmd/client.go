@@ -21,6 +21,7 @@ import (
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/udp"
 	"github.com/mengelbart/mrtp/webrtc"
+	"github.com/mengelbart/mrtp/webrtc/ecnnet"
 )
 
 func init() {
@@ -160,7 +161,7 @@ func (c *Client) sendRTPUDP(ctx context.Context, signaler *signaling.Client, sou
 }
 
 func (c *Client) sendWebRTC(ctx context.Context, signaler *signaling.Client, source *fake.Source, packetizer *rtp.Packetizer) error {
-	stdnet, err := webrtc.NewNet(webrtc.SetRecvBufferSize(10_000_000))
+	stdnet, err := ecnnet.New(ecnnet.SetRecvBufferSize(10_000_000))
 	if err != nil {
 		return err
 	}

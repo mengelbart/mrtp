@@ -48,7 +48,7 @@ type Transport struct {
 	settingEngine       *webrtc.SettingEngine
 	mediaEngine         *webrtc.MediaEngine
 	interceptorRegistry *interceptor.Registry
-	net                 *Net
+	ecnTable            rfc8888.ECNLookupTable
 
 	pc         *webrtc.PeerConnection
 	signaler   Signaler
@@ -129,7 +129,7 @@ func EnableCCFB() Option {
 		t.registerCCFB()
 		generator, err := rfc8888.NewSenderInterceptor(
 			rfc8888.SendInterval(feedbackInterval),
-			rfc8888.WithECNLookupTable(t),
+			rfc8888.WithECNLookupTable(ecnLookupFunc(t.getECN)),
 		)
 		if err != nil {
 			return err
@@ -217,10 +217,13 @@ func RegisterDefaultCodecs() Option {
 	}
 }
 
+// SetNet replaces the network stack. A net that implements
+// rfc8888.ECNLookupTable, such as ecnnet.Net, supplies the ECN codepoints CCFB
+// reports.
 func SetNet(net transport.Net) Option {
 	return func(t *Transport) error {
-		if n, ok := net.(*Net); ok {
-			t.net = n
+		if table, ok := net.(rfc8888.ECNLookupTable); ok {
+			t.ecnTable = table
 		}
 		t.settingEngine.SetNet(net)
 		return nil
@@ -586,9 +589,18 @@ func (t *Transport) applyTargetRate(tr float64) error {
 	return nil
 }
 
-func (t *Transport) GetECN(ssrc uint32, sequenceNumber uint16) uint8 {
-	if t.net == nil {
+type ecnLookupFunc func(ssrc uint32, sequenceNumber uint16) uint8
+
+// GetECN implements rfc8888.ECNLookupTable.
+func (f ecnLookupFunc) GetECN(ssrc uint32, sequenceNumber uint16) uint8 {
+	return f(ssrc, sequenceNumber)
+}
+
+// getECN defers to the table SetNet installed, which may be applied after
+// EnableCCFB.
+func (t *Transport) getECN(ssrc uint32, sequenceNumber uint16) uint8 {
+	if t.ecnTable == nil {
 		return 0
 	}
-	return t.net.getECN(ssrc, sequenceNumber)
+	return t.ecnTable.GetECN(ssrc, sequenceNumber)
 }

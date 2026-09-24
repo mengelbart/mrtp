@@ -21,6 +21,7 @@ import (
 	"github.com/mengelbart/mrtp/http"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/webrtc"
+	"github.com/mengelbart/mrtp/webrtc/ecnnet"
 )
 
 func init() {
@@ -129,9 +130,9 @@ Usage:
 
 	signaler := webrtc.NewHTTPClientSignaler(fmt.Sprintf("http://%v:%v", w.remoteAddr, w.remotePort))
 
-	stdnet, err := webrtc.NewNet(
-		webrtc.SetRecvBufferSize(10_000_000), // 10MB
-		webrtc.TrackECN(w.pionCCFB),
+	stdnet, err := ecnnet.New(
+		ecnnet.SetRecvBufferSize(10_000_000), // 10MB
+		ecnnet.TrackECN(w.pionCCFB),
 	)
 	if err != nil {
 		return err
