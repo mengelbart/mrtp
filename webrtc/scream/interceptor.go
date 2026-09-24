@@ -1,6 +1,7 @@
 //go:build cgo
 
-package webrtc
+// Package scream runs SCReAM congestion control as a Pion interceptor.
+package scream
 
 import (
 	"context"
@@ -10,31 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mengelbart/scream-go"
+	screamgo "github.com/mengelbart/scream-go"
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 )
 
-func EnableSCReAM(initRate, minRate, maxRate int) Option {
-	return func(t *Transport) error {
-		if minRate <= 0 {
-			return fmt.Errorf("invalid SCReAM min rate: %v, must be positive", minRate)
-		}
-		if maxRate < minRate {
-			return fmt.Errorf("invalid SCReAM max rate: %v, must be at least the min rate %v", maxRate, minRate)
-		}
-		if initRate < minRate || initRate > maxRate {
-			return fmt.Errorf("invalid SCReAM init rate: %v, must be within [%v, %v]", initRate, minRate, maxRate)
-		}
-		t.registerCCFB()
-		t.scream = NewScreamInterceptorFactory(initRate, minRate, maxRate)
-		t.interceptorRegistry.Add(t.scream)
-		return nil
-	}
-}
-
-var _ interceptor.Interceptor = (*ScreamInterceptor)(nil)
+var _ interceptor.Interceptor = (*Interceptor)(nil)
 
 type newStream struct {
 	ssrc            uint32
@@ -42,7 +25,7 @@ type newStream struct {
 	min, max, start float64
 }
 
-var _ scream.Packet = (*txPacket)(nil)
+var _ screamgo.Packet = (*txPacket)(nil)
 
 type txPacket struct {
 	pkt    *rtp.Packet
@@ -51,17 +34,17 @@ type txPacket struct {
 	writer interceptor.RTPWriter
 }
 
-// SequenceNumber implements scream.Packet.
+// SequenceNumber implements screamgo.Packet.
 func (t *txPacket) SequenceNumber() uint16 {
 	return t.pkt.SequenceNumber
 }
 
-// Size implements scream.Packet.
+// Size implements screamgo.Packet.
 func (t *txPacket) Size() int {
 	return t.pkt.MarshalSize()
 }
 
-// Timestamp implements scream.Packet.
+// Timestamp implements screamgo.Packet.
 func (t *txPacket) Timestamp() time.Time {
 	return t.ts
 }
@@ -69,7 +52,7 @@ func (t *txPacket) Timestamp() time.Time {
 // screamStream tracks a stream registered with SCReAM. The registration cannot
 // be undone, so entries persist after unbind with bound set to false.
 type screamStream struct {
-	queue *scream.Queue[*txPacket]
+	queue *screamgo.Queue[*txPacket]
 	bound bool
 }
 
@@ -78,36 +61,47 @@ type rxPacket struct {
 	attr interceptor.Attributes
 }
 
-type ScreamInterceptorFactory struct {
+type InterceptorFactory struct {
 	lock         sync.Mutex
 	initRate     int
 	minRate      int
 	maxRate      int
-	interceptors map[string]*ScreamInterceptor
+	interceptors map[string]*Interceptor
 }
 
-func NewScreamInterceptorFactory(initRate, minRate, maxRate int) *ScreamInterceptorFactory {
-	return &ScreamInterceptorFactory{
+// NewInterceptorFactory creates interceptors that start at initRate and keep
+// the target rate within [minRate, maxRate], all in bits per second.
+func NewInterceptorFactory(initRate, minRate, maxRate int) (*InterceptorFactory, error) {
+	if minRate <= 0 {
+		return nil, fmt.Errorf("invalid SCReAM min rate: %v, must be positive", minRate)
+	}
+	if maxRate < minRate {
+		return nil, fmt.Errorf("invalid SCReAM max rate: %v, must be at least the min rate %v", maxRate, minRate)
+	}
+	if initRate < minRate || initRate > maxRate {
+		return nil, fmt.Errorf("invalid SCReAM init rate: %v, must be within [%v, %v]", initRate, minRate, maxRate)
+	}
+	return &InterceptorFactory{
 		lock:         sync.Mutex{},
 		initRate:     initRate,
 		minRate:      minRate,
 		maxRate:      maxRate,
-		interceptors: map[string]*ScreamInterceptor{},
-	}
+		interceptors: map[string]*Interceptor{},
+	}, nil
 }
 
-func (f *ScreamInterceptorFactory) NewInterceptor(id string) (interceptor.Interceptor, error) {
+func (f *InterceptorFactory) NewInterceptor(id string) (interceptor.Interceptor, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	interceptor := &ScreamInterceptor{
+	interceptor := &Interceptor{
 		NoOp:           interceptor.NoOp{},
 		id:             id,
 		logger:         slog.Default(),
 		init:           f.initRate,
 		min:            f.minRate,
 		max:            f.maxRate,
-		tx:             scream.NewTx(),
+		tx:             screamgo.NewTx(),
 		txQueue:        make(chan *txPacket),
 		streams:        map[uint32]*screamStream{},
 		newStreamQueue: make(chan *newStream),
@@ -127,7 +121,7 @@ func (f *ScreamInterceptorFactory) NewInterceptor(id string) (interceptor.Interc
 	return interceptor, nil
 }
 
-func (f *ScreamInterceptorFactory) GetTargetRate(id string, ssrc uint32) (float64, error) {
+func (f *InterceptorFactory) GetTargetRate(id string, ssrc uint32) (float64, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	i, ok := f.interceptors[id]
@@ -137,23 +131,23 @@ func (f *ScreamInterceptorFactory) GetTargetRate(id string, ssrc uint32) (float6
 	return i.getTargetBitrate(ssrc), nil
 }
 
-func (f *ScreamInterceptorFactory) remove(id string) {
+func (f *InterceptorFactory) remove(id string) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	delete(f.interceptors, id)
 }
 
-type ScreamInterceptor struct {
+type Interceptor struct {
 	interceptor.NoOp
 	id             string
 	logger         *slog.Logger
 	init, min, max int
-	// txMu guards all access to tx, since the underlying scream.Tx wraps a
+	// txMu guards all access to tx, since the underlying screamgo.Tx wraps a
 	// non-thread-safe C struct and is otherwise only meant to be touched from
 	// the loop goroutine; getTargetBitrate is called from other goroutines
-	// via ScreamInterceptorFactory.GetTargetRate.
+	// via InterceptorFactory.GetTargetRate.
 	txMu           sync.Mutex
-	tx             *scream.Tx
+	tx             *screamgo.Tx
 	txClosed       bool
 	streams        map[uint32]*screamStream
 	newStreamQueue chan *newStream
@@ -166,7 +160,7 @@ type ScreamInterceptor struct {
 	wg             sync.WaitGroup
 }
 
-func (s *ScreamInterceptor) getTargetBitrate(ssrc uint32) float64 {
+func (s *Interceptor) getTargetBitrate(ssrc uint32) float64 {
 	s.txMu.Lock()
 	defer s.txMu.Unlock()
 	if s.txClosed {
@@ -175,7 +169,7 @@ func (s *ScreamInterceptor) getTargetBitrate(ssrc uint32) float64 {
 	return s.tx.GetTargetBitrate(time.Now(), ssrc)
 }
 
-func (s *ScreamInterceptor) loop() {
+func (s *Interceptor) loop() {
 	timer := time.NewTimer(time.Second)
 	defer timer.Stop()
 	var lastStats time.Time
@@ -192,7 +186,7 @@ func (s *ScreamInterceptor) loop() {
 				st.bound = true
 				continue
 			}
-			queue := scream.NewQueue[*txPacket]()
+			queue := screamgo.NewQueue[*txPacket]()
 			s.txMu.Lock()
 			err := s.tx.RegisterNewStream(queue, ns.ssrc, ns.priority, ns.min, ns.start, ns.max)
 			s.txMu.Unlock()
@@ -236,7 +230,7 @@ func (s *ScreamInterceptor) loop() {
 	}
 }
 
-func (s *ScreamInterceptor) receiveFeedback(pkt *rxPacket) {
+func (s *Interceptor) receiveFeedback(pkt *rxPacket) {
 	pkts, err := pkt.attr.GetRTCPPackets(pkt.raw)
 	if err != nil {
 		s.logger.Error("failed to unmarshal RTCP packet", "error", err)
@@ -258,7 +252,7 @@ func (s *ScreamInterceptor) receiveFeedback(pkt *rxPacket) {
 	}
 }
 
-func (s *ScreamInterceptor) transmit() time.Time {
+func (s *Interceptor) transmit() time.Time {
 	for {
 		now := time.Now()
 		s.txMu.Lock()
@@ -294,7 +288,7 @@ func (s *ScreamInterceptor) transmit() time.Time {
 }
 
 // BindLocalStream implements interceptor.Interceptor.
-func (s *ScreamInterceptor) BindLocalStream(info *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
+func (s *Interceptor) BindLocalStream(info *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
 	s.logger.Debug("binding interceptor", "info", fmt.Sprintf("%v", info))
 	ns := &newStream{
 		ssrc:     info.SSRC,
@@ -332,7 +326,7 @@ func (s *ScreamInterceptor) BindLocalStream(info *interceptor.StreamInfo, writer
 }
 
 // BindRTCPReader implements interceptor.Interceptor.
-func (s *ScreamInterceptor) BindRTCPReader(reader interceptor.RTCPReader) interceptor.RTCPReader {
+func (s *Interceptor) BindRTCPReader(reader interceptor.RTCPReader) interceptor.RTCPReader {
 	return interceptor.RTCPReaderFunc(func(b []byte, a interceptor.Attributes) (int, interceptor.Attributes, error) {
 		n, attr, err := reader.Read(b, a)
 		if err != nil {
@@ -355,7 +349,7 @@ func (s *ScreamInterceptor) BindRTCPReader(reader interceptor.RTCPReader) interc
 }
 
 // Close implements interceptor.Interceptor.
-func (s *ScreamInterceptor) Close() error {
+func (s *Interceptor) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.closed)
 		s.wg.Wait()
@@ -371,7 +365,7 @@ func (s *ScreamInterceptor) Close() error {
 }
 
 // UnbindLocalStream implements interceptor.Interceptor.
-func (s *ScreamInterceptor) UnbindLocalStream(info *interceptor.StreamInfo) {
+func (s *Interceptor) UnbindLocalStream(info *interceptor.StreamInfo) {
 	select {
 	case s.removeStream <- info.SSRC:
 	case <-s.closed:
