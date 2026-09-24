@@ -15,8 +15,8 @@ import (
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
-	"github.com/mengelbart/mrtp/fake"
-	"github.com/mengelbart/mrtp/packetization"
+	"github.com/mengelbart/mrtp/element/fake"
+	"github.com/mengelbart/mrtp/element/rtp"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/udp"
@@ -103,7 +103,7 @@ Flags:
 	if err != nil {
 		return err
 	}
-	packetizer := packetization.NewRTPPacketizer(uint16(c.mtu), format.PayloadType, rand.Uint32(), format.ClockRate, format.Codec)
+	packetizer := rtp.NewPacketizer(uint16(c.mtu), format.PayloadType, rand.Uint32(), format.ClockRate, format.Codec)
 
 	signaler := &signaling.Client{BaseURL: c.serverURL}
 	if c.protocol == signaling.ProtocolWebRTC {
@@ -140,7 +140,7 @@ func (c *Client) validate(fs *flag.FlagSet) error {
 	return nil
 }
 
-func (c *Client) sendRTPUDP(ctx context.Context, signaler *signaling.Client, source *fake.Source, packetizer *packetization.RTPPacketizer) error {
+func (c *Client) sendRTPUDP(ctx context.Context, signaler *signaling.Client, source *fake.Source, packetizer *rtp.Packetizer) error {
 	session, err := signaler.Open(ctx, signaling.Request{Protocol: signaling.ProtocolRTPUDP})
 	if err != nil {
 		return err
@@ -159,7 +159,7 @@ func (c *Client) sendRTPUDP(ctx context.Context, signaler *signaling.Client, sou
 	return sendMedia(ctx, pipeline.NewGraph(), source, packetizer, sink)
 }
 
-func (c *Client) sendWebRTC(ctx context.Context, signaler *signaling.Client, source *fake.Source, packetizer *packetization.RTPPacketizer) error {
+func (c *Client) sendWebRTC(ctx context.Context, signaler *signaling.Client, source *fake.Source, packetizer *rtp.Packetizer) error {
 	stdnet, err := webrtc.NewNet(webrtc.SetRecvBufferSize(10_000_000))
 	if err != nil {
 		return err
@@ -262,7 +262,7 @@ func closeSession(signaler *signaling.Client, id string) {
 
 // sendMedia adds source, packetizer and sink to g and runs it until the source
 // ends.
-func sendMedia(ctx context.Context, g *pipeline.Graph, source *fake.Source, packetizer *packetization.RTPPacketizer, sink mrtp.Sink[mrtp.RTPPacket]) error {
+func sendMedia(ctx context.Context, g *pipeline.Graph, source *fake.Source, packetizer *rtp.Packetizer, sink mrtp.Sink[mrtp.RTPPacket]) error {
 	defer func() {
 		if closeErr := g.Close(); closeErr != nil {
 			slog.Error("failed to close pipeline", "error", closeErr)

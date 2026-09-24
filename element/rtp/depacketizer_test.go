@@ -1,6 +1,6 @@
 //go:build cgo
 
-package packetization
+package rtp
 
 import (
 	"bytes"
@@ -165,7 +165,7 @@ func packetizeFrames(t *testing.T, c mrtp.Codec, frames [][]byte) [][][]byte {
 	packets := make([][][]byte, 0, len(frames))
 	sink := &collector[mrtp.RTPPacket]{bytes: mrtp.RTPBytes}
 
-	packetizer := NewRTPPacketizer(1420, 96, 0, 90_000, c)
+	packetizer := NewPacketizer(1420, 96, 0, 90_000, c)
 	require.NoError(t, packetizer.Negotiate(mrtp.EncodedVideo{Codec: c}))
 	require.NoError(t, packetizer.Connect(sink))
 
@@ -198,7 +198,7 @@ func runDepacketizer(t *testing.T, c mrtp.Codec, framePackets [][][]byte) [][]by
 	received := &collector[mrtp.EncodedFrame]{
 		bytes: func(f *mrtp.EncodedFrame) *[]byte { return &f.Data },
 	}
-	depacketizer := NewRTPDepacketizer(depacketizerTimeout, nil)
+	depacketizer := NewDepacketizer(depacketizerTimeout, nil)
 	require.NoError(t, depacketizer.Negotiate(mrtp.RTP{
 		Codec:       c,
 		PayloadType: 96,

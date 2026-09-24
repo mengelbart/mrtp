@@ -17,7 +17,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
-	"github.com/mengelbart/mrtp/data"
+	"github.com/mengelbart/mrtp/element/data"
 	"github.com/mengelbart/mrtp/http"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/webrtc"

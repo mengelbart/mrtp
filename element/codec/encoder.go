@@ -1,6 +1,6 @@
 //go:build cgo
 
-package gopipe
+package codec
 
 import (
 	"errors"
@@ -97,7 +97,7 @@ func (e *Encoder) Format() mrtp.Format {
 // Connect implements mrtp.Source.
 func (e *Encoder) Connect(down mrtp.Sink[mrtp.EncodedFrame]) error {
 	if e.down != nil {
-		return errors.New("gopipe: encoder is already connected")
+		return errors.New("codec: encoder is already connected")
 	}
 	e.down = down
 	return nil

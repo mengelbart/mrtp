@@ -1,5 +1,5 @@
-// Package packetization converts between encoded frames and RTP packets.
-package packetization
+// Package rtp converts between encoded frames and RTP packets.
+package rtp
 
 import (
 	"errors"
@@ -29,9 +29,9 @@ func getPacketizerByName(c mrtp.Codec) (rtp.Payloader, error) {
 	return nil, fmt.Errorf("unknown codec: %v", c)
 }
 
-// RTPPacketizer turns encoded frames into RTP packets, one packet per Write
+// Packetizer turns encoded frames into RTP packets, one packet per Write
 // downstream.
-type RTPPacketizer struct {
+type Packetizer struct {
 	MTU       uint16
 	PT        uint8
 	SSRC      uint32
@@ -45,8 +45,8 @@ type RTPPacketizer struct {
 	unwrapper *logging.Unwrapper // for logging the rtp packets
 }
 
-func NewRTPPacketizer(mtu uint16, pt uint8, ssrc, clockRate uint32, c mrtp.Codec) *RTPPacketizer {
-	return &RTPPacketizer{
+func NewPacketizer(mtu uint16, pt uint8, ssrc, clockRate uint32, c mrtp.Codec) *Packetizer {
+	return &Packetizer{
 		MTU:       mtu,
 		PT:        pt,
 		SSRC:      ssrc,
@@ -61,7 +61,7 @@ func NewRTPPacketizer(mtu uint16, pt uint8, ssrc, clockRate uint32, c mrtp.Codec
 }
 
 // Negotiate implements mrtp.Sink.
-func (p *RTPPacketizer) Negotiate(f mrtp.Format) error {
+func (p *Packetizer) Negotiate(f mrtp.Format) error {
 	encoded, ok := f.(mrtp.EncodedVideo)
 	if !ok {
 		return fmt.Errorf("RTP packetizer takes encoded video, not %v", f)
@@ -78,7 +78,7 @@ func (p *RTPPacketizer) Negotiate(f mrtp.Format) error {
 }
 
 // Format implements mrtp.Source.
-func (p *RTPPacketizer) Format() mrtp.Format {
+func (p *Packetizer) Format() mrtp.Format {
 	return mrtp.RTP{
 		Codec:       p.Codec,
 		PayloadType: p.PT,
@@ -88,20 +88,20 @@ func (p *RTPPacketizer) Format() mrtp.Format {
 }
 
 // Connect implements mrtp.Source.
-func (p *RTPPacketizer) Connect(down mrtp.Sink[mrtp.RTPPacket]) error {
+func (p *Packetizer) Connect(down mrtp.Sink[mrtp.RTPPacket]) error {
 	if p.down != nil {
-		return errors.New("packetization: packetizer is already connected")
+		return errors.New("rtp: packetizer is already connected")
 	}
 	p.down = down
 	return nil
 }
 
 // Write implements mrtp.Sink.
-func (p *RTPPacketizer) Write(packet mrtp.Packet[mrtp.EncodedFrame]) error {
+func (p *Packetizer) Write(packet mrtp.Packet[mrtp.EncodedFrame]) error {
 	defer packet.Release()
 
 	if p.packetizer == nil {
-		return errors.New("packetization: packetizer wrote before it was negotiated")
+		return errors.New("rtp: packetizer wrote before it was negotiated")
 	}
 	frame := packet.Value()
 	// Rounding both ends of the frame to the clock keeps timestamps from
@@ -137,22 +137,22 @@ func (p *RTPPacketizer) Write(packet mrtp.Packet[mrtp.EncodedFrame]) error {
 }
 
 // ticks converts d to RTP clock ticks.
-func (p *RTPPacketizer) ticks(d time.Duration) uint32 {
+func (p *Packetizer) ticks(d time.Duration) uint32 {
 	clock := time.Duration(p.ClockRate)
 	return uint32(d/time.Second*clock + d%time.Second*clock/time.Second)
 }
 
 // EndOfStream implements mrtp.Sink.
-func (p *RTPPacketizer) EndOfStream() error {
+func (p *Packetizer) EndOfStream() error {
 	return p.down.EndOfStream()
 }
 
 // Close implements mrtp.Element.
-func (p *RTPPacketizer) Close() error {
+func (p *Packetizer) Close() error {
 	return nil
 }
 
 var (
-	_ mrtp.Sink[mrtp.EncodedFrame] = (*RTPPacketizer)(nil)
-	_ mrtp.Source[mrtp.RTPPacket]  = (*RTPPacketizer)(nil)
+	_ mrtp.Sink[mrtp.EncodedFrame] = (*Packetizer)(nil)
+	_ mrtp.Source[mrtp.RTPPacket]  = (*Packetizer)(nil)
 )

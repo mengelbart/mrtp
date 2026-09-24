@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/fake"
+	"github.com/mengelbart/mrtp/element/fake"
+	"github.com/mengelbart/mrtp/element/rtp"
 	"github.com/mengelbart/mrtp/internal/quictransport"
-	"github.com/mengelbart/mrtp/packetization"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/roq"
 	"github.com/mengelbart/netsim"
@@ -173,7 +173,7 @@ func runFakeSender(ctx context.Context, quicConn *quictransport.Transport) error
 		return fakeSource.SetTargetBitrate(ratebps)
 	}
 
-	packetizer := packetization.NewRTPPacketizer(1420, 96, 0, 90_000, mrtp.Fake)
+	packetizer := rtp.NewPacketizer(1420, 96, 0, 90_000, mrtp.Fake)
 	queue := pipeline.NewQueue(1000, pipeline.PaceFrames(
 		(*mrtp.RTPPacket).Marker,
 		fakeSource.FrameDuration(),
@@ -226,7 +226,7 @@ func runFakeReceiver(ctx context.Context, quicConn *quictransport.Transport, wg 
 	}
 	defer rtpSrc.Close()
 
-	depacketizer := packetization.NewRTPDepacketizer(150*time.Millisecond, quicRTT{quicConn})
+	depacketizer := rtp.NewDepacketizer(150*time.Millisecond, quicRTT{quicConn})
 	g := pipeline.NewGraph()
 	if err := errors.Join(
 		g.Connect(rtpSrc, depacketizer),

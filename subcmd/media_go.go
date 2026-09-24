@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/fake"
-	"github.com/mengelbart/mrtp/gopipe"
-	"github.com/mengelbart/mrtp/mediafile"
-	"github.com/mengelbart/mrtp/packetization"
+	"github.com/mengelbart/mrtp/element/codec"
+	"github.com/mengelbart/mrtp/element/fake"
+	"github.com/mengelbart/mrtp/element/mediafile"
+	"github.com/mengelbart/mrtp/element/rtp"
 	"github.com/mengelbart/mrtp/pipeline"
 )
 
@@ -69,7 +69,7 @@ func (p *goPipeline) addSender(g *pipeline.Graph, config senderConfig, t sendEnd
 	if err != nil {
 		return nil, err
 	}
-	packetizer := packetization.NewRTPPacketizer(
+	packetizer := rtp.NewPacketizer(
 		uint16(p.config.mtu),
 		format.PayloadType,
 		format.SSRC, // TODO: Set SSRC to a random value, or allow the user to set it.
@@ -148,7 +148,7 @@ func (p *goPipeline) newSource(g *pipeline.Graph, config senderConfig) (*goSendS
 	}
 	g.Add(file)
 
-	encoder := gopipe.NewEncoder(config.codec)
+	encoder := codec.NewEncoder(config.codec)
 	format := source.Format().(mrtp.RawVideo)
 	return &goSendSource{
 		driver:        source,
@@ -166,7 +166,7 @@ func (p *goPipeline) addReceiver(g *pipeline.Graph, config receiverConfig, t rec
 	// The depacketizer waits for a missing packet, so how long it is worth
 	// waiting depends on the round trip time. A transport that does not know
 	// its RTT leaves it at the fixed -go-depacketizer-timeout.
-	depacketizer := packetization.NewRTPDepacketizer(p.config.depacketizerTimeout, t.rtt)
+	depacketizer := rtp.NewDepacketizer(p.config.depacketizerTimeout, t.rtt)
 	return errors.Join(
 		g.Connect(t.rtp, depacketizer),
 		goReceiveTail(g, depacketizer, config),
@@ -176,7 +176,7 @@ func (p *goPipeline) addReceiver(g *pipeline.Graph, config receiverConfig, t rec
 
 // goReceiveTail wires the depacketizer to what the media is written to: a
 // decoder and a Y4M file, or a sink that drops it.
-func goReceiveTail(g *pipeline.Graph, depacketizer *packetization.RTPDepacketizer, config receiverConfig) error {
+func goReceiveTail(g *pipeline.Graph, depacketizer *rtp.Depacketizer, config receiverConfig) error {
 	if config.codec == mrtp.Fake {
 		// Fake frames carry no media, so there is nothing to decode, render or
 		// write. Both the render and the discard location drop them.
@@ -187,7 +187,7 @@ func goReceiveTail(g *pipeline.Graph, depacketizer *packetization.RTPDepacketize
 		return g.Connect(depacketizer, pipeline.NewDiscard[mrtp.EncodedFrame]())
 	}
 
-	decoder, err := gopipe.NewDecoder(config.codec)
+	decoder, err := codec.NewDecoder(config.codec)
 	if err != nil {
 		return err
 	}

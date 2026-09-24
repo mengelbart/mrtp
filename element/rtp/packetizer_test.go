@@ -1,4 +1,4 @@
-package packetization
+package rtp
 
 import (
 	"testing"
@@ -35,7 +35,7 @@ func TestPacketizerFakeFrames(t *testing.T) {
 		frameSize = 2500
 		mtu       = 1212
 	)
-	p := NewRTPPacketizer(mtu, 96, 1, 90_000, mrtp.Fake)
+	p := NewPacketizer(mtu, 96, 1, 90_000, mrtp.Fake)
 	c := &rtpCollector{}
 	if err := p.Negotiate(mrtp.EncodedVideo{Codec: mrtp.Fake}); err != nil {
 		t.Fatal(err)

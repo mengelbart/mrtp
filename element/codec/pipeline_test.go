@@ -1,6 +1,6 @@
 //go:build cgo
 
-package gopipe
+package codec
 
 import (
 	"bytes"
@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/element/mediafile"
+	"github.com/mengelbart/mrtp/element/rtp"
 	"github.com/mengelbart/mrtp/internal/testvideo"
-	"github.com/mengelbart/mrtp/mediafile"
-	"github.com/mengelbart/mrtp/packetization"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -110,13 +110,13 @@ func TestPipelineEndToEnd(t *testing.T) {
 		src := newTestSource(t)
 		encoder := NewEncoder(mrtp.VP8)
 		frames := &counter[mrtp.EncodedFrame]{}
-		packetizer := packetization.NewRTPPacketizer(1420, 96, 0, 90_000, mrtp.VP8)
+		packetizer := rtp.NewPacketizer(1420, 96, 0, 90_000, mrtp.VP8)
 		queue := pipeline.NewQueue(1000, pipeline.PaceFrames(
 			(*mrtp.RTPPacket).Marker, testFrameDuration,
 		))
 		pump := pipeline.NewPump[mrtp.RTPPacket]()
 
-		depacketizer := packetization.NewRTPDepacketizer(depacketizerTimeout, nil)
+		depacketizer := rtp.NewDepacketizer(depacketizerTimeout, nil)
 		decoder, err := NewDecoder(mrtp.VP8)
 		require.NoError(t, err)
 		decoded := newCollector(func(f *mrtp.RawFrame) *[]byte { return &f.Y })

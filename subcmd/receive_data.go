@@ -8,8 +8,8 @@ import (
 	"os"
 
 	"github.com/mengelbart/mrtp/cmdmain"
-	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
+	"github.com/mengelbart/mrtp/element/data"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/quic-go/quic-go"

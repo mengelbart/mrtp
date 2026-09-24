@@ -1,4 +1,4 @@
-package packetization
+package rtp
 
 import (
 	"bytes"
@@ -39,11 +39,11 @@ func (fakeDepacketizer) Unmarshal(payload []byte) ([]byte, error)   { return pay
 func (fakeDepacketizer) IsPartitionHead([]byte) bool                { return true }
 func (fakeDepacketizer) IsPartitionTail(marker bool, _ []byte) bool { return marker }
 
-// RTPDepacketizer reassembles encoded frames from the RTP packets it is given,
+// Depacketizer reassembles encoded frames from the RTP packets it is given,
 // ordering them in a jitter buffer on the way. A frame ends at the marker bit,
 // or at a change of RTP timestamp when the marker packet is the one that was
 // lost.
-type RTPDepacketizer struct {
+type Depacketizer struct {
 	jitterBuffer *jitterbuffer.JitterBuffer
 	frameBuffer  []byte
 
@@ -75,12 +75,12 @@ type RTPDepacketizer struct {
 	unwrapper *logging.Unwrapper // for logging the rtp packets
 }
 
-// NewRTPDepacketizer returns a depacketizer that waits at most maxTimeout for a
+// NewDepacketizer returns a depacketizer that waits at most maxTimeout for a
 // missing packet. How long it is worth waiting depends on the round trip time,
 // so rtt steers the wait within that bound and may be nil for a transport that
 // does not know its RTT.
-func NewRTPDepacketizer(maxTimeout time.Duration, rtt mrtp.RTTSource) *RTPDepacketizer {
-	return &RTPDepacketizer{
+func NewDepacketizer(maxTimeout time.Duration, rtt mrtp.RTTSource) *Depacketizer {
+	return &Depacketizer{
 		jitterBuffer:   jitterbuffer.New(),
 		frameBuffer:    make([]byte, 0, 2000),
 		maxTimeout:     maxTimeout,
@@ -95,7 +95,7 @@ func NewRTPDepacketizer(maxTimeout time.Duration, rtt mrtp.RTTSource) *RTPDepack
 }
 
 // Negotiate implements mrtp.Sink.
-func (d *RTPDepacketizer) Negotiate(f mrtp.Format) error {
+func (d *Depacketizer) Negotiate(f mrtp.Format) error {
 	format, ok := f.(mrtp.RTP)
 	if !ok {
 		return fmt.Errorf("RTP depacketizer takes RTP, not %v", f)
@@ -112,14 +112,14 @@ func (d *RTPDepacketizer) Negotiate(f mrtp.Format) error {
 
 // Format implements mrtp.Source. The picture size is not on the wire, so it is
 // zero here, and the decoder downstream publishes the size it decodes.
-func (d *RTPDepacketizer) Format() mrtp.Format {
+func (d *Depacketizer) Format() mrtp.Format {
 	return mrtp.EncodedVideo{Codec: d.codec}
 }
 
 // Connect implements mrtp.Source.
-func (d *RTPDepacketizer) Connect(down mrtp.Sink[mrtp.EncodedFrame]) error {
+func (d *Depacketizer) Connect(down mrtp.Sink[mrtp.EncodedFrame]) error {
 	if d.down != nil {
-		return errors.New("packetization: depacketizer is already connected")
+		return errors.New("rtp: depacketizer is already connected")
 	}
 	d.down = down
 	return nil
@@ -127,11 +127,11 @@ func (d *RTPDepacketizer) Connect(down mrtp.Sink[mrtp.EncodedFrame]) error {
 
 // Write implements mrtp.Sink. It buffers the packet and passes on every frame
 // that the buffer can now complete.
-func (d *RTPDepacketizer) Write(packet mrtp.Packet[mrtp.RTPPacket]) error {
+func (d *Depacketizer) Write(packet mrtp.Packet[mrtp.RTPPacket]) error {
 	defer packet.Release()
 
 	if d.depacketizer == nil {
-		return errors.New("packetization: depacketizer wrote before it was negotiated")
+		return errors.New("rtp: depacketizer wrote before it was negotiated")
 	}
 	if d.rtt != nil {
 		d.updateTimeout(d.rtt.RTT())
@@ -149,7 +149,7 @@ func (d *RTPDepacketizer) Write(packet mrtp.Packet[mrtp.RTPPacket]) error {
 
 // updateTimeout scales how long to wait for a missing packet with the round
 // trip time, within the configured bound.
-func (d *RTPDepacketizer) updateTimeout(rtt time.Duration) {
+func (d *Depacketizer) updateTimeout(rtt time.Duration) {
 	if rtt <= 0 {
 		return
 	}
@@ -158,7 +158,7 @@ func (d *RTPDepacketizer) updateTimeout(rtt time.Duration) {
 
 // processPackets assembles what the jitter buffer can hand out in order, and
 // passes on every frame that completes.
-func (d *RTPDepacketizer) processPackets() error {
+func (d *Depacketizer) processPackets() error {
 	for {
 		_, err := d.jitterBuffer.Peek(true)
 		if errors.Is(err, jitterbuffer.ErrBufferUnderrun) {
@@ -233,7 +233,7 @@ func (d *RTPDepacketizer) processPackets() error {
 
 // skipMissing decides what to do about a packet the jitter buffer is missing,
 // reporting whether to carry on without it.
-func (d *RTPDepacketizer) skipMissing() bool {
+func (d *Depacketizer) skipMissing() bool {
 	playoutHead := d.jitterBuffer.PlayoutHead()
 
 	if d.fastSkip {
@@ -270,7 +270,7 @@ func (d *RTPDepacketizer) skipMissing() bool {
 // emit passes the assembled frame on, timestamped from the RTP clock. The
 // duration is the interval since the previous frame, so the first frame of a
 // stream reports none. TODO: buffer one frame to calculate its true duration?
-func (d *RTPDepacketizer) emit(timestamp uint32) error {
+func (d *Depacketizer) emit(timestamp uint32) error {
 	out := d.pool.Get()
 	value := out.Value()
 	value.Data = append(value.Data[:0], d.frameBuffer...)
@@ -287,22 +287,22 @@ func (d *RTPDepacketizer) emit(timestamp uint32) error {
 }
 
 // rtpToDuration converts a count of RTP clock ticks to a duration.
-func (d *RTPDepacketizer) rtpToDuration(ticks uint32) time.Duration {
+func (d *Depacketizer) rtpToDuration(ticks uint32) time.Duration {
 	return time.Duration(ticks) * time.Second / time.Duration(d.clockRate)
 }
 
 // EndOfStream implements mrtp.Sink.
-func (d *RTPDepacketizer) EndOfStream() error {
+func (d *Depacketizer) EndOfStream() error {
 	return d.down.EndOfStream()
 }
 
 // Close implements mrtp.Element.
-func (d *RTPDepacketizer) Close() error {
+func (d *Depacketizer) Close() error {
 	return nil
 }
 
 var (
-	_ mrtp.Sink[mrtp.RTPPacket]      = (*RTPDepacketizer)(nil)
-	_ mrtp.Source[mrtp.EncodedFrame] = (*RTPDepacketizer)(nil)
+	_ mrtp.Sink[mrtp.RTPPacket]      = (*Depacketizer)(nil)
+	_ mrtp.Source[mrtp.EncodedFrame] = (*Depacketizer)(nil)
 	_ rtp.Depacketizer               = fakeDepacketizer{}
 )

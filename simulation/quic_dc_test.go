@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
+	"github.com/mengelbart/mrtp/element/data"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/netsim"

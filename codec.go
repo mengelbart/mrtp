@@ -6,7 +6,7 @@ import (
 )
 
 // Codec identifies a media codec. It is the single codec type shared by the
-// media pipelines (gstreamer, gopipe) and the transports.
+// media pipelines (gstreamer, Go) and the transports.
 type Codec int
 
 const (
