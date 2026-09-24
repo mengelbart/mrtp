@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -11,9 +12,15 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/mengelbart/mrtp/signaling"
 )
+
+// session is one media session opened through signaling.
+type session interface {
+	close() error
+}
 
 // Server manages the media sessions opened through signaling.
 type Server struct {
@@ -21,15 +28,18 @@ type Server struct {
 	logger    *slog.Logger
 
 	lock     sync.Mutex
-	sessions map[string]*session
+	sessions map[string]session
 }
+
+// answerTimeout bounds gathering ICE candidates for a WebRTC answer.
+const answerTimeout = 10 * time.Second
 
 // New returns a Server that binds media sockets on mediaHost.
 func New(mediaHost string) *Server {
 	return &Server{
 		mediaHost: mediaHost,
 		logger:    slog.Default(),
-		sessions:  map[string]*session{},
+		sessions:  map[string]session{},
 	}
 }
 
@@ -43,7 +53,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 func (s *Server) Close() error {
 	s.lock.Lock()
 	sessions := s.sessions
-	s.sessions = map[string]*session{}
+	s.sessions = map[string]session{}
 	s.lock.Unlock()
 
 	var errs []error
@@ -59,31 +69,50 @@ func (s *Server) handleOpen(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
-	if request.Protocol != signaling.ProtocolRTPUDP {
-		http.Error(w, fmt.Sprintf("unsupported protocol %q", request.Protocol), http.StatusBadRequest)
-		return
-	}
-
 	id, err := newID()
 	if err != nil {
 		http.Error(w, "failed to create session id", http.StatusInternalServerError)
 		return
 	}
-	sess, err := newSession(id, s.mediaHost, s.logger)
+	response := signaling.Response{ID: id}
+	var sess session
+	switch request.Protocol {
+	case signaling.ProtocolRTPUDP:
+		var udpSess *rtpUDPSession
+		udpSess, err = newRTPUDPSession(id, s.mediaHost, s.logger)
+		if err == nil {
+			sess = udpSess
+			response.RTP = &signaling.RTPEndpoint{Address: udpSess.src.LocalAddr().String()}
+		}
+	case signaling.ProtocolWebRTC:
+		if request.WebRTC == nil {
+			http.Error(w, "missing webrtc offer", http.StatusBadRequest)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), answerTimeout)
+		var answer string
+		sess, answer, err = newWebRTCSession(ctx, id, s.mediaHost, *request.WebRTC, s.logger)
+		cancel()
+		if err == nil {
+			response.WebRTC = &signaling.WebRTCAnswer{SDP: answer}
+		}
+	default:
+		http.Error(w, fmt.Sprintf("unsupported protocol %q", request.Protocol), http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, errInvalidOffer) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if err != nil {
-		s.logger.Error("failed to open session", "error", err)
+		s.logger.Error("failed to open session", "protocol", request.Protocol, "error", err)
 		http.Error(w, "failed to open session", http.StatusInternalServerError)
 		return
 	}
 	s.lock.Lock()
 	s.sessions[id] = sess
 	s.lock.Unlock()
-
-	response := signaling.Response{
-		ID:  id,
-		RTP: signaling.RTPEndpoint{Address: sess.src.LocalAddr().String()},
-	}
-	s.logger.Info("opened session", "id", id, "protocol", request.Protocol, "rtp", response.RTP.Address)
+	s.logger.Info("opened session", "id", id, "protocol", request.Protocol)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

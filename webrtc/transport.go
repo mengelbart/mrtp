@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -55,9 +56,10 @@ type Transport struct {
 	interceptorRegistry *interceptor.Registry
 	net                 *Net
 
-	pc       *webrtc.PeerConnection
-	signaler Signaler
-	offerer  bool
+	pc         *webrtc.PeerConnection
+	signaler   Signaler
+	offerer    bool
+	iceServers []webrtc.ICEServer
 
 	pendingICECandidatesLock sync.Mutex
 	hasRemoteDescription     bool
@@ -128,10 +130,10 @@ func EnableTWCC() Option {
 	}
 }
 
+// EnableCCFB advertises CCFB and sends it.
 func EnableCCFB() Option {
 	return func(t *Transport) error {
-		t.mediaEngine.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBACK, Parameter: "ccfb"}, webrtc.RTPCodecTypeVideo)
-		t.mediaEngine.RegisterFeedback(webrtc.RTCPFeedback{Type: webrtc.TypeRTCPFBACK, Parameter: "ccfb"}, webrtc.RTPCodecTypeAudio)
+		t.registerCCFB()
 		generator, err := rfc8888.NewSenderInterceptor(
 			rfc8888.SendInterval(feedbackInterval),
 			rfc8888.WithECNLookupTable(t),
@@ -151,8 +153,10 @@ func SetBWE(bwe mrtp.BWE) Option {
 	}
 }
 
+// EnableCCFBReceiver advertises CCFB and reads incoming reports.
 func EnableCCFBReceiver() Option {
 	return func(t *Transport) error {
+		t.registerCCFB()
 		f, err := rtpfb.NewInterceptor()
 		if err != nil {
 			return err
@@ -250,13 +254,54 @@ func EnablePacing() Option {
 	}
 }
 
+// SetICEServers replaces the default STUN server.
+func SetICEServers(servers []webrtc.ICEServer) Option {
+	return func(t *Transport) error {
+		t.iceServers = servers
+		return nil
+	}
+}
+
+// ListenIP restricts ICE candidates to ip.
+func ListenIP(ip net.IP) Option {
+	return func(t *Transport) error {
+		t.settingEngine.SetIPFilter(func(candidate net.IP) bool {
+			return candidate.Equal(ip)
+		})
+		return nil
+	}
+}
+
+// IncludeLoopbackCandidates gathers ICE candidates on loopback interfaces.
+func IncludeLoopbackCandidates() Option {
+	return func(t *Transport) error {
+		t.settingEngine.SetIncludeLoopbackCandidate(true)
+		return nil
+	}
+}
+
+// fakePayloadType is the payload type the FAKE codec is registered under.
+const fakePayloadType = 118
+
+// RegisterFakeCodec makes the FAKE codec negotiable.
+func RegisterFakeCodec() Option {
+	return AddExtraCodecs(mrtp.Fake.MimeType(), uint32(mrtp.Fake.ClockRate()), fakePayloadType)
+}
+
+// NewTransport creates a peer connection. With a nil signaler, negotiation is
+// driven by Offer, Answer and SetAnswer without trickle ICE.
 func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, error) {
 	t := &Transport{
-		logger:              slog.Default(),
-		pc:                  nil,
-		signaler:            signaler,
-		offerer:             offerer,
-		onRemoteTrack:       nil,
+		logger:        slog.Default(),
+		pc:            nil,
+		signaler:      signaler,
+		offerer:       offerer,
+		onRemoteTrack: nil,
+		iceServers: []webrtc.ICEServer{
+			{
+				URLs: []string{"stun:stun.l.google.com:19302"},
+			},
+		},
 		settingEngine:       &webrtc.SettingEngine{},
 		mediaEngine:         &webrtc.MediaEngine{},
 		interceptorRegistry: &interceptor.Registry{},
@@ -273,11 +318,7 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 		webrtc.WithMediaEngine(t.mediaEngine),
 		webrtc.WithInterceptorRegistry(t.interceptorRegistry),
 	).NewPeerConnection(webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{
-				URLs: []string{"stun:stun.l.google.com:19302"},
-			},
-		},
+		ICEServers: t.iceServers,
 	})
 	if err != nil {
 		return nil, err
@@ -288,7 +329,7 @@ func NewTransport(signaler Signaler, offerer bool, opts ...Option) (*Transport, 
 	pc.OnTrack(t.onTrack)
 	pc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
 		t.logger.Debug("connection state changed", "new_state", pcs)
-		if pcs == webrtc.PeerConnectionStateConnected {
+		if pcs == webrtc.PeerConnectionStateConnected && t.onConnected != nil {
 			t.onConnected()
 		}
 	})
@@ -329,7 +370,7 @@ func (t *Transport) NewDataChannelReceiver(ctx context.Context) (*DCreceiver, er
 
 func (t *Transport) onNegotiationNeeded() {
 	t.logger.Info("peer connection needs negotiation")
-	if t.offerer {
+	if t.offerer && t.signaler != nil {
 		t.logger.Info("creating offer")
 		offer, err := t.pc.CreateOffer(nil)
 		if err != nil {
@@ -349,7 +390,7 @@ func (t *Transport) onNegotiationNeeded() {
 
 func (t *Transport) onICECandidate(i *webrtc.ICECandidate) {
 	t.logger.Info("got new ICE candidate", "candidate", i)
-	if i == nil {
+	if i == nil || t.signaler == nil {
 		return
 	}
 	t.pendingICECandidatesLock.Lock()
@@ -414,6 +455,46 @@ func (t *Transport) HandleSessionDescription(description *webrtc.SessionDescript
 		return errors.New("failed to send answer")
 	}
 	return nil
+}
+
+// Offer creates an offer and returns it once all ICE candidates are gathered.
+func (t *Transport) Offer(ctx context.Context) (string, error) {
+	offer, err := t.pc.CreateOffer(nil)
+	if err != nil {
+		return "", err
+	}
+	return t.setLocalDescription(ctx, offer)
+}
+
+// Answer applies a complete offer and returns the answer once all ICE
+// candidates are gathered.
+func (t *Transport) Answer(ctx context.Context, offer string) (string, error) {
+	if err := t.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offer}); err != nil {
+		return "", err
+	}
+	answer, err := t.pc.CreateAnswer(nil)
+	if err != nil {
+		return "", err
+	}
+	return t.setLocalDescription(ctx, answer)
+}
+
+// SetAnswer applies the peer's complete answer to an offer from Offer.
+func (t *Transport) SetAnswer(answer string) error {
+	return t.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer})
+}
+
+func (t *Transport) setLocalDescription(ctx context.Context, description webrtc.SessionDescription) (string, error) {
+	gathered := webrtc.GatheringCompletePromise(t.pc)
+	if err := t.pc.SetLocalDescription(description); err != nil {
+		return "", err
+	}
+	select {
+	case <-gathered:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	return t.pc.LocalDescription().SDP, nil
 }
 
 func (t *Transport) HandleICECandidate(candidate webrtc.ICECandidateInit) error {

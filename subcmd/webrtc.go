@@ -15,7 +15,6 @@ import (
 	nethttp "net/http"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/http"
@@ -35,9 +34,6 @@ type WebRTCCodecParameters struct {
 }
 
 var WebRTCExtraCodecs = []WebRTCCodecParameters{}
-
-// fakePayloadType is the payload type the FAKE codec is registered under.
-const fakePayloadType = 118
 
 // webrtcSetupTimeout bounds waiting for signalling to complete and for the peer
 // to open a data channel.
@@ -157,7 +153,7 @@ Usage:
 		// negotiable. Peers then agree on it like on any other codec, instead
 		// of one peer sending fake media on a track the other believes to be
 		// H264.
-		webrtc.AddExtraCodecs(mrtp.Fake.MimeType(), uint32(mrtp.Fake.ClockRate()), fakePayloadType),
+		webrtc.RegisterFakeCodec(),
 		webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
 			receiverConfig, configErr := w.media.ReceiverConfig("rtp-stream-sink")
 			if configErr != nil {

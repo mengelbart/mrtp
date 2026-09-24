@@ -29,7 +29,7 @@ func (s *Serve) Help() string {
 func (s *Serve) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	fs.StringVar(&s.addr, "addr", "127.0.0.1:8080", "HTTP signaling server address")
-	fs.StringVar(&s.mediaHost, "media-host", "127.0.0.1", "Host to bind and advertise media sockets on")
+	fs.StringVar(&s.mediaHost, "media-host", "127.0.0.1", "IP to bind media sockets and restrict WebRTC ICE candidates to")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a signaling server that accepts media sessions from clients

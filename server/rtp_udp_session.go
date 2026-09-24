@@ -11,8 +11,8 @@ import (
 	"github.com/mengelbart/mrtp/udp"
 )
 
-// session is one RTP over UDP stream whose packets are dropped.
-type session struct {
+// rtpUDPSession is one RTP over UDP stream whose packets are dropped.
+type rtpUDPSession struct {
 	id      string
 	logger  *slog.Logger
 	src     *udp.Source[mrtp.RTPPacket]
@@ -22,9 +22,9 @@ type session struct {
 	done    chan struct{}
 }
 
-// newSession binds a UDP socket on host and starts dropping the RTP packets
+// newRTPUDPSession binds a UDP socket on host and starts dropping the RTP packets
 // that arrive on it.
-func newSession(id, host string, logger *slog.Logger) (*session, error) {
+func newRTPUDPSession(id, host string, logger *slog.Logger) (*rtpUDPSession, error) {
 	src, err := udp.Listen(net.JoinHostPort(host, "0"), false, mrtp.RTP{}, rtpBytes)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func newSession(id, host string, logger *slog.Logger) (*session, error) {
 	g.Terminal(src)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sess := &session{
+	sess := &rtpUDPSession{
 		id:      id,
 		logger:  logger.With("id", id),
 		src:     src,
@@ -52,7 +52,7 @@ func newSession(id, host string, logger *slog.Logger) (*session, error) {
 	return sess, nil
 }
 
-func (s *session) run(ctx context.Context) {
+func (s *rtpUDPSession) run(ctx context.Context) {
 	defer close(s.done)
 	if err := s.graph.Run(ctx); err != nil && !errors.Is(err, net.ErrClosed) && ctx.Err() == nil {
 		s.logger.Error("session pipeline failed", "error", err)
@@ -60,7 +60,7 @@ func (s *session) run(ctx context.Context) {
 }
 
 // close stops the pipeline and releases the socket.
-func (s *session) close() error {
+func (s *rtpUDPSession) close() error {
 	s.cancel()
 	// Closing the socket unblocks the pending Read.
 	err := s.src.Close()

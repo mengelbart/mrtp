@@ -27,6 +27,7 @@ func EnableSCReAM(initRate, minRate, maxRate int) Option {
 		if initRate < minRate || initRate > maxRate {
 			return fmt.Errorf("invalid SCReAM init rate: %v, must be within [%v, %v]", initRate, minRate, maxRate)
 		}
+		t.registerCCFB()
 		t.scream = NewScreamInterceptorFactory(initRate, minRate, maxRate)
 		t.interceptorRegistry.Add(t.scream)
 		return nil
