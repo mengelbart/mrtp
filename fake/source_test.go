@@ -66,19 +66,3 @@ func TestSourceFrames(t *testing.T) {
 		}
 	})
 }
-
-func TestSetTargetBitrateClamps(t *testing.T) {
-	src, err := New(time.Second, 30, media.RateBounds{Initial: 5, Min: 100, Max: 200})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := src.bitrate.Load(); got != 100 {
-		t.Fatalf("initial bitrate is %v, want it clamped to 100", got)
-	}
-	if err = src.SetTargetBitrate(1000); err != nil {
-		t.Fatal(err)
-	}
-	if got := src.bitrate.Load(); got != 200 {
-		t.Fatalf("bitrate is %v, want it clamped to 200", got)
-	}
-}

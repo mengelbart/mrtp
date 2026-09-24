@@ -2,17 +2,18 @@ package subcmd
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"time"
 
+	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/internal/quictransport"
+	"github.com/mengelbart/mrtp/media"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/quic-go/quic-go"
 )
@@ -42,7 +43,7 @@ func (s *SendData) Exec(cmd string, args []string) error {
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 3_000_000, "Set the maximum target rate of the congestion controller in bits per second")
 	fs.UintVar(&s.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
 
-	sourceFile := fs.String("source-file", "", "File to be sent. If empty, random data will be sent.")
+	sourceFile := fs.String("source-file", "", "File to be sent. If empty, synthetic data will be sent.")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `%v
@@ -116,7 +117,11 @@ Flags:
 		return err
 	}
 
-	source, err := createDataSource(*sourceFile, 0, true, false)
+	source, err := createDataSource(*sourceFile, 0, media.RateBounds{
+		Initial: 750_000,
+		Min:     minTargetRate,
+		Max:     s.maxTargetRate,
+	}, false)
 	if err != nil {
 		return err
 	}
@@ -138,35 +143,32 @@ Flags:
 		// log "combined" target rate even if we do not split it. Makes plotting easier
 		slog.Info("NEW_TARGET_RATE", "rate", ratebps)
 
-		source.SetRateLimit(ratebps)
-		return nil
+		return source.SetTargetBitrate(ratebps)
 	}
 
 	return runner.Run(ctx)
 }
 
-func createDataSource(sourceFile string, startDelaySeconds uint, rateLimited bool, chunkSource bool) (*data.Source, error) {
-	sourceOptions := []data.Option{}
+// dataSource is a source of data channel traffic.
+type dataSource interface {
+	mrtp.Source[mrtp.DataChunk]
+	mrtp.Driver
+	media.Sender
+	Running() bool
+}
 
-	if rateLimited {
-		sourceOptions = append(sourceOptions, data.UseRateLimiter(750_000, 10000)) // burst not relevant, as data source sends small chunks anyways
-	}
-
-	if startDelaySeconds > 0 {
-		sourceOptions = append(sourceOptions, data.SetStartDelay(time.Duration(startDelaySeconds)*time.Second))
-	}
-
+// createDataSource returns a source that sends sourceFile, or synthetic data
+// if sourceFile is empty, paced to bounds.
+func createDataSource(sourceFile string, startDelaySeconds uint, bounds media.RateBounds, chunkSource bool) (dataSource, error) {
+	startDelay := time.Duration(startDelaySeconds) * time.Second
 	if sourceFile != "" {
-		// check if file exists
-		if _, err := os.Stat(sourceFile); errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("file does not exist: %v", sourceFile)
-		}
-		sourceOptions = append(sourceOptions, data.UseFileSource(sourceFile))
+		return data.NewFileSource(sourceFile, bounds, startDelay)
 	}
-
+	config := data.StreamConfig()
 	if chunkSource {
-		sourceOptions = append(sourceOptions, data.UseChunkSource())
+		config = data.ChunkConfig()
 	}
-
-	return data.NewSource(sourceOptions...)
+	config.Bounds = bounds
+	config.StartDelay = startDelay
+	return data.NewSource(config)
 }

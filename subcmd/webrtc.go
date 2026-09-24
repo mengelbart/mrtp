@@ -94,7 +94,7 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 	fs.BoolVar(&w.sendVideoTrack, "send-track", false, "Send a media track to the peer")
 
 	fs.BoolVar(&w.datachannel, "dc", false, "Send/Receive data with data channels")
-	fs.StringVar(&w.dcSourceFile, "dc-source", "", "File to be sent. If empty, random data will be sent.")
+	fs.StringVar(&w.dcSourceFile, "dc-source", "", "File to be sent. If empty, synthetic data will be sent.")
 	fs.UintVar(&w.dcStartDelay, "dc-start-delay", 0, "Start delay in seconds before data channel source starts sending data.")
 	fs.BoolVar(&w.dcChunks, "dc-chunks", false, "Send chunks on datachannel")
 
@@ -278,13 +278,13 @@ Usage:
 		if err != nil {
 			return err
 		}
-		var dataSource *data.Source
-		dataSource, err = createDataSource(w.dcSourceFile, w.dcStartDelay, false, w.dcChunks)
+		var source dataSource
+		source, err = createDataSource(w.dcSourceFile, w.dcStartDelay, media.RateBounds{}, w.dcChunks)
 		if err != nil {
 			return err
 		}
 		dataGraph := pipeline.NewGraph()
-		if err = dataGraph.Connect(dataSource, dcSender); err != nil {
+		if err = dataGraph.Connect(source, dcSender); err != nil {
 			return err
 		}
 		runner.Add(dataGraph)

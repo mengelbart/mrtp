@@ -12,7 +12,6 @@ import (
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
-	"github.com/mengelbart/mrtp/data"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/media"
@@ -50,7 +49,7 @@ type Send struct {
 	transport         string
 
 	media      media.Flags
-	dataSource *data.Source
+	dataSource dataSource
 }
 
 func (s *Send) Help() string {
@@ -68,7 +67,7 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.UintVar(&s.maxTargetRate, "max-target-rate", 30_000_000, "Set the maximum target rate of the congestion controller in bits per second")
 	fs.BoolVar(&s.traceRTP, "trace-rtp-send", false, "Log outgoing RTP packets")
 	fs.BoolVar(&s.datachannel, "dc", false, "Send/Receive data with data channels")
-	fs.StringVar(&s.dcSourceFile, "dc-source", "", "File to be sent. If empty, random data will be sent.")
+	fs.StringVar(&s.dcSourceFile, "dc-source", "", "File to be sent. If empty, synthetic data will be sent.")
 	fs.UintVar(&s.dcStartDelay, "dc-start-delay", 0, "Start delay in seconds before data channel source starts sending data.")
 	fs.BoolVar(&s.dcChunks, "dc-chunks", false, "Send chunks on datachannel")
 	fs.UintVar(&s.dataChannelFlowID, "dc-flow-id", 3, "Data Channel Flow ID when using quic data channels")
@@ -237,7 +236,7 @@ Flags:
 				return dcErr
 			}
 
-			s.dataSource, err = createDataSource(s.dcSourceFile, s.dcStartDelay, false, s.dcChunks)
+			s.dataSource, err = createDataSource(s.dcSourceFile, s.dcStartDelay, media.RateBounds{}, s.dcChunks)
 			if err != nil {
 				return err
 			}

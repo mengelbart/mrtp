@@ -40,6 +40,11 @@ type RateBounds struct {
 	Max     uint
 }
 
+// Clamp limits bitrate to [Min, Max].
+func (b RateBounds) Clamp(bitrate uint) uint {
+	return min(max(bitrate, b.Min), b.Max)
+}
+
 // SenderConfig describes one outgoing stream.
 type SenderConfig struct {
 	// Name identifies the stream in logs and in element names.
