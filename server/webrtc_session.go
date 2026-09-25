@@ -19,7 +19,8 @@ import (
 const webrtcBufferSize = 10_000_000
 
 // webrtcSession is one WebRTC peer connection. It sends fake video on every
-// recvonly video m-line of the offer and drops incoming RTP.
+// recvonly video m-line of the offer, and depacketizes and drops every track
+// the client sends.
 type webrtcSession struct {
 	id        string
 	logger    *slog.Logger
@@ -31,7 +32,7 @@ type webrtcSession struct {
 	candidates *signaling.Candidates
 
 	lock     sync.Mutex
-	discards []*pipeline.Discard[mrtp.RTPPacket]
+	discards []*pipeline.Discard[mrtp.EncodedFrame]
 }
 
 // newWebRTCSession answers offer with a peer connection whose candidates are
@@ -104,25 +105,26 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 
 // addSender sends fake video on a new local track.
 func (s *webrtcSession) addSender() error {
-	track, err := s.transport.AddLocalTrackWithCodec(mrtp.Fake.MimeType())
+	track, err := s.transport.AddLocalTrackWithCodec(mediaCodec.MimeType())
 	if err != nil {
 		return err
 	}
-	g, err := newFakeSender(track)
-	if err != nil {
-		return err
-	}
+	g := pipeline.NewGraph()
 	s.runner.Add(g)
+	source, err := addSender(g, track)
+	if err != nil {
+		return err
+	}
+	s.transport.ControlBitrate(source)
 	return nil
 }
 
 func (s *webrtcSession) onTrack(receiver *webrtc.RTPReceiver) {
 	s.logger.Info("got track", "codec", receiver.Codec())
-	discard := pipeline.NewDiscard[mrtp.RTPPacket]()
 	g := pipeline.NewGraph()
-	if err := g.Connect(receiver, discard); err != nil {
-		s.logger.Error("failed to connect track", "error", err)
-		_ = receiver.Close()
+	discard, err := addReceiver(g, receiver)
+	if err != nil {
+		s.logger.Error("failed to receive track", "error", errors.Join(err, g.Close()))
 		return
 	}
 	s.lock.Lock()
@@ -138,8 +140,8 @@ func (s *webrtcSession) run(ctx context.Context) {
 	}
 }
 
-// packets returns the number of RTP packets received on all tracks.
-func (s *webrtcSession) packets() uint64 {
+// frames returns the number of frames received on all tracks.
+func (s *webrtcSession) frames() uint64 {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	var n uint64
@@ -167,6 +169,6 @@ func (s *webrtcSession) Close() error {
 	err := s.transport.Close()
 	<-s.done
 	err = errors.Join(err, s.runner.Close())
-	s.logger.Info("closed session", "packets", s.packets())
+	s.logger.Info("closed session", "frames", s.frames())
 	return err
 }

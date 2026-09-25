@@ -14,8 +14,8 @@ import (
 	"github.com/mengelbart/mrtp/udp"
 )
 
-// rtpUDPSession is one RTP over UDP stream. It either drops the packets the
-// client sends, or sends fake video to the client.
+// rtpUDPSession is one RTP over UDP stream of fake video. The server either
+// depacketizes and drops what the client sends, or sends to the client.
 type rtpUDPSession struct {
 	id     string
 	logger *slog.Logger
@@ -24,7 +24,7 @@ type rtpUDPSession struct {
 	socket io.Closer
 	graph  *pipeline.Graph
 	// discard is nil if the server sends.
-	discard *pipeline.Discard[mrtp.RTPPacket]
+	discard *pipeline.Discard[mrtp.EncodedFrame]
 	cancel  context.CancelFunc
 	done    chan struct{}
 }
@@ -55,17 +55,19 @@ func newRTPUDPSession(id, host string, request signaling.RTPRequest, logger *slo
 	return sess, nil
 }
 
-// receive drops the RTP packets that arrive on a socket bound on host.
+// receive drops the frames that arrive on a socket bound on host.
 func (s *rtpUDPSession) receive(host string) error {
-	src, err := udp.Listen(net.JoinHostPort(host, "0"), false, mrtp.RTP{}, rtpBytes)
+	format, err := mrtp.NewRTPFormat(mediaCodec, mrtp.DefaultPayloadType)
 	if err != nil {
 		return err
 	}
-	s.discard = pipeline.NewDiscard[mrtp.RTPPacket]()
-	s.graph = pipeline.NewGraph()
-	if err = s.graph.Connect(src, s.discard); err != nil {
-		_ = src.Close()
+	src, err := udp.Listen(net.JoinHostPort(host, "0"), false, format, rtpBytes)
+	if err != nil {
 		return err
+	}
+	s.graph = pipeline.NewGraph()
+	if s.discard, err = addReceiver(s.graph, src); err != nil {
+		return errors.Join(err, s.graph.Close())
 	}
 	s.graph.Terminal(src)
 	s.addr = src.LocalAddr()
@@ -73,7 +75,7 @@ func (s *rtpUDPSession) receive(host string) error {
 	return nil
 }
 
-// send sends fake video from a socket bound on host to address.
+// send sends from a socket bound on host to address.
 func (s *rtpUDPSession) send(host, address string) error {
 	if address == "" {
 		return fmt.Errorf("%w: missing rtp address", signaling.ErrBadRequest)
@@ -82,8 +84,9 @@ func (s *rtpUDPSession) send(host, address string) error {
 	if err != nil {
 		return fmt.Errorf("%w: invalid rtp address: %w", signaling.ErrBadRequest, err)
 	}
-	if s.graph, err = newFakeSender(sink); err != nil {
-		return err
+	s.graph = pipeline.NewGraph()
+	if _, err = addSender(s.graph, sink); err != nil {
+		return errors.Join(err, s.graph.Close())
 	}
 	s.addr = sink.LocalAddr()
 	s.socket = sink
@@ -106,7 +109,7 @@ func (s *rtpUDPSession) Close() error {
 	<-s.done
 	err = errors.Join(err, s.graph.Close())
 	if s.discard != nil {
-		s.logger.Info("closed session", "packets", s.discard.Packets())
+		s.logger.Info("closed session", "frames", s.discard.Packets())
 	} else {
 		s.logger.Info("closed session")
 	}

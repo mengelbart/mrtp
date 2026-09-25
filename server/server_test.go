@@ -40,21 +40,12 @@ func TestRTPUDPSession(t *testing.T) {
 	}
 	defer conn.Close()
 
-	const n = 10
-	for range n {
-		if _, err = conn.Write([]byte{0x80, 96, 0, 1}); err != nil {
+	sess := session[*rtpUDPSession](t, srv, resp.ID)
+	sendFrames(t, func(seq uint16) {
+		if _, err := conn.Write(marshalRTP(t, seq)); err != nil {
 			t.Fatal(err)
 		}
-	}
-
-	sess := session[*rtpUDPSession](t, srv, resp.ID)
-	deadline := time.Now().Add(time.Second)
-	for sess.discard.Packets() < n {
-		if time.Now().After(deadline) {
-			t.Fatalf("received %v packets, want %v", sess.discard.Packets(), n)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	}, sess.discard.Packets)
 
 	if err = client.Close(ctx, resp.ID); err != nil {
 		t.Fatal(err)
@@ -126,8 +117,8 @@ func TestWebRTCSessionRecv(t *testing.T) {
 	if err := signaler.Close(ctx, resp.ID); err != nil {
 		t.Fatal(err)
 	}
-	if sess.packets() != 0 {
-		t.Fatalf("server received %v packets, want 0", sess.packets())
+	if sess.frames() != 0 {
+		t.Fatalf("server received %v packets, want 0", sess.frames())
 	}
 }
 
@@ -154,11 +145,8 @@ func TestWebRTCSession(t *testing.T) {
 	signaler := &signaling.Client{BaseURL: ts.URL}
 	resp := openWebRTC(t, ctx, signaler, client)
 
-	const n = 10
-	sendRTP(t, track, n)
-
 	sess := session[*webrtcSession](t, srv, resp.ID)
-	waitFor(t, func() bool { return sess.packets() >= n })
+	sendFrames(t, func(seq uint16) { writeRTP(t, track, seq) }, sess.frames)
 
 	if err := signaler.Close(ctx, resp.ID); err != nil {
 		t.Fatal(err)
@@ -247,10 +235,8 @@ func TestWebRTCTrickleSession(t *testing.T) {
 		t.Fatal("peer connection not established")
 	}
 
-	const n = 10
-	sendRTP(t, track, n)
 	sess := session[*webrtcSession](t, srv, resp.ID)
-	waitFor(t, func() bool { return sess.packets() >= n })
+	sendFrames(t, func(seq uint16) { writeRTP(t, track, seq) }, sess.frames)
 }
 
 func TestCandidatesOfNonTrickleSession(t *testing.T) {
@@ -420,27 +406,47 @@ func openWebRTC(t *testing.T, ctx context.Context, signaler *signaling.Client, c
 
 var rtpPool = pipeline.NewPool(func() *mrtp.RTPPacket { return &mrtp.RTPPacket{} }, func(*mrtp.RTPPacket) {})
 
-func writeRTP(t *testing.T, track *webrtc.RTPSender, seq uint16) {
+// marshalRTP returns packet seq of a stream whose frames are one packet each.
+func marshalRTP(t *testing.T, seq uint16) []byte {
 	t.Helper()
 	data, err := (&rtp.Packet{
-		Header:  rtp.Header{Version: 2, SequenceNumber: seq, Timestamp: uint32(seq), SSRC: 1},
+		Header: rtp.Header{
+			Version:        2,
+			Marker:         true,
+			PayloadType:    mrtp.DefaultPayloadType,
+			SequenceNumber: seq,
+			Timestamp:      uint32(seq) * 3000,
+			SSRC:           1,
+		},
 		Payload: make([]byte, 100),
 	}).Marshal()
 	if err != nil {
 		t.Fatal(err)
 	}
+	return data
+}
+
+func writeRTP(t *testing.T, track *webrtc.RTPSender, seq uint16) {
+	t.Helper()
 	p := rtpPool.Get()
-	p.Value().Data = data
-	if err = track.Write(p); err != nil {
+	p.Value().Data = marshalRTP(t, seq)
+	if err := track.Write(p); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// sendRTP writes n packets.
-func sendRTP(t *testing.T, track *webrtc.RTPSender, n int) {
+// sendFrames writes one-packet frames with write until the server has
+// received some. The depacketizer's jitter buffer holds back the first
+// packets of a stream.
+func sendFrames(t *testing.T, write func(seq uint16), received func() uint64) {
 	t.Helper()
-	for seq := range uint16(n) {
-		writeRTP(t, track, seq+1)
+	deadline := time.Now().Add(5 * time.Second)
+	for seq := uint16(1); received() == 0; seq++ {
+		if time.Now().After(deadline) {
+			t.Fatal("server received no frames")
+		}
+		write(seq)
+		time.Sleep(time.Millisecond)
 	}
 }
 
