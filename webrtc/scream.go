@@ -2,7 +2,7 @@
 
 package webrtc
 
-import "github.com/mengelbart/mrtp/webrtc/scream"
+import "github.com/mengelbart/mrtp/webrtc/internal/scream"
 
 // EnableSCReAM runs SCReAM congestion control on the local tracks.
 func EnableSCReAM(initRate, minRate, maxRate int) Option {

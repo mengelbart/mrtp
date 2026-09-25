@@ -1,6 +1,6 @@
 //go:build cgo
 
-package subcmd
+package main
 
 import (
 	"context"
@@ -16,9 +16,8 @@ import (
 	nethttp "net/http"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/element/data"
-	"github.com/mengelbart/mrtp/http"
+	"github.com/mengelbart/mrtp/internal/http"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/webrtc"
@@ -26,22 +25,22 @@ import (
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("webrtc", func() cmdmain.SubCmd { return new(WebRTC) })
+	registerSubCmd("webrtc", func() subCmd { return new(webrtcSubCmd) })
 }
 
-type WebRTCCodecParameters struct {
+type webrtcCodecParameters struct {
 	MimeType    string
 	ClockRate   uint32
 	PayloadType uint8
 }
 
-var WebRTCExtraCodecs = []WebRTCCodecParameters{}
+var webrtcExtraCodecs = []webrtcCodecParameters{}
 
 // webrtcSetupTimeout bounds waiting for signalling to complete and for the peer
 // to open a data channel.
 const webrtcSetupTimeout = 30 * time.Second
 
-type WebRTC struct {
+type webrtcSubCmd struct {
 	localAddr        string
 	remoteAddr       string
 	localPort        string
@@ -66,12 +65,12 @@ type WebRTC struct {
 	media mediaFlags
 }
 
-// Help implements cmdmain.SubCmd.
-func (w *WebRTC) Help() string {
+// Help implements subCmd.
+func (w *webrtcSubCmd) Help() string {
 	return "Run webrtc peer"
 }
 
-func (w *WebRTC) Exec(cmd string, args []string) error {
+func (w *webrtcSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("webrtc", flag.ExitOnError)
 	fs.StringVar(&w.localAddr, "local", "127.0.0.1", "Local address of the HTTP signaling server the answerer listens on")
 	fs.StringVar(&w.remoteAddr, "remote", "127.0.0.1", "Remote address of the HTTP signaling server the offerer connects to")
@@ -100,7 +99,7 @@ func (w *WebRTC) Exec(cmd string, args []string) error {
 
 	w.media.configureSender(fs)
 	w.media.configureReceiver(fs)
-	DefaultBweFlags.ConfigureFlags(fs)
+	defaultBweFlags.ConfigureFlags(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a WebRTC pipeline
@@ -173,7 +172,7 @@ Usage:
 
 	// Registered before the Enable* options below, which only add their
 	// feedback to the codecs registered so far.
-	for _, c := range WebRTCExtraCodecs {
+	for _, c := range webrtcExtraCodecs {
 		webrtcOptions = append(webrtcOptions, webrtc.AddExtraCodecs(c.MimeType, c.ClockRate, c.PayloadType))
 	}
 
@@ -205,7 +204,7 @@ Usage:
 		webrtcOptions = append(webrtcOptions, webrtc.EnablePacing())
 	}
 	if w.bwe != "" {
-		bweOptions, err := makeWebRTCBWE(w.bwe, BWEConfig{
+		bweOptions, err := makeWebRTCBWE(w.bwe, bweConfig{
 			InitTargetRate: initTargetRate,
 			MinTargetRate:  minTargetRate,
 			MaxTargetRate:  w.maxTargetRate,

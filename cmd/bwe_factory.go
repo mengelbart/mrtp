@@ -1,4 +1,4 @@
-package subcmd
+package main
 
 import (
 	"flag"
@@ -12,24 +12,24 @@ const (
 	minTargetRate  = 400_000
 )
 
-type BWEConfig struct {
+type bweConfig struct {
 	InitTargetRate uint
 	MinTargetRate  uint
 	MaxTargetRate  uint
 }
 
-type BWEFactory interface {
-	MakeBWE(BWEConfig) (mrtp.BWE, error)
+type bweFactory interface {
+	MakeBWE(bweConfig) (mrtp.BWE, error)
 }
 
-type BWEFactoryFunc func(BWEConfig) (mrtp.BWE, error)
+type bweFactoryFunc func(bweConfig) (mrtp.BWE, error)
 
-func (f BWEFactoryFunc) MakeBWE(config BWEConfig) (mrtp.BWE, error) {
+func (f bweFactoryFunc) MakeBWE(config bweConfig) (mrtp.BWE, error) {
 	return f(config)
 }
 
-var BWEFactories = map[string]BWEFactory{
-	"nada": BWEFactoryFunc(func(config BWEConfig) (mrtp.BWE, error) {
+var bweFactories = map[string]bweFactory{
+	"nada": bweFactoryFunc(func(config bweConfig) (mrtp.BWE, error) {
 		nadaConfig := nada.Config{
 			MinRate:                  uint64(config.MinTargetRate),
 			MaxRate:                  uint64(config.MaxTargetRate),
@@ -37,18 +37,18 @@ var BWEFactories = map[string]BWEFactory{
 			FeedbackDelta:            uint64(20),
 			DeactivateQDelayWrapping: true,
 
-			RefCongLevel:           DefaultBweFlags.RefCongLevel,
-			QEPS:                   DefaultBweFlags.QEPS,
-			MaxRampUpFactor:        DefaultBweFlags.MaxRampUpFactor,
-			MaxGradualUpdateFactor: DefaultBweFlags.MaxGradualUpdateFactor,
-			Kappa:                  DefaultBweFlags.Kappa,
-			Eta:                    DefaultBweFlags.Eta,
-			DFILT:                  DefaultBweFlags.DFILT,
-			QBOUND:                 DefaultBweFlags.QBOUND,
+			RefCongLevel:           defaultBweFlags.RefCongLevel,
+			QEPS:                   defaultBweFlags.QEPS,
+			MaxRampUpFactor:        defaultBweFlags.MaxRampUpFactor,
+			MaxGradualUpdateFactor: defaultBweFlags.MaxGradualUpdateFactor,
+			Kappa:                  defaultBweFlags.Kappa,
+			Eta:                    defaultBweFlags.Eta,
+			DFILT:                  defaultBweFlags.DFILT,
+			QBOUND:                 defaultBweFlags.QBOUND,
 		}
 		return mrtp.NewNadaWithConfig(nadaConfig), nil
 	}),
-	"gcc": BWEFactoryFunc(func(config BWEConfig) (mrtp.BWE, error) {
+	"gcc": bweFactoryFunc(func(config bweConfig) (mrtp.BWE, error) {
 		return mrtp.NewGCC(config.InitTargetRate, config.MinTargetRate, config.MaxTargetRate)
 	}),
 }
@@ -75,4 +75,4 @@ func (b *bweFlags) ConfigureFlags(fs *flag.FlagSet) {
 	fs.Uint64Var(&b.QBOUND, "nada-qbound", nada.QBOUND, "Upper bound on self-inflicted queuing delay during ramp up in ms")
 }
 
-var DefaultBweFlags *bweFlags = &bweFlags{}
+var defaultBweFlags *bweFlags = &bweFlags{}

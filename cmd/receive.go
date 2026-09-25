@@ -1,6 +1,6 @@
 //go:build cgo
 
-package subcmd
+package main
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/element/data"
 	"github.com/mengelbart/mrtp/internal/quictransport"
@@ -24,10 +23,10 @@ import (
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("receive", func() cmdmain.SubCmd { return new(Receive) })
+	registerSubCmd("receive", func() subCmd { return new(receiveSubCmd) })
 }
 
-type Receive struct {
+type receiveSubCmd struct {
 	localAddr         string
 	remoteAddr        string
 	roqMapping        uint
@@ -48,11 +47,11 @@ type Receive struct {
 	media mediaFlags
 }
 
-func (r *Receive) Help() string {
+func (r *receiveSubCmd) Help() string {
 	return "Run receiver pipeline"
 }
 
-func (r *Receive) Exec(cmd string, args []string) error {
+func (r *receiveSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("receive", flag.ExitOnError)
 	fs.StringVar(&r.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
@@ -70,7 +69,7 @@ func (r *Receive) Exec(cmd string, args []string) error {
 	fs.UintVar(&r.rtcpRecvFlowID, "rtcp-recv-flow-id", 2, "RTCP Receiver Flow ID when using RTP over QUIC")
 
 	fs.IntVar(&r.udpRecvBufferSize, "recv-buffer-size", r.udpRecvBufferSize, "Size of the UDP receive buffer in bytes, 0 leaves the operating system default")
-	fs.StringVar(&r.transport, "transport", DefaultTransport,
+	fs.StringVar(&r.transport, "transport", defaultTransport,
 		fmt.Sprintf("Transport for plain RTP, ignored when RoQ is enabled or when the media pipeline moves the packets itself (%v)", strings.Join(transportNames, ", ")))
 
 	r.media.configureReceiver(fs)
@@ -155,7 +154,7 @@ Flags:
 	return runner.Run(ctx)
 }
 
-func (r *Receive) setupRoQ(ctx context.Context, media mediaPipeline, runner *pipeline.Runner, config receiverConfig) (func(), error) {
+func (r *receiveSubCmd) setupRoQ(ctx context.Context, media mediaPipeline, runner *pipeline.Runner, config receiverConfig) (func(), error) {
 	quicOptions := []quictransport.Option{
 		quictransport.WithRole(quictransport.Role(r.roqServer)),
 		quictransport.SetLocalAddress(r.localAddr, r.udpPort),
@@ -254,7 +253,7 @@ func (r *Receive) setupRoQ(ctx context.Context, media mediaPipeline, runner *pip
 	})
 }
 
-func (r *Receive) setupPlainRTP(media mediaPipeline, runner *pipeline.Runner, config receiverConfig) error {
+func (r *receiveSubCmd) setupPlainRTP(media mediaPipeline, runner *pipeline.Runner, config receiverConfig) error {
 	var endpoints receiveEndpoints
 	switch r.transport {
 	case transportGstUDP:

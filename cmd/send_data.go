@@ -1,4 +1,4 @@
-package subcmd
+package main
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/element/data"
 	"github.com/mengelbart/mrtp/internal/quictransport"
@@ -18,11 +17,11 @@ import (
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("send-data", func() cmdmain.SubCmd { return new(SendData) })
+	registerSubCmd("send-data", func() subCmd { return new(sendDataSubCmd) })
 }
 
-// SendData is a command to run a receiver pipeline for data channels.
-type SendData struct {
+// sendDataSubCmd is a command to run a receiver pipeline for data channels.
+type sendDataSubCmd struct {
 	localAddr         string
 	remoteAddr        string
 	maxTargetRate     uint
@@ -30,11 +29,11 @@ type SendData struct {
 	bwe               string
 }
 
-func (s *SendData) Help() string {
+func (s *sendDataSubCmd) Help() string {
 	return "Run sender pipeline for data channels"
 }
 
-func (s *SendData) Exec(cmd string, args []string) error {
+func (s *sendDataSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("send-data", flag.ExitOnError)
 	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
@@ -73,11 +72,11 @@ Flags:
 		quictransport.SetQLOGLabel("sender"),
 	}
 
-	bweFactory, ok := BWEFactories[s.bwe]
+	bweFactory, ok := bweFactories[s.bwe]
 	if !ok {
 		return fmt.Errorf("unknown BWE: %v", s.bwe)
 	}
-	bwe, err := bweFactory.MakeBWE(BWEConfig{
+	bwe, err := bweFactory.MakeBWE(bweConfig{
 		InitTargetRate: initTargetRate,
 		MinTargetRate:  minTargetRate,
 		MaxTargetRate:  s.maxTargetRate,

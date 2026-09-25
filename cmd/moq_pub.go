@@ -1,4 +1,4 @@
-package subcmd
+package main
 
 import (
 	"flag"
@@ -8,23 +8,22 @@ import (
 
 	"github.com/mengelbart/moqtransport"
 	"github.com/mengelbart/moqtransport/quicmoq"
-	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/moq"
 	"github.com/quic-go/quic-go"
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("moq-pub", func() cmdmain.SubCmd { return new(MoQPub) })
+	registerSubCmd("moq-pub", func() subCmd { return new(moqPubSubCmd) })
 }
 
-type MoQPub struct {
+type moqPubSubCmd struct {
 	localAddr  string
 	remoteAddr string
 }
 
-// Exec implements cmdmain.SubCmd.
-func (m *MoQPub) Exec(cmd string, args []string) error {
+// Exec implements subCmd.
+func (m *moqPubSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("moq-pub", flag.ExitOnError)
 	fs.StringVar(&m.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&m.remoteAddr, "remote", "127.0.0.1", "Remote address")
@@ -64,8 +63,8 @@ Flags:
 	}, []string{"moq-00"})
 }
 
-// Help implements cmdmain.SubCmd.
-func (m *MoQPub) Help() string {
+// Help implements subCmd.
+func (m *moqPubSubCmd) Help() string {
 	return "Run a MoQ publisher"
 }
 

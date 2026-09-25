@@ -1,4 +1,4 @@
-package subcmd
+package main
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/element/data"
 	"github.com/mengelbart/mrtp/internal/quictransport"
@@ -16,21 +15,21 @@ import (
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("receive-data", func() cmdmain.SubCmd { return new(ReceiveData) })
+	registerSubCmd("receive-data", func() subCmd { return new(receiveDataSubCmd) })
 }
 
-// ReceiveData is a command to run a receiver pipeline for data channels.
-type ReceiveData struct {
+// receiveDataSubCmd is a command to run a receiver pipeline for data channels.
+type receiveDataSubCmd struct {
 	localAddr         string
 	remoteAddr        string
 	dataChannelFlowID uint
 }
 
-func (r *ReceiveData) Help() string {
+func (r *receiveDataSubCmd) Help() string {
 	return "Run receiver pipeline for data channels"
 }
 
-func (r *ReceiveData) Exec(cmd string, args []string) error {
+func (r *receiveDataSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("receive-data", flag.ExitOnError)
 	fs.StringVar(&r.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&r.remoteAddr, "remote", "127.0.0.1", "Remote address")
@@ -104,7 +103,7 @@ Flags:
 
 // addDataChannelReceiver waits for the peer to open the data channel and adds
 // the pipeline it feeds to the runner.
-func (r *ReceiveData) addDataChannelReceiver(ctx context.Context, dcTransport *datachannels.Transport, runner *pipeline.Runner) error {
+func (r *receiveDataSubCmd) addDataChannelReceiver(ctx context.Context, dcTransport *datachannels.Transport, runner *pipeline.Runner) error {
 	receiver, err := dcTransport.AddDataChannelReceiver(ctx, uint64(r.dataChannelFlowID))
 	if err != nil {
 		return err

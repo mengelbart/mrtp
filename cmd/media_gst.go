@@ -1,12 +1,12 @@
 //go:build cgo
 
-package subcmd
+package main
 
 import (
 	"errors"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/gstreamer"
+	"github.com/mengelbart/mrtp/internal/gstreamer"
 	"github.com/mengelbart/mrtp/pipeline"
 )
 

@@ -1,6 +1,6 @@
 //go:build cgo
 
-package subcmd
+package main
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/datachannels"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/pipeline"
@@ -23,10 +22,10 @@ import (
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("send", func() cmdmain.SubCmd { return new(Send) })
+	registerSubCmd("send", func() subCmd { return new(sendSubCmd) })
 }
 
-type Send struct {
+type sendSubCmd struct {
 	localAddr         string
 	remoteAddr        string
 	roqMapping        uint
@@ -53,11 +52,11 @@ type Send struct {
 	dataSource dataSource
 }
 
-func (s *Send) Help() string {
+func (s *sendSubCmd) Help() string {
 	return "Run sender pipeline"
 }
 
-func (s *Send) Exec(cmd string, args []string) error {
+func (s *sendSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	fs.StringVar(&s.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&s.remoteAddr, "remote", "127.0.0.1", "Remote address")
@@ -79,11 +78,11 @@ func (s *Send) Exec(cmd string, args []string) error {
 	fs.UintVar(&s.rtcpSendFlowID, "rtcp-send-flow-id", 2, "RTCP Sender Flow ID when using RTP over QUIC")
 	fs.UintVar(&s.rtcpRecvFlowID, "rtcp-recv-flow-id", 1, "RTCP Receiver Flow ID when using RTP over QUIC")
 	fs.UintVar(&s.dcPercentage, "dc-tr-share", 50, "Percentage of target rate to be used for data channel (RoQ only)")
-	fs.StringVar(&s.transport, "transport", DefaultTransport,
+	fs.StringVar(&s.transport, "transport", defaultTransport,
 		fmt.Sprintf("Transport for plain RTP, ignored when RoQ is enabled or when the media pipeline moves the packets itself (%v)", strings.Join(transportNames, ", ")))
 
 	s.media.configureSender(fs)
-	DefaultBweFlags.ConfigureFlags(fs)
+	defaultBweFlags.ConfigureFlags(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a sender pipeline
@@ -170,11 +169,11 @@ Flags:
 		}
 
 		if len(s.bwe) > 0 {
-			bweFactory, ok := BWEFactories[s.bwe]
+			bweFactory, ok := bweFactories[s.bwe]
 			if !ok {
 				return fmt.Errorf("unknown BWE: %v", s.bwe)
 			}
-			bwe, err := bweFactory.MakeBWE(BWEConfig{
+			bwe, err := bweFactory.MakeBWE(bweConfig{
 				InitTargetRate: initTargetRate,
 				MinTargetRate:  minTargetRate,
 				MaxTargetRate:  s.maxTargetRate,
@@ -289,7 +288,7 @@ Flags:
 	return runner.Run(ctx)
 }
 
-func (s *Send) setupPlainRTP(media mediaPipeline, runner *pipeline.Runner, config senderConfig) error {
+func (s *sendSubCmd) setupPlainRTP(media mediaPipeline, runner *pipeline.Runner, config senderConfig) error {
 	var endpoints sendEndpoints
 	switch s.transport {
 	case transportGstUDP:

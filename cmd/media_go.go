@@ -1,6 +1,6 @@
 //go:build cgo
 
-package subcmd
+package main
 
 import (
 	"errors"

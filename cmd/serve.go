@@ -1,4 +1,4 @@
-package subcmd
+package main
 
 import (
 	"flag"
@@ -7,26 +7,25 @@ import (
 	nethttp "net/http"
 	"os"
 
-	"github.com/mengelbart/mrtp/cmdmain"
-	"github.com/mengelbart/mrtp/http"
-	"github.com/mengelbart/mrtp/server"
+	"github.com/mengelbart/mrtp/internal/http"
+	"github.com/mengelbart/mrtp/internal/server"
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("serve", func() cmdmain.SubCmd { return new(Serve) })
+	registerSubCmd("serve", func() subCmd { return new(serveSubCmd) })
 }
 
-type Serve struct {
+type serveSubCmd struct {
 	addr   string
 	config server.Config
 }
 
-// Help implements cmdmain.SubCmd.
-func (s *Serve) Help() string {
+// Help implements subCmd.
+func (s *serveSubCmd) Help() string {
 	return "Run signaling server"
 }
 
-func (s *Serve) Exec(cmd string, args []string) error {
+func (s *serveSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	fs.StringVar(&s.addr, "addr", "127.0.0.1:8080", "HTTP signaling server address")
 	fs.StringVar(&s.config.MediaHost, "media-host", "127.0.0.1", "IP to bind media sockets and restrict WebRTC ICE candidates to")

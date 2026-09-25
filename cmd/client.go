@@ -1,4 +1,4 @@
-package subcmd
+package main
 
 import (
 	"context"
@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/element/mediafile"
 	"github.com/mengelbart/mrtp/internal/sessionmedia"
 	"github.com/mengelbart/mrtp/pipeline"
@@ -27,14 +26,14 @@ import (
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("client", func() cmdmain.SubCmd { return new(Client) })
+	registerSubCmd("client", func() subCmd { return new(clientSubCmd) })
 }
 
 // webrtcConnectTimeout bounds gathering ICE candidates and establishing the
 // peer connection.
 const webrtcConnectTimeout = 30 * time.Second
 
-type Client struct {
+type clientSubCmd struct {
 	serverURL     string
 	protocol      string
 	direction     string
@@ -51,12 +50,12 @@ type Client struct {
 	maxTargetRate uint
 }
 
-// Help implements cmdmain.SubCmd.
-func (c *Client) Help() string {
+// Help implements subCmd.
+func (c *clientSubCmd) Help() string {
 	return "Open a session on a signaling server and send or receive media"
 }
 
-func (c *Client) Exec(cmd string, args []string) error {
+func (c *clientSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("client", flag.ExitOnError)
 	fs.StringVar(&c.serverURL, "server", "http://127.0.0.1:8080", "Signaling server URL")
 	fs.StringVar(&c.protocol, "protocol", signaling.ProtocolRTPUDP, "Media transport, 'rtp-udp' or 'webrtc'")
@@ -72,7 +71,7 @@ func (c *Client) Exec(cmd string, args []string) error {
 	fs.StringVar(&c.bwe, "bwe", "", "Set a bandwidth estimator by name for webrtc, e.g. 'nada', 'gcc' or 'scream'")
 	fs.BoolVar(&c.pacing, "pacing", false, "Enable packet pacing for webrtc")
 	fs.UintVar(&c.maxTargetRate, "max-target-rate", 30_000_000, "Maximum target rate of the congestion controller in bits per second")
-	DefaultBweFlags.ConfigureFlags(fs)
+	defaultBweFlags.ConfigureFlags(fs)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Open a session on a signaling server and send or receive video as RTP over UDP or WebRTC
@@ -114,7 +113,7 @@ Flags:
 }
 
 // validate checks flag combinations.
-func (c *Client) validate(fs *flag.FlagSet) error {
+func (c *clientSubCmd) validate(fs *flag.FlagSet) error {
 	if c.mtu > math.MaxUint16 {
 		return fmt.Errorf("invalid -mtu value %v", c.mtu)
 	}
@@ -164,7 +163,7 @@ func setFlags(fs *flag.FlagSet, names ...string) []string {
 }
 
 // newSender returns the sender of -source-file, or of fake video.
-func (c *Client) newSender() (*sessionmedia.Sender, error) {
+func (c *clientSubCmd) newSender() (*sessionmedia.Sender, error) {
 	if c.sourceFile != "" {
 		file, err := os.Open(c.sourceFile)
 		if err != nil {
@@ -189,7 +188,7 @@ func (c *Client) newSender() (*sessionmedia.Sender, error) {
 }
 
 // newSink returns the sink of -sink-file, or one that drops the frames.
-func (c *Client) newSink() (sessionmedia.FrameSink, error) {
+func (c *clientSubCmd) newSink() (sessionmedia.FrameSink, error) {
 	if c.sinkFile == "" {
 		return sessionmedia.NewDiscard(), nil
 	}
@@ -201,14 +200,14 @@ func (c *Client) newSink() (sessionmedia.FrameSink, error) {
 }
 
 // receiveContext bounds ctx by -duration.
-func (c *Client) receiveContext(ctx context.Context) (context.Context, context.CancelFunc) {
+func (c *clientSubCmd) receiveContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if c.duration == 0 {
 		return context.WithCancel(ctx)
 	}
 	return context.WithTimeout(ctx, c.duration)
 }
 
-func (c *Client) sendRTPUDP(ctx context.Context, signaler *signaling.Client) error {
+func (c *clientSubCmd) sendRTPUDP(ctx context.Context, signaler *signaling.Client) error {
 	sender, err := c.newSender()
 	if err != nil {
 		return err
@@ -233,7 +232,7 @@ func (c *Client) sendRTPUDP(ctx context.Context, signaler *signaling.Client) err
 	return runGraph(ctx, g)
 }
 
-func (c *Client) recvRTPUDP(ctx context.Context, signaler *signaling.Client) error {
+func (c *clientSubCmd) recvRTPUDP(ctx context.Context, signaler *signaling.Client) error {
 	ip, err := localIP(c.serverURL)
 	if err != nil {
 		return err
@@ -279,7 +278,7 @@ func (c *Client) recvRTPUDP(ctx context.Context, signaler *signaling.Client) err
 
 // openRTPUDP opens an RTP over UDP session described by request, in the
 // direction of -direction.
-func (c *Client) openRTPUDP(ctx context.Context, signaler *signaling.Client, request signaling.RTPRequest) (signaling.Response, error) {
+func (c *clientSubCmd) openRTPUDP(ctx context.Context, signaler *signaling.Client, request signaling.RTPRequest) (signaling.Response, error) {
 	request.Direction = c.direction
 	session, err := signaler.Open(ctx, signaling.Request{
 		Protocol: signaling.ProtocolRTPUDP,
@@ -297,7 +296,7 @@ func (c *Client) openRTPUDP(ctx context.Context, signaler *signaling.Client, req
 	return session, nil
 }
 
-func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) error {
+func (c *clientSubCmd) runWebRTC(ctx context.Context, signaler *signaling.Client) error {
 	send := c.direction == signaling.DirectionSend
 	stdnet, err := ecnnet.New(
 		ecnnet.SetRecvBufferSize(10_000_000),
@@ -421,7 +420,7 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 }
 
 // webrtcSendOptions are the transport options of a sending client.
-func (c *Client) webrtcSendOptions() ([]webrtc.Option, error) {
+func (c *clientSubCmd) webrtcSendOptions() ([]webrtc.Option, error) {
 	options := []webrtc.Option{webrtc.EnableCCFBReceiver()}
 	if c.traceRTP {
 		options = append(options, webrtc.EnableRTPSendTraceLogging())
@@ -430,7 +429,7 @@ func (c *Client) webrtcSendOptions() ([]webrtc.Option, error) {
 		options = append(options, webrtc.EnablePacing())
 	}
 	if c.bwe != "" {
-		bweOptions, err := makeWebRTCBWE(c.bwe, BWEConfig{
+		bweOptions, err := makeWebRTCBWE(c.bwe, bweConfig{
 			InitTargetRate: c.bitrate,
 			MinTargetRate:  minTargetRate,
 			MaxTargetRate:  c.maxTargetRate,

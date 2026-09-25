@@ -1,6 +1,6 @@
 //go:build cgo
 
-package subcmd
+package main
 
 import (
 	"errors"
@@ -27,9 +27,9 @@ const (
 // exposes an RTP port, so nobody moves the packets.
 var errGstUDPWithoutPipeline = errors.New("-transport " + transportGstUDP + " needs a media pipeline that moves the packets itself, such as -media-pipeline gst -gst-udp")
 
-// DefaultTransport is the transport used for plain RTP when the user does not
+// defaultTransport is the transport used for plain RTP when the user does not
 // choose one.
-const DefaultTransport = transportUDP
+const defaultTransport = transportUDP
 
 // transportNames lists the transports for the -transport flag's usage text.
 var transportNames = []string{transportUDP, transportGstUDP}

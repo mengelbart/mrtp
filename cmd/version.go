@@ -1,4 +1,4 @@
-package subcmd
+package main
 
 import (
 	"flag"
@@ -6,8 +6,6 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
-
-	"github.com/mengelbart/mrtp/cmdmain"
 )
 
 func init() {
@@ -16,7 +14,7 @@ func init() {
 		return
 	}
 	modified := false
-	version := &Version{
+	version := &versionSubCmd{
 		path:      info.Main.Path,
 		goVersion: "",
 		version:   info.Main.Version,
@@ -37,10 +35,10 @@ func init() {
 	if modified {
 		version.gitCommit += "+dirty"
 	}
-	cmdmain.RegisterSubCmd("version", func() cmdmain.SubCmd { return version })
+	registerSubCmd("version", func() subCmd { return version })
 }
 
-type Version struct {
+type versionSubCmd struct {
 	path      string
 	version   string
 	gitCommit string
@@ -48,8 +46,8 @@ type Version struct {
 	goVersion string
 }
 
-// Exec implements cmdmain.SubCmd.
-func (v *Version) Exec(cmd string, args []string) error {
+// Exec implements subCmd.
+func (v *versionSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("version", flag.ExitOnError)
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Print version information
@@ -75,7 +73,7 @@ Flags:
 	return err
 }
 
-// Help implements cmdmain.SubCmd.
-func (v *Version) Help() string {
+// Help implements subCmd.
+func (v *versionSubCmd) Help() string {
 	return "version prints out version information"
 }

@@ -1,4 +1,4 @@
-package subcmd
+package main
 
 import (
 	"flag"
@@ -6,12 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mengelbart/mrtp/browser"
-	"github.com/mengelbart/mrtp/cmdmain"
+	"github.com/mengelbart/mrtp/internal/browser"
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("browser", func() cmdmain.SubCmd { return new(browserSubCmd) })
+	registerSubCmd("browser", func() subCmd { return new(browserSubCmd) })
 }
 
 type browserSubCmd struct {
@@ -25,7 +24,7 @@ type browserSubCmd struct {
 	dcSourceFile string
 }
 
-// Exec implements cmdmain.SubCmd.
+// Exec implements subCmd.
 func (b *browserSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("browser", flag.ExitOnError)
 	fs.StringVar(&b.sourceLocation, "source-location", "", "Location for filesource")
@@ -93,7 +92,7 @@ Flags:
 	return ctrl.Run()
 }
 
-// Help implements cmdmain.SubCmd.
+// Help implements subCmd.
 func (b *browserSubCmd) Help() string {
 	return "Run a remote controlled browser. Sends a video via WebRTC. Can connect to the webrtc subcmd"
 }

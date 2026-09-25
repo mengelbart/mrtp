@@ -1,4 +1,4 @@
-package subcmd
+package main
 
 import (
 	"context"
@@ -8,23 +8,22 @@ import (
 
 	"github.com/mengelbart/moqtransport"
 	"github.com/mengelbart/moqtransport/quicmoq"
-	"github.com/mengelbart/mrtp/cmdmain"
 	"github.com/mengelbart/mrtp/internal/quictransport"
 	"github.com/mengelbart/mrtp/moq"
 	"github.com/quic-go/quic-go"
 )
 
 func init() {
-	cmdmain.RegisterSubCmd("moq-sub", func() cmdmain.SubCmd { return new(MoQSub) })
+	registerSubCmd("moq-sub", func() subCmd { return new(moqSubSubCmd) })
 }
 
-type MoQSub struct {
+type moqSubSubCmd struct {
 	localAddr  string
 	remoteAddr string
 }
 
-// Exec implements cmdmain.SubCmd.
-func (m *MoQSub) Exec(cmd string, args []string) error {
+// Exec implements subCmd.
+func (m *moqSubSubCmd) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("moq-pub", flag.ExitOnError)
 	fs.StringVar(&m.localAddr, "local", "127.0.0.1", "Local address")
 	fs.StringVar(&m.remoteAddr, "remote", "127.0.0.1", "Remote address")
@@ -72,7 +71,7 @@ Flags:
 	}
 }
 
-// Help implements cmdmain.SubCmd.
-func (m *MoQSub) Help() string {
+// Help implements subCmd.
+func (m *moqSubSubCmd) Help() string {
 	return "Run a MoQ subscriber"
 }
