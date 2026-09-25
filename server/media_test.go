@@ -199,3 +199,43 @@ func TestRecordsWebRTCTrack(t *testing.T) {
 		t.Fatalf("recorded %v, want %v", codec, mrtp.VP8)
 	}
 }
+
+func TestRecordsRTPUDPStream(t *testing.T) {
+	dir := t.TempDir()
+	ts, srv := newTestServerWith(t, Config{SinkDir: dir})
+	request := rtpUDPRequest(signaling.DirectionSend, "")
+	request.RTP.Codec = mrtp.VP8.String()
+	signaler := &signaling.Client{BaseURL: ts.URL}
+	resp, err := signaler.Open(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.Dial("udp", resp.RTP.Address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	sess := session[*rtpUDPSession](t, srv, resp.ID)
+	sendFrames(t, func(seq uint16) {
+		if _, err := conn.Write(marshalRTP(t, seq)); err != nil {
+			t.Fatal(err)
+		}
+	}, sess.sink.Frames)
+	if err = signaler.Close(context.Background(), resp.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	file, err := os.Open(filepath.Join(dir, resp.ID+".ivf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := mediafile.NewIVFSource(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	if codec := source.Format().(mrtp.EncodedVideo).Codec; codec != mrtp.VP8 {
+		t.Fatalf("recorded %v, want %v", codec, mrtp.VP8)
+	}
+}

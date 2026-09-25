@@ -35,6 +35,10 @@ type RTPRequest struct {
 	// Address is where the client receives RTP packets in host:port form. It
 	// is required for DirectionRecv.
 	Address string `json:"address,omitempty"`
+	// Codec and PayloadType describe what the client sends. They are required
+	// for DirectionSend.
+	Codec       string `json:"codec,omitempty"`
+	PayloadType uint8  `json:"payloadType,omitempty"`
 }
 
 // RTPEndpoint is the server's end of an RTP over UDP session.

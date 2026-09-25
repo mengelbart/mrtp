@@ -10,7 +10,6 @@ import (
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/element/mediafile"
 	"github.com/mengelbart/mrtp/internal/sessionmedia"
-	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
 )
 
@@ -60,18 +59,11 @@ func (m *media) Close() error {
 	return errors.Join(errs...)
 }
 
-// sender is what a session sends on one stream.
-type sender struct {
-	codec mrtp.Codec
-	// file is the source of a file sender, nil for fake media.
-	file *mediafile.IVFSource
-}
-
 // newSender opens the source file a client names, or fake media if name is
 // empty.
-func (m *media) newSender(name string) (*sender, error) {
+func (m *media) newSender(name string) (*sessionmedia.Sender, error) {
 	if name == "" {
-		return &sender{codec: sessionmedia.FakeCodec}, nil
+		return sessionmedia.NewFakeSender(fakeConfig), nil
 	}
 	if m.sources == nil {
 		return nil, fmt.Errorf("%w: server has no sources", signaling.ErrBadRequest)
@@ -90,38 +82,15 @@ func (m *media) newSender(name string) (*sender, error) {
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("%w: source %q: %w", signaling.ErrBadRequest, name, err), file.Close())
 	}
-	return &sender{codec: source.Format().(mrtp.EncodedVideo).Codec, file: source}, nil
-}
-
-// add wires the sender to sink into g, and returns what rate control steers,
-// nil for a file.
-func (s *sender) add(g *pipeline.Graph, sink mrtp.Sink[mrtp.RTPPacket]) (mrtp.TargetBitrateSetter, error) {
-	if s.file == nil {
-		return sessionmedia.AddFakeSender(g, fakeConfig, sink)
-	}
-	return nil, sessionmedia.AddFileSender(g, s.file, sendMTU, sink)
-}
-
-// close releases a sender that was never added.
-func (s *sender) close() error {
-	if s.file == nil {
-		return nil
-	}
-	return s.file.Close()
-}
-
-// frameSink is where a session's received frames go, and how many arrived.
-type frameSink interface {
-	mrtp.Sink[mrtp.EncodedFrame]
-	Frames() uint64
+	return sessionmedia.NewFileSender(source, sendMTU), nil
 }
 
 // newSink returns the sink of track n, counted from 0, of session id: an IVF
 // file in the sink directory, or a sink that drops the frames if there is
 // none or the codec cannot be written to IVF.
-func (m *media) newSink(id string, n int, codec mrtp.Codec) (frameSink, error) {
+func (m *media) newSink(id string, n int, codec mrtp.Codec) (sessionmedia.FrameSink, error) {
 	if m.sinks == nil || (codec != mrtp.VP8 && codec != mrtp.VP9) {
-		return discard{pipeline.NewDiscard[mrtp.EncodedFrame]()}, nil
+		return sessionmedia.NewDiscard(), nil
 	}
 	name := id + ".ivf"
 	if n > 0 {
@@ -132,12 +101,4 @@ func (m *media) newSink(id string, n int, codec mrtp.Codec) (frameSink, error) {
 		return nil, err
 	}
 	return mediafile.NewIVFSink(file), nil
-}
-
-type discard struct {
-	*pipeline.Discard[mrtp.EncodedFrame]
-}
-
-func (d discard) Frames() uint64 {
-	return d.Packets()
 }

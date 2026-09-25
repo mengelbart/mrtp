@@ -88,6 +88,8 @@ func TestRejectsRTPUDPRequest(t *testing.T) {
 		{Protocol: signaling.ProtocolRTPUDP},
 		rtpUDPRequest("sideways", ""),
 		rtpUDPRequest(signaling.DirectionRecv, ""),
+		{Protocol: signaling.ProtocolRTPUDP, RTP: &signaling.RTPRequest{Direction: signaling.DirectionSend}},
+		{Protocol: signaling.ProtocolRTPUDP, RTP: &signaling.RTPRequest{Direction: signaling.DirectionSend, Codec: "AV2"}},
 	} {
 		_, err := client.Open(context.Background(), request)
 		if err == nil || !strings.Contains(err.Error(), "400") {
@@ -378,11 +380,18 @@ func newWebRTCTransport(t *testing.T, opts ...webrtc.Option) *webrtcClient {
 	return client
 }
 
+// rtpUDPRequest asks for an RTP over UDP session, in which a sending client
+// sends fake video.
 func rtpUDPRequest(direction, address string) signaling.Request {
-	return signaling.Request{
+	request := signaling.Request{
 		Protocol: signaling.ProtocolRTPUDP,
 		RTP:      &signaling.RTPRequest{Direction: direction, Address: address},
 	}
+	if direction == signaling.DirectionSend {
+		request.RTP.Codec = mrtp.Fake.String()
+		request.RTP.PayloadType = mrtp.DefaultPayloadType
+	}
+	return request
 }
 
 // openWebRTC negotiates a session and waits until the peer connection is up.

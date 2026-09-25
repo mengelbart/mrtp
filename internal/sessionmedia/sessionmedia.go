@@ -37,9 +37,47 @@ type FakeConfig struct {
 	Bounds mrtp.RateBounds
 }
 
-// AddFakeSender wires Fake video to sink into g. It returns the source rate
+// Sender is what a session sends on one stream: fake video, or the frames of
+// an IVF file.
+type Sender struct {
+	Codec mrtp.Codec
+	fake  FakeConfig
+	// file is nil for fake video.
+	file *mediafile.IVFSource
+	mtu  uint16
+}
+
+// NewFakeSender returns a sender of fake video.
+func NewFakeSender(config FakeConfig) *Sender {
+	return &Sender{Codec: FakeCodec, fake: config}
+}
+
+// NewFileSender returns a sender of the frames of source, in RTP packets of
+// at most mtu bytes.
+func NewFileSender(source *mediafile.IVFSource, mtu uint16) *Sender {
+	return &Sender{Codec: source.Format().(mrtp.EncodedVideo).Codec, file: source, mtu: mtu}
+}
+
+// Add wires the sender to sink into g. It returns what rate control steers,
+// nil for a file, whose rate is fixed.
+func (s *Sender) Add(g *pipeline.Graph, sink mrtp.Sink[mrtp.RTPPacket]) (mrtp.TargetBitrateSetter, error) {
+	if s.file == nil {
+		return addFakeSender(g, s.fake, sink)
+	}
+	return nil, addFileSender(g, s.file, s.mtu, sink)
+}
+
+// Close releases a sender that was never added.
+func (s *Sender) Close() error {
+	if s.file == nil {
+		return nil
+	}
+	return s.file.Close()
+}
+
+// addFakeSender wires Fake video to sink into g. It returns the source rate
 // control steers.
-func AddFakeSender(g *pipeline.Graph, config FakeConfig, sink mrtp.Sink[mrtp.RTPPacket]) (*fake.Source, error) {
+func addFakeSender(g *pipeline.Graph, config FakeConfig, sink mrtp.Sink[mrtp.RTPPacket]) (*fake.Source, error) {
 	g.Add(sink)
 	source, err := fake.New(config.Duration, config.FPS, config.Bounds)
 	if err != nil {
@@ -52,9 +90,9 @@ func AddFakeSender(g *pipeline.Graph, config FakeConfig, sink mrtp.Sink[mrtp.RTP
 	return source, g.Connect(source, packetizer)
 }
 
-// AddFileSender wires the frames of source to sink into g, at the pace of
+// addFileSender wires the frames of source to sink into g, at the pace of
 // their timestamps.
-func AddFileSender(g *pipeline.Graph, source *mediafile.IVFSource, mtu uint16, sink mrtp.Sink[mrtp.RTPPacket]) error {
+func addFileSender(g *pipeline.Graph, source *mediafile.IVFSource, mtu uint16, sink mrtp.Sink[mrtp.RTPPacket]) error {
 	g.Add(source)
 	g.Add(sink)
 	packetizer, err := addPacketizer(g, source.Format().(mrtp.EncodedVideo).Codec, mtu, source.FrameDuration(), sink)
@@ -82,6 +120,25 @@ func addPacketizer(g *pipeline.Graph, codec mrtp.Codec, mtu uint16, frameDuratio
 		g.Attach(queue, pump),
 		g.Connect(pump, sink),
 	)
+}
+
+// FrameSink is where a receiver's frames go, and how many arrived.
+type FrameSink interface {
+	mrtp.Sink[mrtp.EncodedFrame]
+	Frames() uint64
+}
+
+// NewDiscard returns a FrameSink that drops the frames.
+func NewDiscard() FrameSink {
+	return discard{pipeline.NewDiscard[mrtp.EncodedFrame]()}
+}
+
+type discard struct {
+	*pipeline.Discard[mrtp.EncodedFrame]
+}
+
+func (d discard) Frames() uint64 {
+	return d.Packets()
 }
 
 // AddReceiver wires src through a depacketizer into sink.

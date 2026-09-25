@@ -17,6 +17,7 @@ import (
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
+	"github.com/mengelbart/mrtp/element/mediafile"
 	"github.com/mengelbart/mrtp/internal/sessionmedia"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
@@ -39,6 +40,8 @@ type Client struct {
 	protocol      string
 	direction     string
 	source        string
+	sourceFile    string
+	sinkFile      string
 	duration      time.Duration
 	bitrate       uint
 	fps           uint64
@@ -60,6 +63,8 @@ func (c *Client) Exec(cmd string, args []string) error {
 	fs.StringVar(&c.protocol, "protocol", signaling.ProtocolRTPUDP, "Media transport, 'rtp-udp' or 'webrtc'")
 	fs.StringVar(&c.direction, "direction", signaling.DirectionRecv, "Media direction from the client's view, 'send' or 'recv'")
 	fs.StringVar(&c.source, "source", "", "Name of a file in the server's -source-dir to receive. Empty receives fake video.")
+	fs.StringVar(&c.sourceFile, "source-file", "", "VP8 or VP9 IVF file to send. Empty sends fake video.")
+	fs.StringVar(&c.sinkFile, "sink-file", "", "IVF file to write received VP8 or VP9 video to. Empty drops it.")
 	fs.DurationVar(&c.duration, "duration", 10*time.Second, "How long to send or receive, 0 for no limit")
 	fs.UintVar(&c.bitrate, "bitrate", 1_000_000, "Media bitrate in bits per second, excluding RTP headers")
 	fs.Uint64Var(&c.fps, "fps", 30, "Frames per second")
@@ -116,11 +121,16 @@ func (c *Client) validate(fs *flag.FlagSet) error {
 	}
 	switch c.direction {
 	case signaling.DirectionSend:
-		if c.source != "" {
-			return fmt.Errorf("-source only applies to -direction %v", signaling.DirectionRecv)
+		if set := setFlags(fs, "source", "sink-file"); len(set) > 0 {
+			return fmt.Errorf("%v only apply to -direction %v", strings.Join(set, ", "), signaling.DirectionRecv)
+		}
+		if c.sourceFile != "" {
+			if set := setFlags(fs, "bitrate", "fps", "bwe", "max-target-rate"); len(set) > 0 {
+				return fmt.Errorf("%v do not apply to -source-file, which sends at the file's rate", strings.Join(set, ", "))
+			}
 		}
 	case signaling.DirectionRecv:
-		if set := setFlags(fs, "bitrate", "fps", "mtu", "trace-rtp-send", "bwe", "pacing", "max-target-rate"); len(set) > 0 {
+		if set := setFlags(fs, "source-file", "bitrate", "fps", "mtu", "trace-rtp-send", "bwe", "pacing", "max-target-rate"); len(set) > 0 {
 			return fmt.Errorf("%v only apply to -direction %v", strings.Join(set, ", "), signaling.DirectionSend)
 		}
 	default:
@@ -154,17 +164,41 @@ func setFlags(fs *flag.FlagSet, names ...string) []string {
 	return set
 }
 
-func (c *Client) senderConfig() sessionmedia.FakeConfig {
+// newSender returns the sender of -source-file, or of fake video.
+func (c *Client) newSender() (*sessionmedia.Sender, error) {
+	if c.sourceFile != "" {
+		file, err := os.Open(c.sourceFile)
+		if err != nil {
+			return nil, err
+		}
+		source, err := mediafile.NewIVFSource(file)
+		if err != nil {
+			return nil, errors.Join(fmt.Errorf("%v: %w", c.sourceFile, err), file.Close())
+		}
+		return sessionmedia.NewFileSender(source, uint16(c.mtu)), nil
+	}
 	bounds := mrtp.RateBounds{Initial: c.bitrate, Min: c.bitrate, Max: c.bitrate}
 	if c.bwe != "" {
 		bounds = mrtp.RateBounds{Initial: c.bitrate, Min: minTargetRate, Max: c.maxTargetRate}
 	}
-	return sessionmedia.FakeConfig{
+	return sessionmedia.NewFakeSender(sessionmedia.FakeConfig{
 		Duration: c.duration,
 		FPS:      c.fps,
 		MTU:      uint16(c.mtu),
 		Bounds:   bounds,
+	}), nil
+}
+
+// newSink returns the sink of -sink-file, or one that drops the frames.
+func (c *Client) newSink() (sessionmedia.FrameSink, error) {
+	if c.sinkFile == "" {
+		return sessionmedia.NewDiscard(), nil
 	}
+	file, err := os.Create(c.sinkFile)
+	if err != nil {
+		return nil, err
+	}
+	return mediafile.NewIVFSink(file), nil
 }
 
 // receiveContext bounds ctx by -duration.
@@ -176,18 +210,25 @@ func (c *Client) receiveContext(ctx context.Context) (context.Context, context.C
 }
 
 func (c *Client) sendRTPUDP(ctx context.Context, signaler *signaling.Client) error {
-	session, err := c.openRTPUDP(ctx, signaler, "")
+	sender, err := c.newSender()
 	if err != nil {
 		return err
+	}
+	session, err := c.openRTPUDP(ctx, signaler, signaling.RTPRequest{
+		Codec:       sender.Codec.String(),
+		PayloadType: mrtp.DefaultPayloadType,
+	})
+	if err != nil {
+		return errors.Join(err, sender.Close())
 	}
 	defer closeSession(signaler, session.ID)
 
 	sink, err := udp.Dial(session.RTP.Address, c.traceRTP, mrtp.RTPBytes)
 	if err != nil {
-		return err
+		return errors.Join(err, sender.Close())
 	}
 	g := pipeline.NewGraph()
-	if _, err = sessionmedia.AddFakeSender(g, c.senderConfig(), sink); err != nil {
+	if _, err = sender.Add(g, sink); err != nil {
 		return errors.Join(err, g.Close())
 	}
 	return runGraph(ctx, g)
@@ -202,7 +243,7 @@ func (c *Client) recvRTPUDP(ctx context.Context, signaler *signaling.Client) err
 	if err != nil {
 		return err
 	}
-	session, err := c.openRTPUDP(ctx, signaler, socket.LocalAddr().String())
+	session, err := c.openRTPUDP(ctx, signaler, signaling.RTPRequest{Address: socket.LocalAddr().String()})
 	if err != nil {
 		return errors.Join(err, socket.Close())
 	}
@@ -218,8 +259,12 @@ func (c *Client) recvRTPUDP(ctx context.Context, signaler *signaling.Client) err
 	}
 	src := udp.NewSource(socket, false, format, mrtp.RTPBytes)
 	g := pipeline.NewGraph()
-	discard := pipeline.NewDiscard[mrtp.EncodedFrame]()
-	if err = sessionmedia.AddReceiver(g, src, discard); err != nil {
+	g.Add(src)
+	sink, err := c.newSink()
+	if err != nil {
+		return errors.Join(err, g.Close())
+	}
+	if err = sessionmedia.AddReceiver(g, src, sink); err != nil {
 		return errors.Join(err, g.Close())
 	}
 	g.Terminal(src)
@@ -229,17 +274,18 @@ func (c *Client) recvRTPUDP(ctx context.Context, signaler *signaling.Client) err
 	// Closing the socket unblocks the pending Read.
 	defer context.AfterFunc(ctx, func() { _ = src.Close() })()
 	err = runGraph(ctx, g)
-	slog.Info("received", "frames", discard.Packets())
+	slog.Info("received", "frames", sink.Frames())
 	return err
 }
 
-// openRTPUDP opens an RTP over UDP session. address is where the client
-// receives, empty if it sends.
-func (c *Client) openRTPUDP(ctx context.Context, signaler *signaling.Client, address string) (signaling.Response, error) {
+// openRTPUDP opens an RTP over UDP session described by request, in the
+// direction of -direction.
+func (c *Client) openRTPUDP(ctx context.Context, signaler *signaling.Client, request signaling.RTPRequest) (signaling.Response, error) {
+	request.Direction = c.direction
 	session, err := signaler.Open(ctx, signaling.Request{
 		Protocol: signaling.ProtocolRTPUDP,
 		Source:   c.source,
-		RTP:      &signaling.RTPRequest{Direction: c.direction, Address: address},
+		RTP:      &request,
 	})
 	if err != nil {
 		return signaling.Response{}, err
@@ -273,6 +319,23 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 		}
 	}()
 	var received frameCounter
+	var sender *sessionmedia.Sender
+	if send {
+		if sender, err = c.newSender(); err != nil {
+			return err
+		}
+	} else {
+		sink, sinkErr := c.newSink()
+		if sinkErr != nil {
+			return sinkErr
+		}
+		received.first = sink
+		defer func() {
+			if closeErr := received.closeUnused(); closeErr != nil {
+				slog.Error("failed to close sink", "error", closeErr)
+			}
+		}()
+	}
 
 	local := signaling.NewCandidates()
 	options := []webrtc.Option{
@@ -292,7 +355,7 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 	if send {
 		sendOptions, optErr := c.webrtcSendOptions()
 		if optErr != nil {
-			return optErr
+			return errors.Join(optErr, sender.Close())
 		}
 		options = append(options, sendOptions...)
 	} else {
@@ -301,20 +364,21 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 			webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
 				slog.Info("got track", "codec", receiver.Codec())
 				g := pipeline.NewGraph()
-				discard := pipeline.NewDiscard[mrtp.EncodedFrame]()
-				if trackErr := sessionmedia.AddReceiver(g, receiver, discard); trackErr != nil {
+				if trackErr := sessionmedia.AddReceiver(g, receiver, received.next()); trackErr != nil {
 					slog.Error("failed to receive track", "error", errors.Join(trackErr, g.Close()))
 					return
 				}
 				// The run ends when the server ends the track.
 				g.Terminal(receiver)
-				received.add(discard)
 				runner.Add(g)
 			}),
 		)
 	}
 	transport, err := webrtc.NewTransport(options...)
 	if err != nil {
+		if sender != nil {
+			err = errors.Join(err, sender.Close())
+		}
 		return err
 	}
 	defer func() {
@@ -323,17 +387,19 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 		}
 	}()
 	if send {
-		track, trackErr := transport.AddLocalTrackWithCodec(sessionmedia.FakeCodec.MimeType())
+		track, trackErr := transport.AddLocalTrackWithCodec(sender.Codec.MimeType())
 		if trackErr != nil {
-			return trackErr
+			return errors.Join(trackErr, sender.Close())
 		}
 		g := pipeline.NewGraph()
 		runner.Add(g)
-		source, sendErr := sessionmedia.AddFakeSender(g, c.senderConfig(), track)
+		rate, sendErr := sender.Add(g, track)
 		if sendErr != nil {
 			return sendErr
 		}
-		transport.ControlBitrate(source)
+		if rate != nil {
+			transport.ControlBitrate(rate)
+		}
 	} else if err = transport.AddRemoteVideoTrack(); err != nil {
 		return err
 	}
@@ -383,24 +449,44 @@ func (c *Client) webrtcSendOptions() ([]webrtc.Option, error) {
 	return options, nil
 }
 
-// frameCounter sums the frames of the tracks a client receives.
+// frameCounter hands out the sinks of the tracks a client receives, and sums
+// their frames. The first track gets first, later ones drop their frames.
 type frameCounter struct {
-	lock     sync.Mutex
-	discards []*pipeline.Discard[mrtp.EncodedFrame]
+	first sessionmedia.FrameSink
+
+	lock  sync.Mutex
+	sinks []sessionmedia.FrameSink
 }
 
-func (c *frameCounter) add(d *pipeline.Discard[mrtp.EncodedFrame]) {
+// next returns the sink of the next track.
+func (c *frameCounter) next() sessionmedia.FrameSink {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.discards = append(c.discards, d)
+	sink := c.first
+	if len(c.sinks) > 0 {
+		slog.Warn("dropping the frames of an additional track")
+		sink = sessionmedia.NewDiscard()
+	}
+	c.sinks = append(c.sinks, sink)
+	return sink
+}
+
+// closeUnused closes first if no track took it.
+func (c *frameCounter) closeUnused() error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if len(c.sinks) > 0 {
+		return nil
+	}
+	return c.first.Close()
 }
 
 func (c *frameCounter) frames() uint64 {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	var n uint64
-	for _, d := range c.discards {
-		n += d.Packets()
+	for _, sink := range c.sinks {
+		n += sink.Frames()
 	}
 	return n
 }

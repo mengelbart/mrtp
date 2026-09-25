@@ -38,7 +38,7 @@ type webrtcSession struct {
 	candidates *signaling.Candidates
 
 	lock  sync.Mutex
-	sinks []frameSink
+	sinks []sessionmedia.FrameSink
 }
 
 // newWebRTCSession answers offer with a peer connection whose candidates are
@@ -123,13 +123,13 @@ func (s *webrtcSession) addSender(source string) error {
 	if err != nil {
 		return err
 	}
-	track, err := s.transport.AddLocalTrackWithCodec(sender.codec.MimeType())
+	track, err := s.transport.AddLocalTrackWithCodec(sender.Codec.MimeType())
 	if err != nil {
-		return errors.Join(err, sender.close())
+		return errors.Join(err, sender.Close())
 	}
 	g := pipeline.NewGraph()
 	s.runner.Add(g)
-	rate, err := sender.add(g, track)
+	rate, err := sender.Add(g, track)
 	if err != nil {
 		return err
 	}
