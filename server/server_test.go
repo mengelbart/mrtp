@@ -34,12 +34,12 @@ func TestRTPUDPSession(t *testing.T) {
 	}
 	defer conn.Close()
 
-	sess := session[*rtpUDPSession](t, srv, resp.ID)
+	sess := lookupSession[*session](t, srv, resp.ID)
 	sendFrames(t, func(seq uint16) {
 		if _, err := conn.Write(marshalRTP(t, seq)); err != nil {
 			t.Fatal(err)
 		}
-	}, sess.sink.Frames)
+	}, sess.frames)
 
 	if err = client.Close(ctx, resp.ID); err != nil {
 		t.Fatal(err)
@@ -109,7 +109,7 @@ func TestWebRTCSessionRecv(t *testing.T) {
 	}
 	waitFor(t, func() bool { return client.discard.Packets() > 0 })
 
-	sess := session[*webrtcSession](t, srv, resp.ID)
+	sess := lookupSession[*webrtcSession](t, srv, resp.ID)
 	if err := signaler.Close(ctx, resp.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestWebRTCSession(t *testing.T) {
 	signaler := &signaling.Client{BaseURL: ts.URL}
 	resp := openWebRTC(t, ctx, signaler, client)
 
-	sess := session[*webrtcSession](t, srv, resp.ID)
+	sess := lookupSession[*webrtcSession](t, srv, resp.ID)
 	sendFrames(t, func(seq uint16) { writeRTP(t, track, seq) }, sess.frames)
 
 	if err := signaler.Close(ctx, resp.ID); err != nil {
@@ -223,7 +223,7 @@ func TestWebRTCTrickleSession(t *testing.T) {
 		t.Fatal("peer connection not established")
 	}
 
-	sess := session[*webrtcSession](t, srv, resp.ID)
+	sess := lookupSession[*webrtcSession](t, srv, resp.ID)
 	sendFrames(t, func(seq uint16) { writeRTP(t, track, seq) }, sess.frames)
 }
 
@@ -262,8 +262,8 @@ func TestPreflight(t *testing.T) {
 	}
 }
 
-// session returns the open session id as a T.
-func session[T signaling.Session](t *testing.T, srv *Server, id string) T {
+// lookupSession returns the open session id as a T.
+func lookupSession[T signaling.Session](t *testing.T, srv *Server, id string) T {
 	t.Helper()
 	sess, ok := srv.handler.Session(id)
 	if !ok {

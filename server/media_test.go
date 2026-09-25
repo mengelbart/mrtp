@@ -180,7 +180,7 @@ func TestRecordsWebRTCTrack(t *testing.T) {
 	ctx := context.Background()
 	signaler := &signaling.Client{BaseURL: ts.URL}
 	resp := openWebRTC(t, ctx, signaler, client)
-	sess := session[*webrtcSession](t, srv, resp.ID)
+	sess := lookupSession[*webrtcSession](t, srv, resp.ID)
 	sendFrames(t, func(seq uint16) { writeRTP(t, track, seq) }, sess.frames)
 	if err = signaler.Close(ctx, resp.ID); err != nil {
 		t.Fatal(err)
@@ -216,12 +216,12 @@ func TestRecordsRTPUDPStream(t *testing.T) {
 	}
 	defer conn.Close()
 
-	sess := session[*rtpUDPSession](t, srv, resp.ID)
+	sess := lookupSession[*session](t, srv, resp.ID)
 	sendFrames(t, func(seq uint16) {
 		if _, err := conn.Write(marshalRTP(t, seq)); err != nil {
 			t.Fatal(err)
 		}
-	}, sess.sink.Frames)
+	}, sess.frames)
 	if err = signaler.Close(context.Background(), resp.ID); err != nil {
 		t.Fatal(err)
 	}

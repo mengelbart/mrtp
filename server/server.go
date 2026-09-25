@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/signaling"
 )
 
@@ -69,14 +68,9 @@ func (s *Server) Accept(ctx context.Context, id string, request signaling.Reques
 		if request.RTP == nil {
 			return nil, signaling.Response{}, fmt.Errorf("%w: missing rtp request", signaling.ErrBadRequest)
 		}
-		sess, err := newRTPUDPSession(id, s.mediaHost, *request.RTP, request.Source, s.media, s.logger)
+		sess, endpoint, err := newRTPUDPSession(id, s.mediaHost, *request.RTP, request.Source, s.media, s.logger)
 		if err != nil {
 			return nil, signaling.Response{}, err
-		}
-		endpoint := &signaling.RTPEndpoint{Address: sess.addr.String()}
-		if sess.sending {
-			endpoint.Codec = sess.codec.String()
-			endpoint.PayloadType = mrtp.DefaultPayloadType
 		}
 		return sess, signaling.Response{RTP: endpoint}, nil
 	case signaling.ProtocolWebRTC:

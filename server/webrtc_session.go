@@ -6,10 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"sync"
 
-	"github.com/mengelbart/mrtp/internal/sessionmedia"
-	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/webrtc"
 	"github.com/mengelbart/mrtp/webrtc/ecnnet"
@@ -19,27 +16,17 @@ const webrtcBufferSize = 10_000_000
 
 // webrtcSession is one WebRTC peer connection. It sends fake video or a
 // source file on every recvonly video m-line of the offer, and receives every
-// track the client sends. It closes the peer connection once what it sends
-// ends. The transport implements signaling.TrickleSession.
+// track the client sends. The transport implements signaling.TrickleSession.
 type webrtcSession struct {
 	*webrtc.Transport
-	id     string
-	logger *slog.Logger
-	media  *media
-	// runner starts once the peer connection is up, so that nothing is sent
-	// before the client can receive it.
-	runner *pipeline.Runner
-	cancel context.CancelFunc
-	done   chan struct{}
-
-	lock  sync.Mutex
-	sinks []sessionmedia.FrameSink
+	*session
 }
 
 // newWebRTCSession answers offer with a peer connection whose candidates are
 // restricted to host. It generates CCFB, NACK and RTCP reports as far as the
 // offer negotiates them. Unless the offer trickles ICE, it returns once the
-// answer is complete.
+// answer is complete. The pipelines start once the peer connection is up, so
+// that nothing is sent before the client can receive it.
 func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebRTCOffer, source string, m *media, logger *slog.Logger) (*webrtcSession, string, error) {
 	ip := net.ParseIP(host)
 	if ip == nil {
@@ -53,15 +40,7 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 		return nil, "", err
 	}
 
-	runCtx, cancel := context.WithCancel(context.Background())
-	sess := &webrtcSession{
-		id:     id,
-		logger: logger.With("id", id),
-		media:  m,
-		runner: pipeline.NewRunner(),
-		cancel: cancel,
-		done:   make(chan struct{}),
-	}
+	sess := &webrtcSession{session: newSession(id, m, logger)}
 	options := []webrtc.Option{
 		webrtc.SetNet(stdnet),
 		webrtc.SetSRTPBufferLimit(webrtcBufferSize),
@@ -78,116 +57,58 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 	if offer.Trickle {
 		options = append(options, webrtc.EnableTrickle())
 	}
-	sess.Transport, err = webrtc.NewTransport(options...)
-	if err != nil {
-		cancel()
-		return nil, "", err
+	if sess.Transport, err = webrtc.NewTransport(options...); err != nil {
+		return nil, "", sess.abort(err)
 	}
-	if err = sess.Transport.SetOffer(offer.SDP); err != nil {
-		cancel()
-		return nil, "", errors.Join(fmt.Errorf("%w: invalid webrtc offer: %w", signaling.ErrBadRequest, err), sess.Transport.Close())
+	sess.transport = sess.Transport
+	if err = sess.SetOffer(offer.SDP); err != nil {
+		return nil, "", sess.abort(fmt.Errorf("%w: invalid webrtc offer: %w", signaling.ErrBadRequest, err))
 	}
-	requested := sess.Transport.RequestedVideoTracks()
+	requested := sess.RequestedVideoTracks()
 	if source != "" && requested == 0 {
-		cancel()
-		return nil, "", errors.Join(fmt.Errorf("%w: source requires a recvonly video m-line", signaling.ErrBadRequest), sess.Transport.Close())
+		return nil, "", sess.abort(fmt.Errorf("%w: source requires a recvonly video m-line", signaling.ErrBadRequest))
 	}
 	for range requested {
-		if err = sess.addSender(source); err != nil {
-			cancel()
-			return nil, "", errors.Join(err, sess.Transport.Close(), sess.runner.Close())
+		if err = sess.addTrack(source); err != nil {
+			return nil, "", sess.abort(err)
 		}
 	}
-	answer, err := sess.Transport.CreateAnswer(ctx)
+	answer, err := sess.CreateAnswer(ctx)
 	if err != nil {
-		cancel()
-		return nil, "", errors.Join(err, sess.Transport.Close(), sess.runner.Close())
+		return nil, "", sess.abort(err)
 	}
-	go sess.run(runCtx)
+	sess.start(sess.Connected())
 	return sess, answer, nil
 }
 
-// addSender sends source on a new local track.
-func (s *webrtcSession) addSender(source string) error {
+// addTrack sends source on a new local track.
+func (s *webrtcSession) addTrack(source string) error {
 	sender, err := s.media.newSender(source)
 	if err != nil {
 		return err
 	}
-	track, err := s.Transport.AddLocalTrackWithCodec(sender.Codec.MimeType())
+	track, err := s.AddLocalTrackWithCodec(sender.Codec.MimeType())
 	if err != nil {
 		return errors.Join(err, sender.Close())
 	}
-	g := pipeline.NewGraph()
-	s.runner.Add(g)
-	rate, err := sender.Add(g, track)
+	rate, err := s.addSender(sender, track)
 	if err != nil {
 		return err
 	}
 	if rate != nil {
-		s.Transport.ControlBitrate(rate)
+		s.ControlBitrate(rate)
 	}
 	return nil
 }
 
 func (s *webrtcSession) onTrack(receiver *webrtc.RTPReceiver) {
 	s.logger.Info("got track", "codec", receiver.Codec())
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	sink, err := s.media.newSink(s.id, len(s.sinks), receiver.Codec())
-	if err != nil {
+	if err := s.addReceiver(receiver, receiver.Codec()); err != nil {
 		s.logger.Error("failed to receive track", "error", errors.Join(err, receiver.Close()))
-		return
-	}
-	g := pipeline.NewGraph()
-	if err = sessionmedia.AddReceiver(g, receiver, sink); err != nil {
-		s.logger.Error("failed to receive track", "error", errors.Join(err, g.Close()))
-		return
-	}
-	s.sinks = append(s.sinks, sink)
-	s.runner.Add(g)
-}
-
-func (s *webrtcSession) run(ctx context.Context) {
-	defer close(s.done)
-	select {
-	case <-s.Connected():
-	case <-ctx.Done():
-		return
-	}
-	err := s.runner.Run(ctx)
-	if ctx.Err() != nil {
-		return
-	}
-	if err != nil {
-		s.logger.Error("session pipeline failed", "error", err)
-	} else {
-		s.logger.Info("stream ended")
-	}
-	// Closing the peer connection ends the client's tracks.
-	if err = s.Transport.Close(); err != nil {
-		s.logger.Error("failed to close peer connection", "error", err)
 	}
 }
 
-// frames returns the number of frames received on all tracks.
-func (s *webrtcSession) frames() uint64 {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	var n uint64
-	for _, sink := range s.sinks {
-		n += sink.Frames()
-	}
-	return n
-}
-
-// Close implements signaling.Session. It stops the pipelines and the peer
-// connection.
+// Close implements signaling.Session.
 func (s *webrtcSession) Close() error {
-	s.cancel()
-	// Closing the peer connection unblocks pending track reads.
-	err := s.Transport.Close()
-	<-s.done
-	err = errors.Join(err, s.runner.Close())
-	s.logger.Info("closed session", "frames", s.frames())
-	return err
+	return s.session.Close()
 }
