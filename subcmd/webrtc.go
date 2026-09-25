@@ -23,7 +23,6 @@ import (
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/webrtc"
 	"github.com/mengelbart/mrtp/webrtc/ecnnet"
-	pionwebrtc "github.com/pion/webrtc/v4"
 )
 
 func init() {
@@ -141,12 +140,9 @@ Usage:
 	// the transport, and the handler only runs once the transport exists.
 	var transport *webrtc.Transport
 
-	localCandidates := signaling.NewCandidates()
 	webrtcOptions := []webrtc.Option{
 		webrtc.SetNet(stdnet),
-		webrtc.OnICECandidate(func(c *pionwebrtc.ICECandidateInit) {
-			localCandidates.Push((*signaling.ICECandidate)(c))
-		}),
+		webrtc.EnableTrickle(),
 		webrtc.SetSRTPBufferLimit(10_000_000), // 10MB
 		webrtc.RegisterDefaultCodecs(),
 		// Pion does not know the FAKE codec, so it has to be registered to be
@@ -222,12 +218,6 @@ Usage:
 
 	setupCtx, cancelSetupCtx := context.WithTimeout(context.Background(), webrtcSetupTimeout)
 	defer cancelSetupCtx()
-	connectedCtx, cancelConnectedCtx := context.WithCancel(setupCtx)
-	defer cancelConnectedCtx()
-	webrtcOptions = append(webrtcOptions, webrtc.OnConnected(func() {
-		cancelConnectedCtx()
-	}))
-
 	transport, err = webrtc.NewTransport(webrtcOptions...)
 	if err != nil {
 		return err
@@ -308,13 +298,13 @@ Usage:
 	if w.offer {
 		signaler := &signaling.Client{BaseURL: fmt.Sprintf("http://%v", net.JoinHostPort(w.remoteAddr, w.remotePort))}
 		var id string
-		id, err = offerTrickle(setupCtx, signaler, transport, localCandidates, "")
+		id, err = offerTrickle(setupCtx, signaler, transport, "")
 		if err != nil {
 			return err
 		}
 		defer closeSession(signaler, id)
 	} else {
-		handler := signaling.NewHandler(&peerAcceptor{transport: transport, candidates: localCandidates})
+		handler := signaling.NewHandler(&peerAcceptor{transport: transport})
 		defer handler.Close()
 		mux := nethttp.NewServeMux()
 		handler.Register(mux)
@@ -354,8 +344,9 @@ Usage:
 		runner.Add(dataGraph)
 	}
 
-	<-connectedCtx.Done()
-	if err := setupCtx.Err(); err != nil {
+	select {
+	case <-transport.Connected():
+	case <-setupCtx.Done():
 		return fmt.Errorf("peer connection not established within %v: %w", webrtcSetupTimeout, err)
 	}
 	// TODO(ME): Remove this sleep. Without it, we seem too be sending to early
@@ -368,8 +359,7 @@ Usage:
 
 // peerAcceptor answers the one trickle ICE session of the offering peer.
 type peerAcceptor struct {
-	transport  *webrtc.Transport
-	candidates *signaling.Candidates
+	transport *webrtc.Transport
 
 	lock     sync.Mutex
 	accepted bool
@@ -396,26 +386,16 @@ func (a *peerAcceptor) Accept(ctx context.Context, _ string, request signaling.R
 		return nil, signaling.Response{}, err
 	}
 	a.accepted = true
-	return peerSession{a}, signaling.Response{WebRTC: &signaling.WebRTCAnswer{SDP: answer}}, nil
+	return peerSession{a.transport}, signaling.Response{WebRTC: &signaling.WebRTCAnswer{SDP: answer}}, nil
 }
 
 // peerSession is the signaling session of the offering peer. The peer
 // connection outlives it and closes when the command exits.
 type peerSession struct {
-	acceptor *peerAcceptor
+	*webrtc.Transport
 }
 
 // Close implements signaling.Session.
 func (peerSession) Close() error {
 	return nil
-}
-
-// AddICECandidate implements signaling.TrickleSession.
-func (s peerSession) AddICECandidate(candidate signaling.ICECandidate) error {
-	return s.acceptor.transport.AddICECandidate(pionwebrtc.ICECandidateInit(candidate))
-}
-
-// LocalCandidates implements signaling.TrickleSession.
-func (s peerSession) LocalCandidates() *signaling.Candidates {
-	return s.acceptor.candidates
 }

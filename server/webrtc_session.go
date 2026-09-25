@@ -13,7 +13,6 @@ import (
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/webrtc"
 	"github.com/mengelbart/mrtp/webrtc/ecnnet"
-	pionwebrtc "github.com/pion/webrtc/v4"
 )
 
 const webrtcBufferSize = 10_000_000
@@ -21,21 +20,17 @@ const webrtcBufferSize = 10_000_000
 // webrtcSession is one WebRTC peer connection. It sends fake video or a
 // source file on every recvonly video m-line of the offer, and receives every
 // track the client sends. It closes the peer connection once what it sends
-// ends.
+// ends. The transport implements signaling.TrickleSession.
 type webrtcSession struct {
-	id        string
-	logger    *slog.Logger
-	transport *webrtc.Transport
-	media     *media
+	*webrtc.Transport
+	id     string
+	logger *slog.Logger
+	media  *media
 	// runner starts once the peer connection is up, so that nothing is sent
 	// before the client can receive it.
-	runner        *pipeline.Runner
-	connected     chan struct{}
-	connectedOnce sync.Once
-	cancel        context.CancelFunc
-	done          chan struct{}
-	// candidates is nil unless the client trickles ICE.
-	candidates *signaling.Candidates
+	runner *pipeline.Runner
+	cancel context.CancelFunc
+	done   chan struct{}
 
 	lock  sync.Mutex
 	sinks []sessionmedia.FrameSink
@@ -60,13 +55,12 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 
 	runCtx, cancel := context.WithCancel(context.Background())
 	sess := &webrtcSession{
-		id:        id,
-		logger:    logger.With("id", id),
-		media:     m,
-		runner:    pipeline.NewRunner(),
-		connected: make(chan struct{}),
-		cancel:    cancel,
-		done:      make(chan struct{}),
+		id:     id,
+		logger: logger.With("id", id),
+		media:  m,
+		runner: pipeline.NewRunner(),
+		cancel: cancel,
+		done:   make(chan struct{}),
 	}
 	options := []webrtc.Option{
 		webrtc.SetNet(stdnet),
@@ -80,38 +74,34 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 		webrtc.IncludeLoopbackCandidates(),
 		webrtc.ListenIP(ip),
 		webrtc.OnTrack(sess.onTrack),
-		webrtc.OnConnected(func() { sess.connectedOnce.Do(func() { close(sess.connected) }) }),
 	}
 	if offer.Trickle {
-		sess.candidates = signaling.NewCandidates()
-		options = append(options, webrtc.OnICECandidate(func(c *pionwebrtc.ICECandidateInit) {
-			sess.candidates.Push((*signaling.ICECandidate)(c))
-		}))
+		options = append(options, webrtc.EnableTrickle())
 	}
-	sess.transport, err = webrtc.NewTransport(options...)
+	sess.Transport, err = webrtc.NewTransport(options...)
 	if err != nil {
 		cancel()
 		return nil, "", err
 	}
-	if err = sess.transport.SetOffer(offer.SDP); err != nil {
+	if err = sess.Transport.SetOffer(offer.SDP); err != nil {
 		cancel()
-		return nil, "", errors.Join(fmt.Errorf("%w: invalid webrtc offer: %w", signaling.ErrBadRequest, err), sess.transport.Close())
+		return nil, "", errors.Join(fmt.Errorf("%w: invalid webrtc offer: %w", signaling.ErrBadRequest, err), sess.Transport.Close())
 	}
-	requested := sess.transport.RequestedVideoTracks()
+	requested := sess.Transport.RequestedVideoTracks()
 	if source != "" && requested == 0 {
 		cancel()
-		return nil, "", errors.Join(fmt.Errorf("%w: source requires a recvonly video m-line", signaling.ErrBadRequest), sess.transport.Close())
+		return nil, "", errors.Join(fmt.Errorf("%w: source requires a recvonly video m-line", signaling.ErrBadRequest), sess.Transport.Close())
 	}
 	for range requested {
 		if err = sess.addSender(source); err != nil {
 			cancel()
-			return nil, "", errors.Join(err, sess.transport.Close(), sess.runner.Close())
+			return nil, "", errors.Join(err, sess.Transport.Close(), sess.runner.Close())
 		}
 	}
-	answer, err := sess.transport.CreateAnswer(ctx)
+	answer, err := sess.Transport.CreateAnswer(ctx)
 	if err != nil {
 		cancel()
-		return nil, "", errors.Join(err, sess.transport.Close(), sess.runner.Close())
+		return nil, "", errors.Join(err, sess.Transport.Close(), sess.runner.Close())
 	}
 	go sess.run(runCtx)
 	return sess, answer, nil
@@ -123,7 +113,7 @@ func (s *webrtcSession) addSender(source string) error {
 	if err != nil {
 		return err
 	}
-	track, err := s.transport.AddLocalTrackWithCodec(sender.Codec.MimeType())
+	track, err := s.Transport.AddLocalTrackWithCodec(sender.Codec.MimeType())
 	if err != nil {
 		return errors.Join(err, sender.Close())
 	}
@@ -134,7 +124,7 @@ func (s *webrtcSession) addSender(source string) error {
 		return err
 	}
 	if rate != nil {
-		s.transport.ControlBitrate(rate)
+		s.Transport.ControlBitrate(rate)
 	}
 	return nil
 }
@@ -160,7 +150,7 @@ func (s *webrtcSession) onTrack(receiver *webrtc.RTPReceiver) {
 func (s *webrtcSession) run(ctx context.Context) {
 	defer close(s.done)
 	select {
-	case <-s.connected:
+	case <-s.Connected():
 	case <-ctx.Done():
 		return
 	}
@@ -174,7 +164,7 @@ func (s *webrtcSession) run(ctx context.Context) {
 		s.logger.Info("stream ended")
 	}
 	// Closing the peer connection ends the client's tracks.
-	if err = s.transport.Close(); err != nil {
+	if err = s.Transport.Close(); err != nil {
 		s.logger.Error("failed to close peer connection", "error", err)
 	}
 }
@@ -190,22 +180,12 @@ func (s *webrtcSession) frames() uint64 {
 	return n
 }
 
-// AddICECandidate implements signaling.TrickleSession.
-func (s *webrtcSession) AddICECandidate(candidate signaling.ICECandidate) error {
-	return s.transport.AddICECandidate(pionwebrtc.ICECandidateInit(candidate))
-}
-
-// LocalCandidates implements signaling.TrickleSession.
-func (s *webrtcSession) LocalCandidates() *signaling.Candidates {
-	return s.candidates
-}
-
 // Close implements signaling.Session. It stops the pipelines and the peer
 // connection.
 func (s *webrtcSession) Close() error {
 	s.cancel()
 	// Closing the peer connection unblocks pending track reads.
-	err := s.transport.Close()
+	err := s.Transport.Close()
 	<-s.done
 	err = errors.Join(err, s.runner.Close())
 	s.logger.Info("closed session", "frames", s.frames())

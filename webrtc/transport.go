@@ -10,6 +10,7 @@ import (
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/internal/logging"
+	"github.com/mengelbart/mrtp/signaling"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/pacing"
 	"github.com/pion/interceptor/pkg/packetdump"
@@ -48,9 +49,11 @@ type Transport struct {
 	iceServers   []webrtc.ICEServer
 	dataChannels chan *webrtc.DataChannel
 
-	onRemoteTrack    func(*RTPReceiver)
-	onConnected      func()
-	onLocalCandidate func(*webrtc.ICECandidateInit)
+	onRemoteTrack func(*RTPReceiver)
+	connected     chan struct{}
+	connectedOnce sync.Once
+	// candidates is nil unless the transport trickles ICE.
+	candidates *signaling.Candidates
 
 	rateController rateController
 	pacer          *pacing.InterceptorFactory
@@ -68,19 +71,9 @@ func OnTrack(handler func(*RTPReceiver)) Option {
 	}
 }
 
-func OnConnected(f func()) Option {
+func EnableTrickle() Option {
 	return func(t *Transport) error {
-		t.onConnected = f
-		return nil
-	}
-}
-
-// OnICECandidate trickles ICE: Offer and CreateAnswer return without waiting for
-// candidates, and each local candidate is passed to handler instead, followed
-// by nil once gathering is complete.
-func OnICECandidate(handler func(*webrtc.ICECandidateInit)) Option {
-	return func(t *Transport) error {
-		t.onLocalCandidate = handler
+		t.candidates = signaling.NewCandidates()
 		return nil
 	}
 }
@@ -294,6 +287,7 @@ func NewTransport(opts ...Option) (*Transport, error) {
 	t := &Transport{
 		logger:       slog.Default(),
 		dataChannels: make(chan *webrtc.DataChannel, dataChannelQueueDepth),
+		connected:    make(chan struct{}),
 		iceServers: []webrtc.ICEServer{
 			{
 				URLs: []string{"stun:stun.l.google.com:19302"},
@@ -325,12 +319,24 @@ func NewTransport(opts ...Option) (*Transport, error) {
 	pc.OnDataChannel(t.onDataChannel)
 	pc.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
 		t.logger.Debug("connection state changed", "new_state", pcs)
-		if pcs == webrtc.PeerConnectionStateConnected && t.onConnected != nil {
-			t.onConnected()
+		if pcs == webrtc.PeerConnectionStateConnected {
+			t.connectedOnce.Do(func() { close(t.connected) })
 		}
 	})
 	t.pc = pc
 	return t, nil
+}
+
+// Connected returns a channel that is closed once the peer connection is
+// first established.
+func (t *Transport) Connected() <-chan struct{} {
+	return t.connected
+}
+
+// LocalCandidates implements signaling.TrickleSession. It returns nil unless
+// EnableTrickle is set.
+func (t *Transport) LocalCandidates() *signaling.Candidates {
+	return t.candidates
 }
 
 // NewDataChannelSender creates a data channel, which the next offer
@@ -364,15 +370,15 @@ func (t *Transport) onDataChannel(dc *webrtc.DataChannel) {
 
 func (t *Transport) onICECandidate(candidate *webrtc.ICECandidate) {
 	t.logger.Info("got new ICE candidate", "candidate", candidate)
-	if t.onLocalCandidate == nil {
+	if t.candidates == nil {
 		return
 	}
 	if candidate == nil {
-		t.onLocalCandidate(nil)
+		t.candidates.Push(nil)
 		return
 	}
 	init := candidate.ToJSON()
-	t.onLocalCandidate(&init)
+	t.candidates.Push((*signaling.ICECandidate)(&init))
 }
 
 func (t *Transport) onTrack(tr *webrtc.TrackRemote, r *webrtc.RTPReceiver) {
@@ -388,7 +394,7 @@ func (t *Transport) onTrack(tr *webrtc.TrackRemote, r *webrtc.RTPReceiver) {
 	t.onRemoteTrack(receiver)
 }
 
-// Offer creates an offer. Without OnICECandidate, it returns once all ICE
+// Offer creates an offer. Without EnableTrickle, it returns once all ICE
 // candidates are gathered.
 func (t *Transport) Offer(ctx context.Context) (string, error) {
 	offer, err := t.pc.CreateOffer(nil)
@@ -404,7 +410,7 @@ func (t *Transport) SetOffer(offer string) error {
 	return t.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offer})
 }
 
-// CreateAnswer answers the offer from SetOffer. Without OnICECandidate, it
+// CreateAnswer answers the offer from SetOffer. Without EnableTrickle, it
 // returns once all ICE candidates are gathered.
 func (t *Transport) CreateAnswer(ctx context.Context) (string, error) {
 	answer, err := t.pc.CreateAnswer(nil)
@@ -420,7 +426,7 @@ func (t *Transport) SetAnswer(answer string) error {
 }
 
 func (t *Transport) setLocalDescription(ctx context.Context, description webrtc.SessionDescription) (string, error) {
-	if t.onLocalCandidate != nil {
+	if t.candidates != nil {
 		if err := t.pc.SetLocalDescription(description); err != nil {
 			return "", err
 		}
@@ -438,9 +444,10 @@ func (t *Transport) setLocalDescription(ctx context.Context, description webrtc.
 	return t.pc.LocalDescription().SDP, nil
 }
 
-// AddICECandidate applies a candidate the peer trickled.
-func (t *Transport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
-	return t.pc.AddICECandidate(candidate)
+// AddICECandidate implements signaling.TrickleSession. It applies a candidate
+// the peer trickled.
+func (t *Transport) AddICECandidate(candidate signaling.ICECandidate) error {
+	return t.pc.AddICECandidate(webrtc.ICECandidateInit(candidate))
 }
 
 // AddRemoteVideoTrack adds a recvonly video transceiver, which the next offer

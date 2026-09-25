@@ -16,7 +16,6 @@ import (
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/webrtc"
 	"github.com/pion/rtp"
-	pionwebrtc "github.com/pion/webrtc/v4"
 )
 
 func TestRTPUDPSession(t *testing.T) {
@@ -183,10 +182,7 @@ func TestRejectsWebRTCWithoutOffer(t *testing.T) {
 
 func TestWebRTCTrickleSession(t *testing.T) {
 	ts, srv := newTestServer(t)
-	local := signaling.NewCandidates()
-	client, track := newWebRTCClient(t, webrtc.OnICECandidate(func(c *pionwebrtc.ICECandidateInit) {
-		local.Push((*signaling.ICECandidate)(c))
-	}))
+	client, track := newWebRTCClient(t, webrtc.EnableTrickle())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -206,11 +202,11 @@ func TestWebRTCTrickleSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	sent := make(chan error, 1)
-	go func() { sent <- signaler.SendCandidates(ctx, resp.ID, local) }()
+	go func() { sent <- signaler.SendCandidates(ctx, resp.ID, client.LocalCandidates()) }()
 	var received atomic.Int64
 	err = signaler.ReadCandidates(ctx, resp.ID, func(c signaling.ICECandidate) error {
 		received.Add(1)
-		return client.AddICECandidate(pionwebrtc.ICECandidateInit(c))
+		return client.AddICECandidate(c)
 	})
 	if err != nil {
 		t.Fatalf("reading candidates: %v", err)
@@ -222,7 +218,7 @@ func TestWebRTCTrickleSession(t *testing.T) {
 		t.Fatalf("sending candidates: %v", err)
 	}
 	select {
-	case <-client.connected:
+	case <-client.Connected():
 	case <-ctx.Done():
 		t.Fatal("peer connection not established")
 	}
@@ -300,7 +296,6 @@ func newTestServerWith(t *testing.T, config Config) (*httptest.Server, *Server) 
 // webrtcClient is the offering side of a test session.
 type webrtcClient struct {
 	*webrtc.Transport
-	connected chan struct{}
 }
 
 // newWebRTCClient returns a client that sends on the returned track.
@@ -361,10 +356,8 @@ func newWebRTCReceiver(t *testing.T) *webrtcReceiver {
 
 func newWebRTCTransport(t *testing.T, opts ...webrtc.Option) *webrtcClient {
 	t.Helper()
-	client := &webrtcClient{connected: make(chan struct{})}
-	var once sync.Once
+	client := &webrtcClient{}
 	options := append([]webrtc.Option{
-		webrtc.OnConnected(func() { once.Do(func() { close(client.connected) }) }),
 		webrtc.RegisterDefaultCodecs(),
 		webrtc.RegisterFakeCodec(),
 		webrtc.SetICEServers(nil),
@@ -408,7 +401,7 @@ func openWebRTC(t *testing.T, ctx context.Context, signaler *signaling.Client, c
 		t.Fatal(err)
 	}
 	select {
-	case <-client.connected:
+	case <-client.Connected():
 	case <-time.After(5 * time.Second):
 		t.Fatal("peer connection not established")
 	}

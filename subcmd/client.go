@@ -24,7 +24,6 @@ import (
 	"github.com/mengelbart/mrtp/udp"
 	"github.com/mengelbart/mrtp/webrtc"
 	"github.com/mengelbart/mrtp/webrtc/ecnnet"
-	pionwebrtc "github.com/pion/webrtc/v4"
 )
 
 func init() {
@@ -309,8 +308,6 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 	}
 	setupCtx, cancelSetup := context.WithTimeout(ctx, webrtcConnectTimeout)
 	defer cancelSetup()
-	connectedCtx, cancelConnected := context.WithCancel(setupCtx)
-	defer cancelConnected()
 
 	runner := pipeline.NewRunner()
 	defer func() {
@@ -337,7 +334,6 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 		}()
 	}
 
-	local := signaling.NewCandidates()
 	options := []webrtc.Option{
 		webrtc.SetNet(stdnet),
 		webrtc.SetSRTPBufferLimit(10_000_000),
@@ -347,10 +343,7 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 		webrtc.EnableRTCPReports(),
 		webrtc.SetICEServers(nil),
 		webrtc.IncludeLoopbackCandidates(),
-		webrtc.OnConnected(cancelConnected),
-		webrtc.OnICECandidate(func(c *pionwebrtc.ICECandidateInit) {
-			local.Push((*signaling.ICECandidate)(c))
-		}),
+		webrtc.EnableTrickle(),
 	}
 	if send {
 		sendOptions, optErr := c.webrtcSendOptions()
@@ -404,16 +397,17 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 		return err
 	}
 
-	id, err := offerTrickle(setupCtx, signaler, transport, local, c.source)
+	id, err := offerTrickle(setupCtx, signaler, transport, c.source)
 	if err != nil {
 		return err
 	}
 	slog.Info("opened session", "id", id, "protocol", signaling.ProtocolWebRTC)
 	defer closeSession(signaler, id)
 
-	<-connectedCtx.Done()
-	if err = setupCtx.Err(); err != nil {
-		return fmt.Errorf("peer connection not established within %v: %w", webrtcConnectTimeout, err)
+	select {
+	case <-transport.Connected():
+	case <-setupCtx.Done():
+		return fmt.Errorf("peer connection not established within %v: %w", webrtcConnectTimeout, setupCtx.Err())
 	}
 
 	if send {

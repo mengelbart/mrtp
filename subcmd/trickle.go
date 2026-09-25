@@ -7,14 +7,13 @@ import (
 
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/webrtc"
-	pionwebrtc "github.com/pion/webrtc/v4"
 )
 
 // offerTrickle opens a trickle ICE session on the answerer's signaling server
 // and exchanges candidates in the background until either side has sent all
 // of its own or ctx is done. source names the file the answerer sends, empty
 // for fake media. It returns the session id.
-func offerTrickle(ctx context.Context, signaler *signaling.Client, transport *webrtc.Transport, local *signaling.Candidates, source string) (string, error) {
+func offerTrickle(ctx context.Context, signaler *signaling.Client, transport *webrtc.Transport, source string) (string, error) {
 	offer, err := transport.Offer(ctx)
 	if err != nil {
 		return "", err
@@ -36,14 +35,12 @@ func offerTrickle(ctx context.Context, signaler *signaling.Client, transport *we
 		return "", err
 	}
 	go func() {
-		if sendErr := signaler.SendCandidates(ctx, session.ID, local); sendErr != nil && ctx.Err() == nil {
+		if sendErr := signaler.SendCandidates(ctx, session.ID, transport.LocalCandidates()); sendErr != nil && ctx.Err() == nil {
 			slog.Error("failed to send ICE candidates", "error", sendErr)
 		}
 	}()
 	go func() {
-		readErr := signaler.ReadCandidates(ctx, session.ID, func(c signaling.ICECandidate) error {
-			return transport.AddICECandidate(pionwebrtc.ICECandidateInit(c))
-		})
+		readErr := signaler.ReadCandidates(ctx, session.ID, transport.AddICECandidate)
 		if readErr != nil && ctx.Err() == nil {
 			slog.Error("failed to read ICE candidates", "error", readErr)
 		}
