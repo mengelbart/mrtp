@@ -46,11 +46,14 @@ func (s *Server) Close() error {
 func (s *Server) Accept(ctx context.Context, id string, request signaling.Request) (signaling.Session, signaling.Response, error) {
 	switch request.Protocol {
 	case signaling.ProtocolRTPUDP:
-		sess, err := newRTPUDPSession(id, s.mediaHost, s.logger)
+		if request.RTP == nil {
+			return nil, signaling.Response{}, fmt.Errorf("%w: missing rtp request", signaling.ErrBadRequest)
+		}
+		sess, err := newRTPUDPSession(id, s.mediaHost, *request.RTP, s.logger)
 		if err != nil {
 			return nil, signaling.Response{}, err
 		}
-		return sess, signaling.Response{RTP: &signaling.RTPEndpoint{Address: sess.src.LocalAddr().String()}}, nil
+		return sess, signaling.Response{RTP: &signaling.RTPEndpoint{Address: sess.addr.String()}}, nil
 	case signaling.ProtocolWebRTC:
 		if request.WebRTC == nil {
 			return nil, signaling.Response{}, fmt.Errorf("%w: missing webrtc offer", signaling.ErrBadRequest)

@@ -427,9 +427,12 @@ func (a *peerAcceptor) Accept(ctx context.Context, _ string, request signaling.R
 	if a.accepted {
 		return nil, signaling.Response{}, fmt.Errorf("%w: peer connection is already negotiated", signaling.ErrConflict)
 	}
-	answer, err := a.transport.Answer(ctx, request.WebRTC.SDP)
-	if err != nil {
+	if err := a.transport.SetOffer(request.WebRTC.SDP); err != nil {
 		return nil, signaling.Response{}, fmt.Errorf("%w: invalid webrtc offer: %w", signaling.ErrBadRequest, err)
+	}
+	answer, err := a.transport.CreateAnswer(ctx)
+	if err != nil {
+		return nil, signaling.Response{}, err
 	}
 	a.accepted = true
 	return peerSession{a}, signaling.Response{WebRTC: &signaling.WebRTCAnswer{SDP: answer}}, nil

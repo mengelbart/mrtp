@@ -50,6 +50,11 @@ func (c *conn) logRTP(packet []byte) {
 	}
 }
 
+// LocalAddr returns the address the socket is bound to.
+func (c *conn) LocalAddr() *net.UDPAddr {
+	return c.socket.LocalAddr().(*net.UDPAddr)
+}
+
 // Close implements mrtp.Element. It closes the socket, and is safe to call
 // more than once.
 func (c *conn) Close() error {
@@ -68,12 +73,24 @@ type Sink[T any] struct {
 // Dial connects to the UDP endpoint at address, in host:port form. Nothing is
 // bound locally. bytes is where a payload keeps its buffer.
 func Dial[T any](address string, traceRTP bool, bytes func(*T) *[]byte) (*Sink[T], error) {
+	return DialFrom(address, "", traceRTP, bytes)
+}
+
+// DialFrom is Dial with the socket bound to local, in host:port form. An empty
+// local binds nothing.
+func DialFrom[T any](address, local string, traceRTP bool, bytes func(*T) *[]byte) (*Sink[T], error) {
 	s := &Sink[T]{bytes: bytes}
 	addr, err := s.resolve(address, traceRTP, "udp sink")
 	if err != nil {
 		return nil, err
 	}
-	if s.socket, err = net.DialUDP("udp", nil, addr); err != nil {
+	var laddr *net.UDPAddr
+	if local != "" {
+		if laddr, err = net.ResolveUDPAddr("udp", local); err != nil {
+			return nil, err
+		}
+	}
+	if s.socket, err = net.DialUDP("udp", laddr, addr); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -165,11 +182,6 @@ func (s *recvSocket[T]) listen(address string, traceRTP bool, f mrtp.Format, byt
 // Format is what this socket's packets carry.
 func (s *recvSocket[T]) Format() mrtp.Format {
 	return s.format
-}
-
-// LocalAddr returns the address the socket is bound to.
-func (s *recvSocket[T]) LocalAddr() *net.UDPAddr {
-	return s.socket.LocalAddr().(*net.UDPAddr)
 }
 
 // read takes the next datagram as one owned packet.

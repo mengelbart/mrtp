@@ -18,7 +18,8 @@ import (
 
 const webrtcBufferSize = 10_000_000
 
-// webrtcSession is one WebRTC peer connection whose incoming RTP is dropped.
+// webrtcSession is one WebRTC peer connection. It sends fake video on every
+// recvonly video m-line of the offer and drops incoming RTP.
 type webrtcSession struct {
 	id        string
 	logger    *slog.Logger
@@ -82,13 +83,37 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 		cancel()
 		return nil, "", err
 	}
-	answer, err := sess.transport.Answer(ctx, offer.SDP)
-	if err != nil {
+	if err = sess.transport.SetOffer(offer.SDP); err != nil {
 		cancel()
 		return nil, "", errors.Join(fmt.Errorf("%w: invalid webrtc offer: %w", signaling.ErrBadRequest, err), sess.transport.Close())
 	}
+	for range sess.transport.RequestedVideoTracks() {
+		if err = sess.addSender(); err != nil {
+			cancel()
+			return nil, "", errors.Join(err, sess.transport.Close(), sess.runner.Close())
+		}
+	}
+	answer, err := sess.transport.CreateAnswer(ctx)
+	if err != nil {
+		cancel()
+		return nil, "", errors.Join(err, sess.transport.Close(), sess.runner.Close())
+	}
 	go sess.run(runCtx)
 	return sess, answer, nil
+}
+
+// addSender sends fake video on a new local track.
+func (s *webrtcSession) addSender() error {
+	track, err := s.transport.AddLocalTrackWithCodec(mrtp.Fake.MimeType())
+	if err != nil {
+		return err
+	}
+	g, err := newFakeSender(track)
+	if err != nil {
+		return err
+	}
+	s.runner.Add(g)
+	return nil
 }
 
 func (s *webrtcSession) onTrack(receiver *webrtc.RTPReceiver) {

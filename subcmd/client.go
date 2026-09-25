@@ -142,7 +142,10 @@ func (c *Client) validate(fs *flag.FlagSet) error {
 }
 
 func (c *Client) sendRTPUDP(ctx context.Context, signaler *signaling.Client, source *fake.Source, packetizer *rtp.Packetizer) error {
-	session, err := signaler.Open(ctx, signaling.Request{Protocol: signaling.ProtocolRTPUDP})
+	session, err := signaler.Open(ctx, signaling.Request{
+		Protocol: signaling.ProtocolRTPUDP,
+		RTP:      &signaling.RTPRequest{Direction: signaling.DirectionSend},
+	})
 	if err != nil {
 		return err
 	}

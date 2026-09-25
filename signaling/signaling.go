@@ -7,9 +7,16 @@ const (
 	ProtocolWebRTC = "webrtc"
 )
 
+// Directions of an RTP over UDP session, from the client's view.
+const (
+	DirectionSend = "send"
+	DirectionRecv = "recv"
+)
+
 // Request is the body of POST /sessions.
 type Request struct {
 	Protocol string       `json:"protocol"`
+	RTP      *RTPRequest  `json:"rtp,omitempty"`
 	WebRTC   *WebRTCOffer `json:"webrtc,omitempty"`
 }
 
@@ -20,9 +27,17 @@ type Response struct {
 	WebRTC *WebRTCAnswer `json:"webrtc,omitempty"`
 }
 
-// RTPEndpoint is where the client sends RTP packets.
+type RTPRequest struct {
+	Direction string `json:"direction"`
+	// Address is where the client receives RTP packets in host:port form. It
+	// is required for DirectionRecv.
+	Address string `json:"address,omitempty"`
+}
+
+// RTPEndpoint is the server's end of an RTP over UDP session.
 type RTPEndpoint struct {
-	// Address is the server's UDP address in host:port form.
+	// Address is the UDP address in host:port form the server receives on, or
+	// sends from.
 	Address string `json:"address"`
 }
 

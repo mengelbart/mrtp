@@ -29,7 +29,7 @@ func TestRTPUDPSession(t *testing.T) {
 
 	ctx := context.Background()
 	client := &signaling.Client{BaseURL: ts.URL}
-	resp, err := client.Open(ctx, signaling.Request{Protocol: signaling.ProtocolRTPUDP})
+	resp, err := client.Open(ctx, rtpUDPRequest(signaling.DirectionSend, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +61,73 @@ func TestRTPUDPSession(t *testing.T) {
 	}
 	if err = client.Close(ctx, resp.ID); err == nil || !strings.Contains(err.Error(), "404") {
 		t.Fatalf("closing twice returned %v, want 404", err)
+	}
+}
+
+func TestRTPUDPSessionRecv(t *testing.T) {
+	ts, _ := newTestServer(t)
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	client := &signaling.Client{BaseURL: ts.URL}
+	resp, err := client.Open(context.Background(), rtpUDPRequest(signaling.DirectionRecv, conn.LocalAddr().String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err = conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 1500)
+	n, from, err := conn.ReadFromUDP(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var packet rtp.Packet
+	if err = packet.Unmarshal(buf[:n]); err != nil {
+		t.Fatal(err)
+	}
+	if from.String() != resp.RTP.Address {
+		t.Fatalf("received from %v, want %v", from, resp.RTP.Address)
+	}
+}
+
+func TestRejectsRTPUDPRequest(t *testing.T) {
+	ts, _ := newTestServer(t)
+	client := &signaling.Client{BaseURL: ts.URL}
+	for _, request := range []signaling.Request{
+		{Protocol: signaling.ProtocolRTPUDP},
+		rtpUDPRequest("sideways", ""),
+		rtpUDPRequest(signaling.DirectionRecv, ""),
+	} {
+		_, err := client.Open(context.Background(), request)
+		if err == nil || !strings.Contains(err.Error(), "400") {
+			t.Errorf("opening %+v returned %v, want 400", request.RTP, err)
+		}
+	}
+}
+
+func TestWebRTCSessionRecv(t *testing.T) {
+	ts, srv := newTestServer(t)
+	client := newWebRTCReceiver(t)
+
+	ctx := context.Background()
+	signaler := &signaling.Client{BaseURL: ts.URL}
+	resp := openWebRTC(t, ctx, signaler, client.webrtcClient)
+	if !strings.Contains(resp.WebRTC.SDP, "a=sendonly") {
+		t.Fatal("answer does not send")
+	}
+	waitFor(t, func() bool { return client.discard.Packets() > 0 })
+
+	sess := session[*webrtcSession](t, srv, resp.ID)
+	if err := signaler.Close(ctx, resp.ID); err != nil {
+		t.Fatal(err)
+	}
+	if sess.packets() != 0 {
+		t.Fatalf("server received %v packets, want 0", sess.packets())
 	}
 }
 
@@ -190,7 +257,7 @@ func TestCandidatesOfNonTrickleSession(t *testing.T) {
 	ts, _ := newTestServer(t)
 	ctx := context.Background()
 	signaler := &signaling.Client{BaseURL: ts.URL}
-	resp, err := signaler.Open(ctx, signaling.Request{Protocol: signaling.ProtocolRTPUDP})
+	resp, err := signaler.Open(ctx, rtpUDPRequest(signaling.DirectionSend, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +315,54 @@ type webrtcClient struct {
 	connected chan struct{}
 }
 
+// newWebRTCClient returns a client that sends on the returned track.
 func newWebRTCClient(t *testing.T, opts ...webrtc.Option) (*webrtcClient, *webrtc.RTPSender) {
+	t.Helper()
+	client := newWebRTCTransport(t, opts...)
+	track, err := client.AddLocalTrackWithCodec(mrtp.Fake.MimeType())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return client, track
+}
+
+// webrtcReceiver is a test client that drops the RTP it receives.
+type webrtcReceiver struct {
+	*webrtcClient
+	discard *pipeline.Discard[mrtp.RTPPacket]
+}
+
+// newWebRTCReceiver returns a client that offers one recvonly video m-line.
+func newWebRTCReceiver(t *testing.T) *webrtcReceiver {
+	t.Helper()
+	r := &webrtcReceiver{discard: pipeline.NewDiscard[mrtp.RTPPacket]()}
+	runner := pipeline.NewRunner()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = runner.Run(ctx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+		_ = runner.Close()
+	})
+	r.webrtcClient = newWebRTCTransport(t, webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
+		g := pipeline.NewGraph()
+		if err := g.Connect(receiver, r.discard); err != nil {
+			t.Error(err)
+			return
+		}
+		runner.Add(g)
+	}))
+	if err := r.AddRemoteVideoTrack(); err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func newWebRTCTransport(t *testing.T, opts ...webrtc.Option) *webrtcClient {
 	t.Helper()
 	client := &webrtcClient{connected: make(chan struct{})}
 	var once sync.Once
@@ -266,11 +380,14 @@ func newWebRTCClient(t *testing.T, opts ...webrtc.Option) (*webrtcClient, *webrt
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Close() })
-	track, err := client.AddLocalTrackWithCodec(mrtp.Fake.MimeType())
-	if err != nil {
-		t.Fatal(err)
+	return client
+}
+
+func rtpUDPRequest(direction, address string) signaling.Request {
+	return signaling.Request{
+		Protocol: signaling.ProtocolRTPUDP,
+		RTP:      &signaling.RTPRequest{Direction: direction, Address: address},
 	}
-	return client, track
 }
 
 // openWebRTC negotiates a session and waits until the peer connection is up.

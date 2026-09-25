@@ -75,7 +75,7 @@ func OnConnected(f func()) Option {
 	}
 }
 
-// OnICECandidate trickles ICE: Offer and Answer return without waiting for
+// OnICECandidate trickles ICE: Offer and CreateAnswer return without waiting for
 // candidates, and each local candidate is passed to handler instead, followed
 // by nil once gathering is complete.
 func OnICECandidate(handler func(*webrtc.ICECandidateInit)) Option {
@@ -288,8 +288,8 @@ func RegisterFakeCodec() Option {
 // until NewDataChannelReceiver takes them.
 const dataChannelQueueDepth = 4
 
-// NewTransport creates a peer connection. Negotiation is driven by Offer,
-// Answer and SetAnswer.
+// NewTransport creates a peer connection. Negotiation is driven by Offer and
+// SetAnswer, or by SetOffer and CreateAnswer.
 func NewTransport(opts ...Option) (*Transport, error) {
 	t := &Transport{
 		logger:       slog.Default(),
@@ -398,12 +398,15 @@ func (t *Transport) Offer(ctx context.Context) (string, error) {
 	return t.setLocalDescription(ctx, offer)
 }
 
-// Answer applies an offer and returns the answer. Without OnICECandidate, it
+// SetOffer applies the peer's offer. Local tracks added before CreateAnswer are
+// sent on the offer's m-lines that receive.
+func (t *Transport) SetOffer(offer string) error {
+	return t.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offer})
+}
+
+// CreateAnswer answers the offer from SetOffer. Without OnICECandidate, it
 // returns once all ICE candidates are gathered.
-func (t *Transport) Answer(ctx context.Context, offer string) (string, error) {
-	if err := t.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offer}); err != nil {
-		return "", err
-	}
+func (t *Transport) CreateAnswer(ctx context.Context) (string, error) {
 	answer, err := t.pc.CreateAnswer(nil)
 	if err != nil {
 		return "", err
@@ -440,10 +443,27 @@ func (t *Transport) AddICECandidate(candidate webrtc.ICECandidateInit) error {
 	return t.pc.AddICECandidate(candidate)
 }
 
+// AddRemoteVideoTrack adds a recvonly video transceiver, which the next offer
+// negotiates.
 func (t *Transport) AddRemoteVideoTrack() error {
 	t.logger.Info("adding video transceiver")
-	_, err := t.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo)
+	_, err := t.pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
+		Direction: webrtc.RTPTransceiverDirectionRecvonly,
+	})
 	return err
+}
+
+// RequestedVideoTracks returns how many video m-lines of the offer from
+// SetOffer are recvonly and have no local track yet. Each local track added
+// fills one of them.
+func (t *Transport) RequestedVideoTracks() int {
+	n := 0
+	for _, tr := range t.pc.GetTransceivers() {
+		if tr.Kind() == webrtc.RTPCodecTypeVideo && tr.Direction() == webrtc.RTPTransceiverDirectionSendonly && tr.Sender() == nil {
+			n++
+		}
+	}
+	return n
 }
 
 func (t *Transport) AddLocalTrack() (*RTPSender, error) {
