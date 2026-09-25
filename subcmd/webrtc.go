@@ -366,45 +366,6 @@ Usage:
 	return runner.Run(ctx)
 }
 
-// offerTrickle opens a trickle ICE session on the answerer's signaling server
-// and exchanges candidates in the background until either side has sent all
-// of its own or ctx is done. It returns the session id.
-func offerTrickle(ctx context.Context, signaler *signaling.Client, transport *webrtc.Transport, local *signaling.Candidates) (string, error) {
-	offer, err := transport.Offer(ctx)
-	if err != nil {
-		return "", err
-	}
-	session, err := signaler.Open(ctx, signaling.Request{
-		Protocol: signaling.ProtocolWebRTC,
-		WebRTC:   &signaling.WebRTCOffer{SDP: offer, Trickle: true},
-	})
-	if err != nil {
-		return "", err
-	}
-	if session.WebRTC == nil {
-		closeSession(signaler, session.ID)
-		return "", errors.New("session response has no WebRTC answer")
-	}
-	if err = transport.SetAnswer(session.WebRTC.SDP); err != nil {
-		closeSession(signaler, session.ID)
-		return "", err
-	}
-	go func() {
-		if sendErr := signaler.SendCandidates(ctx, session.ID, local); sendErr != nil && ctx.Err() == nil {
-			slog.Error("failed to send ICE candidates", "error", sendErr)
-		}
-	}()
-	go func() {
-		readErr := signaler.ReadCandidates(ctx, session.ID, func(c signaling.ICECandidate) error {
-			return transport.AddICECandidate(pionwebrtc.ICECandidateInit(c))
-		})
-		if readErr != nil && ctx.Err() == nil {
-			slog.Error("failed to read ICE candidates", "error", readErr)
-		}
-	}()
-	return session.ID, nil
-}
-
 // peerAcceptor answers the one trickle ICE session of the offering peer.
 type peerAcceptor struct {
 	transport  *webrtc.Transport

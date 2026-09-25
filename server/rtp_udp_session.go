@@ -9,6 +9,7 @@ import (
 	"net"
 
 	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/internal/fakemedia"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/udp"
@@ -57,7 +58,7 @@ func newRTPUDPSession(id, host string, request signaling.RTPRequest, logger *slo
 
 // receive drops the frames that arrive on a socket bound on host.
 func (s *rtpUDPSession) receive(host string) error {
-	format, err := mrtp.NewRTPFormat(mediaCodec, mrtp.DefaultPayloadType)
+	format, err := mrtp.NewRTPFormat(fakemedia.Codec, mrtp.DefaultPayloadType)
 	if err != nil {
 		return err
 	}
@@ -66,7 +67,7 @@ func (s *rtpUDPSession) receive(host string) error {
 		return err
 	}
 	s.graph = pipeline.NewGraph()
-	if s.discard, err = addReceiver(s.graph, src); err != nil {
+	if s.discard, err = fakemedia.AddReceiver(s.graph, src); err != nil {
 		return errors.Join(err, s.graph.Close())
 	}
 	s.graph.Terminal(src)
@@ -85,7 +86,7 @@ func (s *rtpUDPSession) send(host, address string) error {
 		return fmt.Errorf("%w: invalid rtp address: %w", signaling.ErrBadRequest, err)
 	}
 	s.graph = pipeline.NewGraph()
-	if _, err = addSender(s.graph, sink); err != nil {
+	if _, err = fakemedia.AddSender(s.graph, senderConfig, sink); err != nil {
 		return errors.Join(err, s.graph.Close())
 	}
 	s.addr = sink.LocalAddr()

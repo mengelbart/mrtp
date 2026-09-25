@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/mengelbart/mrtp"
+	"github.com/mengelbart/mrtp/internal/fakemedia"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/webrtc"
@@ -105,13 +106,13 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 
 // addSender sends fake video on a new local track.
 func (s *webrtcSession) addSender() error {
-	track, err := s.transport.AddLocalTrackWithCodec(mediaCodec.MimeType())
+	track, err := s.transport.AddLocalTrackWithCodec(fakemedia.Codec.MimeType())
 	if err != nil {
 		return err
 	}
 	g := pipeline.NewGraph()
 	s.runner.Add(g)
-	source, err := addSender(g, track)
+	source, err := fakemedia.AddSender(g, senderConfig, track)
 	if err != nil {
 		return err
 	}
@@ -122,7 +123,7 @@ func (s *webrtcSession) addSender() error {
 func (s *webrtcSession) onTrack(receiver *webrtc.RTPReceiver) {
 	s.logger.Info("got track", "codec", receiver.Codec())
 	g := pipeline.NewGraph()
-	discard, err := addReceiver(g, receiver)
+	discard, err := fakemedia.AddReceiver(g, receiver)
 	if err != nil {
 		s.logger.Error("failed to receive track", "error", errors.Join(err, g.Close()))
 		return
