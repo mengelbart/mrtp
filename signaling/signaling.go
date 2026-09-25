@@ -15,9 +15,12 @@ const (
 
 // Request is the body of POST /sessions.
 type Request struct {
-	Protocol string       `json:"protocol"`
-	RTP      *RTPRequest  `json:"rtp,omitempty"`
-	WebRTC   *WebRTCOffer `json:"webrtc,omitempty"`
+	Protocol string `json:"protocol"`
+	// Source names the media file the server sends. Empty asks for fake
+	// media.
+	Source string       `json:"source,omitempty"`
+	RTP    *RTPRequest  `json:"rtp,omitempty"`
+	WebRTC *WebRTCOffer `json:"webrtc,omitempty"`
 }
 
 // Response is the body of a successful POST /sessions.
@@ -39,6 +42,10 @@ type RTPEndpoint struct {
 	// Address is the UDP address in host:port form the server receives on, or
 	// sends from.
 	Address string `json:"address"`
+	// Codec and PayloadType describe what the server sends. They are empty if
+	// the server receives.
+	Codec       string `json:"codec,omitempty"`
+	PayloadType uint8  `json:"payloadType,omitempty"`
 }
 
 type WebRTCOffer struct {

@@ -17,7 +17,7 @@ import (
 
 	"github.com/mengelbart/mrtp"
 	"github.com/mengelbart/mrtp/cmdmain"
-	"github.com/mengelbart/mrtp/internal/fakemedia"
+	"github.com/mengelbart/mrtp/internal/sessionmedia"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/udp"
@@ -38,6 +38,7 @@ type Client struct {
 	serverURL     string
 	protocol      string
 	direction     string
+	source        string
 	duration      time.Duration
 	bitrate       uint
 	fps           uint64
@@ -58,6 +59,7 @@ func (c *Client) Exec(cmd string, args []string) error {
 	fs.StringVar(&c.serverURL, "server", "http://127.0.0.1:8080", "Signaling server URL")
 	fs.StringVar(&c.protocol, "protocol", signaling.ProtocolRTPUDP, "Media transport, 'rtp-udp' or 'webrtc'")
 	fs.StringVar(&c.direction, "direction", signaling.DirectionRecv, "Media direction from the client's view, 'send' or 'recv'")
+	fs.StringVar(&c.source, "source", "", "Name of a file in the server's -source-dir to receive. Empty receives fake video.")
 	fs.DurationVar(&c.duration, "duration", 10*time.Second, "How long to send or receive, 0 for no limit")
 	fs.UintVar(&c.bitrate, "bitrate", 1_000_000, "Media bitrate in bits per second, excluding RTP headers")
 	fs.Uint64Var(&c.fps, "fps", 30, "Frames per second")
@@ -69,7 +71,7 @@ func (c *Client) Exec(cmd string, args []string) error {
 	DefaultBweFlags.ConfigureFlags(fs)
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Open a session on a signaling server and send or receive fake video as RTP over UDP or WebRTC
+		fmt.Fprintf(os.Stderr, `Open a session on a signaling server and send or receive video as RTP over UDP or WebRTC
 
 Usage:
 	%s client [flags]
@@ -114,6 +116,9 @@ func (c *Client) validate(fs *flag.FlagSet) error {
 	}
 	switch c.direction {
 	case signaling.DirectionSend:
+		if c.source != "" {
+			return fmt.Errorf("-source only applies to -direction %v", signaling.DirectionRecv)
+		}
 	case signaling.DirectionRecv:
 		if set := setFlags(fs, "bitrate", "fps", "mtu", "trace-rtp-send", "bwe", "pacing", "max-target-rate"); len(set) > 0 {
 			return fmt.Errorf("%v only apply to -direction %v", strings.Join(set, ", "), signaling.DirectionSend)
@@ -149,12 +154,12 @@ func setFlags(fs *flag.FlagSet, names ...string) []string {
 	return set
 }
 
-func (c *Client) senderConfig() fakemedia.SenderConfig {
+func (c *Client) senderConfig() sessionmedia.FakeConfig {
 	bounds := mrtp.RateBounds{Initial: c.bitrate, Min: c.bitrate, Max: c.bitrate}
 	if c.bwe != "" {
 		bounds = mrtp.RateBounds{Initial: c.bitrate, Min: minTargetRate, Max: c.maxTargetRate}
 	}
-	return fakemedia.SenderConfig{
+	return sessionmedia.FakeConfig{
 		Duration: c.duration,
 		FPS:      c.fps,
 		MTU:      uint16(c.mtu),
@@ -182,7 +187,7 @@ func (c *Client) sendRTPUDP(ctx context.Context, signaler *signaling.Client) err
 		return err
 	}
 	g := pipeline.NewGraph()
-	if _, err = fakemedia.AddSender(g, c.senderConfig(), sink); err != nil {
+	if _, err = sessionmedia.AddFakeSender(g, c.senderConfig(), sink); err != nil {
 		return errors.Join(err, g.Close())
 	}
 	return runGraph(ctx, g)
@@ -193,26 +198,31 @@ func (c *Client) recvRTPUDP(ctx context.Context, signaler *signaling.Client) err
 	if err != nil {
 		return err
 	}
-	format, err := mrtp.NewRTPFormat(fakemedia.Codec, mrtp.DefaultPayloadType)
+	socket, err := net.ListenUDP("udp", &net.UDPAddr{IP: ip})
 	if err != nil {
 		return err
 	}
-	src, err := udp.Listen(net.JoinHostPort(ip.String(), "0"), false, format, mrtp.RTPBytes)
+	session, err := c.openRTPUDP(ctx, signaler, socket.LocalAddr().String())
 	if err != nil {
-		return err
+		return errors.Join(err, socket.Close())
 	}
+	defer closeSession(signaler, session.ID)
+
+	codec, err := mrtp.NewCodec(session.RTP.Codec)
+	if err != nil {
+		return errors.Join(fmt.Errorf("server sends %q: %w", session.RTP.Codec, err), socket.Close())
+	}
+	format, err := mrtp.NewRTPFormat(codec, int(session.RTP.PayloadType))
+	if err != nil {
+		return errors.Join(err, socket.Close())
+	}
+	src := udp.NewSource(socket, false, format, mrtp.RTPBytes)
 	g := pipeline.NewGraph()
-	discard, err := fakemedia.AddReceiver(g, src)
-	if err != nil {
+	discard := pipeline.NewDiscard[mrtp.EncodedFrame]()
+	if err = sessionmedia.AddReceiver(g, src, discard); err != nil {
 		return errors.Join(err, g.Close())
 	}
 	g.Terminal(src)
-
-	session, err := c.openRTPUDP(ctx, signaler, src.LocalAddr().String())
-	if err != nil {
-		return errors.Join(err, g.Close())
-	}
-	defer closeSession(signaler, session.ID)
 
 	ctx, cancel := c.receiveContext(ctx)
 	defer cancel()
@@ -228,6 +238,7 @@ func (c *Client) recvRTPUDP(ctx context.Context, signaler *signaling.Client) err
 func (c *Client) openRTPUDP(ctx context.Context, signaler *signaling.Client, address string) (signaling.Response, error) {
 	session, err := signaler.Open(ctx, signaling.Request{
 		Protocol: signaling.ProtocolRTPUDP,
+		Source:   c.source,
 		RTP:      &signaling.RTPRequest{Direction: c.direction, Address: address},
 	})
 	if err != nil {
@@ -290,8 +301,8 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 			webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
 				slog.Info("got track", "codec", receiver.Codec())
 				g := pipeline.NewGraph()
-				discard, trackErr := fakemedia.AddReceiver(g, receiver)
-				if trackErr != nil {
+				discard := pipeline.NewDiscard[mrtp.EncodedFrame]()
+				if trackErr := sessionmedia.AddReceiver(g, receiver, discard); trackErr != nil {
 					slog.Error("failed to receive track", "error", errors.Join(trackErr, g.Close()))
 					return
 				}
@@ -312,13 +323,13 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 		}
 	}()
 	if send {
-		track, trackErr := transport.AddLocalTrackWithCodec(fakemedia.Codec.MimeType())
+		track, trackErr := transport.AddLocalTrackWithCodec(sessionmedia.FakeCodec.MimeType())
 		if trackErr != nil {
 			return trackErr
 		}
 		g := pipeline.NewGraph()
 		runner.Add(g)
-		source, sendErr := fakemedia.AddSender(g, c.senderConfig(), track)
+		source, sendErr := sessionmedia.AddFakeSender(g, c.senderConfig(), track)
 		if sendErr != nil {
 			return sendErr
 		}
@@ -327,7 +338,7 @@ func (c *Client) runWebRTC(ctx context.Context, signaler *signaling.Client) erro
 		return err
 	}
 
-	id, err := offerTrickle(setupCtx, signaler, transport, local)
+	id, err := offerTrickle(setupCtx, signaler, transport, local, c.source)
 	if err != nil {
 		return err
 	}

@@ -149,6 +149,27 @@ func (s *recvSocket[T]) listen(address string, traceRTP bool, f mrtp.Format, byt
 		opt(&settings)
 	}
 
+	addr, err := s.resolve(address, traceRTP, "udp source")
+	if err != nil {
+		return err
+	}
+	socket, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return err
+	}
+	if settings.recvBufferSize > 0 {
+		if err = socket.SetReadBuffer(settings.recvBufferSize); err != nil {
+			_ = socket.Close()
+			return fmt.Errorf("failed to set receive buffer size: %w", err)
+		}
+	}
+	s.init(socket, f, bytes)
+	return nil
+}
+
+// init takes over a bound socket.
+func (s *recvSocket[T]) init(socket *net.UDPConn, f mrtp.Format, bytes func(*T) *[]byte) {
+	s.socket = socket
 	s.format = f
 	s.bytes = bytes
 	s.pool = pipeline.NewPool(
@@ -162,21 +183,6 @@ func (s *recvSocket[T]) listen(address string, traceRTP bool, f mrtp.Format, byt
 			*buffer = (*buffer)[:cap(*buffer)]
 		},
 	)
-
-	addr, err := s.resolve(address, traceRTP, "udp source")
-	if err != nil {
-		return err
-	}
-	if s.socket, err = net.ListenUDP("udp", addr); err != nil {
-		return err
-	}
-	if settings.recvBufferSize > 0 {
-		if err = s.socket.SetReadBuffer(settings.recvBufferSize); err != nil {
-			_ = s.socket.Close()
-			return fmt.Errorf("failed to set receive buffer size: %w", err)
-		}
-	}
-	return nil
 }
 
 // Format is what this socket's packets carry.
@@ -212,6 +218,17 @@ func Listen[T any](address string, traceRTP bool, f mrtp.Format, bytes func(*T) 
 		return nil, err
 	}
 	return s, nil
+}
+
+// NewSource pushes what arrives on socket as packets of format f, and closes
+// socket when it is closed. bytes is where a payload keeps its buffer.
+func NewSource[T any](socket *net.UDPConn, traceRTP bool, f mrtp.Format, bytes func(*T) *[]byte) *Source[T] {
+	s := &Source[T]{}
+	if traceRTP {
+		s.logger = logging.NewRTPLogger("udp source", nil)
+	}
+	s.init(socket, f, bytes)
+	return s
 }
 
 // Connect implements mrtp.Source.

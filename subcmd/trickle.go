@@ -12,14 +12,16 @@ import (
 
 // offerTrickle opens a trickle ICE session on the answerer's signaling server
 // and exchanges candidates in the background until either side has sent all
-// of its own or ctx is done. It returns the session id.
-func offerTrickle(ctx context.Context, signaler *signaling.Client, transport *webrtc.Transport, local *signaling.Candidates) (string, error) {
+// of its own or ctx is done. source names the file the answerer sends, empty
+// for fake media. It returns the session id.
+func offerTrickle(ctx context.Context, signaler *signaling.Client, transport *webrtc.Transport, local *signaling.Candidates, source string) (string, error) {
 	offer, err := transport.Offer(ctx)
 	if err != nil {
 		return "", err
 	}
 	session, err := signaler.Open(ctx, signaling.Request{
 		Protocol: signaling.ProtocolWebRTC,
+		Source:   source,
 		WebRTC:   &signaling.WebRTCOffer{SDP: offer, Trickle: true},
 	})
 	if err != nil {

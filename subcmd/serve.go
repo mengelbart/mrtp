@@ -17,8 +17,8 @@ func init() {
 }
 
 type Serve struct {
-	addr      string
-	mediaHost string
+	addr   string
+	config server.Config
 }
 
 // Help implements cmdmain.SubCmd.
@@ -29,7 +29,9 @@ func (s *Serve) Help() string {
 func (s *Serve) Exec(cmd string, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	fs.StringVar(&s.addr, "addr", "127.0.0.1:8080", "HTTP signaling server address")
-	fs.StringVar(&s.mediaHost, "media-host", "127.0.0.1", "IP to bind media sockets and restrict WebRTC ICE candidates to")
+	fs.StringVar(&s.config.MediaHost, "media-host", "127.0.0.1", "IP to bind media sockets and restrict WebRTC ICE candidates to")
+	fs.StringVar(&s.config.SourceDir, "source-dir", "", "Directory of VP8 and VP9 IVF files clients may request by name. Empty allows none.")
+	fs.StringVar(&s.config.SinkDir, "sink-dir", "", "Directory to record received VP8 and VP9 tracks to as <session-id>.ivf. Empty drops them.")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Run a signaling server that accepts media sessions from clients
@@ -52,7 +54,10 @@ Flags:
 		os.Exit(1)
 	}
 
-	srv := server.New(s.mediaHost)
+	srv, err := server.New(s.config)
+	if err != nil {
+		return err
+	}
 	defer srv.Close()
 
 	mux := nethttp.NewServeMux()

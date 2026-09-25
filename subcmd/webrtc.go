@@ -308,7 +308,7 @@ Usage:
 	if w.offer {
 		signaler := &signaling.Client{BaseURL: fmt.Sprintf("http://%v", net.JoinHostPort(w.remoteAddr, w.remotePort))}
 		var id string
-		id, err = offerTrickle(setupCtx, signaler, transport, localCandidates)
+		id, err = offerTrickle(setupCtx, signaler, transport, localCandidates, "")
 		if err != nil {
 			return err
 		}

@@ -20,12 +20,7 @@ import (
 )
 
 func TestRTPUDPSession(t *testing.T) {
-	srv := New("127.0.0.1")
-	defer srv.Close()
-	mux := http.NewServeMux()
-	srv.Register(mux)
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
+	ts, srv := newTestServer(t)
 
 	ctx := context.Background()
 	client := &signaling.Client{BaseURL: ts.URL}
@@ -45,7 +40,7 @@ func TestRTPUDPSession(t *testing.T) {
 		if _, err := conn.Write(marshalRTP(t, seq)); err != nil {
 			t.Fatal(err)
 		}
-	}, sess.discard.Packets)
+	}, sess.sink.Frames)
 
 	if err = client.Close(ctx, resp.ID); err != nil {
 		t.Fatal(err)
@@ -123,12 +118,7 @@ func TestWebRTCSessionRecv(t *testing.T) {
 }
 
 func TestRejectsUnknownProtocol(t *testing.T) {
-	srv := New("127.0.0.1")
-	defer srv.Close()
-	mux := http.NewServeMux()
-	srv.Register(mux)
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
+	ts, _ := newTestServer(t)
 
 	client := &signaling.Client{BaseURL: ts.URL}
 	_, err := client.Open(context.Background(), signaling.Request{Protocol: "carrier-pigeon"})
@@ -286,7 +276,17 @@ func session[T signaling.Session](t *testing.T, srv *Server, id string) T {
 
 func newTestServer(t *testing.T) (*httptest.Server, *Server) {
 	t.Helper()
-	srv := New("127.0.0.1")
+	return newTestServerWith(t, Config{})
+}
+
+// newTestServerWith returns a server configured by config, on 127.0.0.1.
+func newTestServerWith(t *testing.T, config Config) (*httptest.Server, *Server) {
+	t.Helper()
+	config.MediaHost = "127.0.0.1"
+	srv, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = srv.Close() })
 	mux := http.NewServeMux()
 	srv.Register(mux)
@@ -312,35 +312,44 @@ func newWebRTCClient(t *testing.T, opts ...webrtc.Option) (*webrtcClient, *webrt
 	return client, track
 }
 
-// webrtcReceiver is a test client that drops the RTP it receives.
+// webrtcReceiver is a test client that drops the RTP of the one track it
+// receives.
 type webrtcReceiver struct {
 	*webrtcClient
 	discard *pipeline.Discard[mrtp.RTPPacket]
+	// codec delivers the codec of the track once it arrives.
+	codec chan mrtp.Codec
+	// ended is closed once the track ends.
+	ended chan struct{}
 }
 
 // newWebRTCReceiver returns a client that offers one recvonly video m-line.
 func newWebRTCReceiver(t *testing.T) *webrtcReceiver {
 	t.Helper()
-	r := &webrtcReceiver{discard: pipeline.NewDiscard[mrtp.RTPPacket]()}
-	runner := pipeline.NewRunner()
+	r := &webrtcReceiver{
+		discard: pipeline.NewDiscard[mrtp.RTPPacket](),
+		codec:   make(chan mrtp.Codec, 1),
+		ended:   make(chan struct{}),
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_ = runner.Run(ctx)
-	}()
+	var running sync.WaitGroup
 	t.Cleanup(func() {
 		cancel()
-		<-done
-		_ = runner.Close()
+		running.Wait()
 	})
 	r.webrtcClient = newWebRTCTransport(t, webrtc.OnTrack(func(receiver *webrtc.RTPReceiver) {
+		r.codec <- receiver.Codec()
 		g := pipeline.NewGraph()
 		if err := g.Connect(receiver, r.discard); err != nil {
 			t.Error(err)
 			return
 		}
-		runner.Add(g)
+		g.Terminal(receiver)
+		running.Go(func() {
+			defer close(r.ended)
+			_ = g.Run(ctx)
+			_ = g.Close()
+		})
 	}))
 	if err := r.AddRemoteVideoTrack(); err != nil {
 		t.Fatal(err)
@@ -379,14 +388,7 @@ func rtpUDPRequest(direction, address string) signaling.Request {
 // openWebRTC negotiates a session and waits until the peer connection is up.
 func openWebRTC(t *testing.T, ctx context.Context, signaler *signaling.Client, client *webrtcClient) signaling.Response {
 	t.Helper()
-	offer, err := client.Offer(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp, err := signaler.Open(ctx, signaling.Request{
-		Protocol: signaling.ProtocolWebRTC,
-		WebRTC:   &signaling.WebRTCOffer{SDP: offer},
-	})
+	resp, err := openWebRTCSource(ctx, signaler, client, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,6 +404,20 @@ func openWebRTC(t *testing.T, ctx context.Context, signaler *signaling.Client, c
 		t.Fatal("peer connection not established")
 	}
 	return resp
+}
+
+// openWebRTCSource opens a session that sends source, without waiting for the
+// peer connection.
+func openWebRTCSource(ctx context.Context, signaler *signaling.Client, client *webrtcClient, source string) (signaling.Response, error) {
+	offer, err := client.Offer(ctx)
+	if err != nil {
+		return signaling.Response{}, err
+	}
+	return signaler.Open(ctx, signaling.Request{
+		Protocol: signaling.ProtocolWebRTC,
+		Source:   source,
+		WebRTC:   &signaling.WebRTCOffer{SDP: offer},
+	})
 }
 
 var rtpPool = pipeline.NewPool(func() *mrtp.RTPPacket { return &mrtp.RTPPacket{} }, func(*mrtp.RTPPacket) {})

@@ -9,14 +9,14 @@ import (
 	"net"
 
 	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/internal/fakemedia"
+	"github.com/mengelbart/mrtp/internal/sessionmedia"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/udp"
 )
 
-// rtpUDPSession is one RTP over UDP stream of fake video. The server either
-// depacketizes and drops what the client sends, or sends to the client.
+// rtpUDPSession is one RTP over UDP stream. The server either receives fake
+// video from the client, or sends fake video or a source file to it.
 type rtpUDPSession struct {
 	id     string
 	logger *slog.Logger
@@ -24,15 +24,19 @@ type rtpUDPSession struct {
 	addr   *net.UDPAddr
 	socket io.Closer
 	graph  *pipeline.Graph
-	// discard is nil if the server sends.
-	discard *pipeline.Discard[mrtp.EncodedFrame]
-	cancel  context.CancelFunc
-	done    chan struct{}
+
+	sending bool
+	codec   mrtp.Codec
+
+	// sink is nil if the server sends.
+	sink   frameSink
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // newRTPUDPSession binds a UDP socket on host and starts the stream request
-// asks for.
-func newRTPUDPSession(id, host string, request signaling.RTPRequest, logger *slog.Logger) (*rtpUDPSession, error) {
+// asks for, sending source if the server sends.
+func newRTPUDPSession(id, host string, request signaling.RTPRequest, source string, m *media, logger *slog.Logger) (*rtpUDPSession, error) {
 	sess := &rtpUDPSession{
 		id:     id,
 		logger: logger.With("id", id),
@@ -41,9 +45,12 @@ func newRTPUDPSession(id, host string, request signaling.RTPRequest, logger *slo
 	var err error
 	switch request.Direction {
 	case signaling.DirectionSend:
-		err = sess.receive(host)
+		if source != "" {
+			return nil, fmt.Errorf("%w: source requires direction %q", signaling.ErrBadRequest, signaling.DirectionRecv)
+		}
+		err = sess.receive(host, m)
 	case signaling.DirectionRecv:
-		err = sess.send(host, request.Address)
+		err = sess.send(host, request.Address, source, m)
 	default:
 		return nil, fmt.Errorf("%w: unknown direction %q", signaling.ErrBadRequest, request.Direction)
 	}
@@ -56,18 +63,22 @@ func newRTPUDPSession(id, host string, request signaling.RTPRequest, logger *slo
 	return sess, nil
 }
 
-// receive drops the frames that arrive on a socket bound on host.
-func (s *rtpUDPSession) receive(host string) error {
-	format, err := mrtp.NewRTPFormat(fakemedia.Codec, mrtp.DefaultPayloadType)
+// receive takes the fake video that arrives on a socket bound on host.
+func (s *rtpUDPSession) receive(host string, m *media) error {
+	format, err := mrtp.NewRTPFormat(sessionmedia.FakeCodec, mrtp.DefaultPayloadType)
 	if err != nil {
 		return err
 	}
-	src, err := udp.Listen(net.JoinHostPort(host, "0"), false, format, rtpBytes)
-	if err != nil {
+	if s.sink, err = m.newSink(s.id, 0, format.Codec); err != nil {
 		return err
 	}
 	s.graph = pipeline.NewGraph()
-	if s.discard, err = fakemedia.AddReceiver(s.graph, src); err != nil {
+	s.graph.Add(s.sink)
+	src, err := udp.Listen(net.JoinHostPort(host, "0"), false, format, rtpBytes)
+	if err != nil {
+		return errors.Join(err, s.graph.Close())
+	}
+	if err = sessionmedia.AddReceiver(s.graph, src, s.sink); err != nil {
 		return errors.Join(err, s.graph.Close())
 	}
 	s.graph.Terminal(src)
@@ -76,19 +87,25 @@ func (s *rtpUDPSession) receive(host string) error {
 	return nil
 }
 
-// send sends from a socket bound on host to address.
-func (s *rtpUDPSession) send(host, address string) error {
+// send sends source from a socket bound on host to address.
+func (s *rtpUDPSession) send(host, address, source string, m *media) error {
 	if address == "" {
 		return fmt.Errorf("%w: missing rtp address", signaling.ErrBadRequest)
 	}
+	sender, err := m.newSender(source)
+	if err != nil {
+		return err
+	}
 	sink, err := udp.DialFrom(address, net.JoinHostPort(host, "0"), false, rtpBytes)
 	if err != nil {
-		return fmt.Errorf("%w: invalid rtp address: %w", signaling.ErrBadRequest, err)
+		return errors.Join(fmt.Errorf("%w: invalid rtp address: %w", signaling.ErrBadRequest, err), sender.close())
 	}
 	s.graph = pipeline.NewGraph()
-	if _, err = fakemedia.AddSender(s.graph, senderConfig, sink); err != nil {
+	if _, err = sender.add(s.graph, sink); err != nil {
 		return errors.Join(err, s.graph.Close())
 	}
+	s.sending = true
+	s.codec = sender.codec
 	s.addr = sink.LocalAddr()
 	s.socket = sink
 	return nil
@@ -109,8 +126,8 @@ func (s *rtpUDPSession) Close() error {
 	err := s.socket.Close()
 	<-s.done
 	err = errors.Join(err, s.graph.Close())
-	if s.discard != nil {
-		s.logger.Info("closed session", "frames", s.discard.Packets())
+	if s.sink != nil {
+		s.logger.Info("closed session", "frames", s.sink.Frames())
 	} else {
 		s.logger.Info("closed session")
 	}

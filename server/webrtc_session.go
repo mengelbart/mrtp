@@ -8,8 +8,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/mengelbart/mrtp"
-	"github.com/mengelbart/mrtp/internal/fakemedia"
+	"github.com/mengelbart/mrtp/internal/sessionmedia"
 	"github.com/mengelbart/mrtp/pipeline"
 	"github.com/mengelbart/mrtp/signaling"
 	"github.com/mengelbart/mrtp/webrtc"
@@ -19,28 +18,34 @@ import (
 
 const webrtcBufferSize = 10_000_000
 
-// webrtcSession is one WebRTC peer connection. It sends fake video on every
-// recvonly video m-line of the offer, and depacketizes and drops every track
-// the client sends.
+// webrtcSession is one WebRTC peer connection. It sends fake video or a
+// source file on every recvonly video m-line of the offer, and receives every
+// track the client sends. It closes the peer connection once what it sends
+// ends.
 type webrtcSession struct {
 	id        string
 	logger    *slog.Logger
 	transport *webrtc.Transport
-	runner    *pipeline.Runner
-	cancel    context.CancelFunc
-	done      chan struct{}
+	media     *media
+	// runner starts once the peer connection is up, so that nothing is sent
+	// before the client can receive it.
+	runner        *pipeline.Runner
+	connected     chan struct{}
+	connectedOnce sync.Once
+	cancel        context.CancelFunc
+	done          chan struct{}
 	// candidates is nil unless the client trickles ICE.
 	candidates *signaling.Candidates
 
-	lock     sync.Mutex
-	discards []*pipeline.Discard[mrtp.EncodedFrame]
+	lock  sync.Mutex
+	sinks []frameSink
 }
 
 // newWebRTCSession answers offer with a peer connection whose candidates are
 // restricted to host. It generates CCFB, NACK and RTCP reports as far as the
 // offer negotiates them. Unless the offer trickles ICE, it returns once the
 // answer is complete.
-func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebRTCOffer, logger *slog.Logger) (*webrtcSession, string, error) {
+func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebRTCOffer, source string, m *media, logger *slog.Logger) (*webrtcSession, string, error) {
 	ip := net.ParseIP(host)
 	if ip == nil {
 		return nil, "", fmt.Errorf("media host %q is not an IP address", host)
@@ -55,11 +60,13 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 
 	runCtx, cancel := context.WithCancel(context.Background())
 	sess := &webrtcSession{
-		id:     id,
-		logger: logger.With("id", id),
-		runner: pipeline.NewRunner(),
-		cancel: cancel,
-		done:   make(chan struct{}),
+		id:        id,
+		logger:    logger.With("id", id),
+		media:     m,
+		runner:    pipeline.NewRunner(),
+		connected: make(chan struct{}),
+		cancel:    cancel,
+		done:      make(chan struct{}),
 	}
 	options := []webrtc.Option{
 		webrtc.SetNet(stdnet),
@@ -73,6 +80,7 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 		webrtc.IncludeLoopbackCandidates(),
 		webrtc.ListenIP(ip),
 		webrtc.OnTrack(sess.onTrack),
+		webrtc.OnConnected(func() { sess.connectedOnce.Do(func() { close(sess.connected) }) }),
 	}
 	if offer.Trickle {
 		sess.candidates = signaling.NewCandidates()
@@ -89,8 +97,13 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 		cancel()
 		return nil, "", errors.Join(fmt.Errorf("%w: invalid webrtc offer: %w", signaling.ErrBadRequest, err), sess.transport.Close())
 	}
-	for range sess.transport.RequestedVideoTracks() {
-		if err = sess.addSender(); err != nil {
+	requested := sess.transport.RequestedVideoTracks()
+	if source != "" && requested == 0 {
+		cancel()
+		return nil, "", errors.Join(fmt.Errorf("%w: source requires a recvonly video m-line", signaling.ErrBadRequest), sess.transport.Close())
+	}
+	for range requested {
+		if err = sess.addSender(source); err != nil {
 			cancel()
 			return nil, "", errors.Join(err, sess.transport.Close(), sess.runner.Close())
 		}
@@ -104,40 +117,65 @@ func newWebRTCSession(ctx context.Context, id, host string, offer signaling.WebR
 	return sess, answer, nil
 }
 
-// addSender sends fake video on a new local track.
-func (s *webrtcSession) addSender() error {
-	track, err := s.transport.AddLocalTrackWithCodec(fakemedia.Codec.MimeType())
+// addSender sends source on a new local track.
+func (s *webrtcSession) addSender(source string) error {
+	sender, err := s.media.newSender(source)
 	if err != nil {
 		return err
+	}
+	track, err := s.transport.AddLocalTrackWithCodec(sender.codec.MimeType())
+	if err != nil {
+		return errors.Join(err, sender.close())
 	}
 	g := pipeline.NewGraph()
 	s.runner.Add(g)
-	source, err := fakemedia.AddSender(g, senderConfig, track)
+	rate, err := sender.add(g, track)
 	if err != nil {
 		return err
 	}
-	s.transport.ControlBitrate(source)
+	if rate != nil {
+		s.transport.ControlBitrate(rate)
+	}
 	return nil
 }
 
 func (s *webrtcSession) onTrack(receiver *webrtc.RTPReceiver) {
 	s.logger.Info("got track", "codec", receiver.Codec())
-	g := pipeline.NewGraph()
-	discard, err := fakemedia.AddReceiver(g, receiver)
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	sink, err := s.media.newSink(s.id, len(s.sinks), receiver.Codec())
 	if err != nil {
+		s.logger.Error("failed to receive track", "error", errors.Join(err, receiver.Close()))
+		return
+	}
+	g := pipeline.NewGraph()
+	if err = sessionmedia.AddReceiver(g, receiver, sink); err != nil {
 		s.logger.Error("failed to receive track", "error", errors.Join(err, g.Close()))
 		return
 	}
-	s.lock.Lock()
-	s.discards = append(s.discards, discard)
-	s.lock.Unlock()
+	s.sinks = append(s.sinks, sink)
 	s.runner.Add(g)
 }
 
 func (s *webrtcSession) run(ctx context.Context) {
 	defer close(s.done)
-	if err := s.runner.Run(ctx); err != nil && ctx.Err() == nil {
+	select {
+	case <-s.connected:
+	case <-ctx.Done():
+		return
+	}
+	err := s.runner.Run(ctx)
+	if ctx.Err() != nil {
+		return
+	}
+	if err != nil {
 		s.logger.Error("session pipeline failed", "error", err)
+	} else {
+		s.logger.Info("stream ended")
+	}
+	// Closing the peer connection ends the client's tracks.
+	if err = s.transport.Close(); err != nil {
+		s.logger.Error("failed to close peer connection", "error", err)
 	}
 }
 
@@ -146,8 +184,8 @@ func (s *webrtcSession) frames() uint64 {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	var n uint64
-	for _, d := range s.discards {
-		n += d.Packets()
+	for _, sink := range s.sinks {
+		n += sink.Frames()
 	}
 	return n
 }
